@@ -263,3 +263,8 @@ __pycache__/
 # omit skse64
 skse64/
 /skse64_se
+x64/
+x64_v143/
+x64_v141/
+*.user
+.vs/

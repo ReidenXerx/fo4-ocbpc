@@ -143,7 +143,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(OutDir)f4se_1_10_163.lib;$(OutDir)f4se_common.lib;$(SolutionDir)x64_v141\Release\common_vc14.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(OutDir)f4se_1_10_163.lib;$(OutDir)f4se_common.lib;$(SolutionDir)$(Platform)_$(PlatformToolset)\$(Configuration)\common_vc14.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy "$(TargetPath)" "$(Fallout4Path)\$(TargetFileName)"</Command>
