@@ -366,6 +366,9 @@ void Thing::Update(Actor *actor) {
                     // Skip collision with itself?
                     if (partitions[id].partitionCollisions[i].colliderActor == actor && std::strcmp(partitions[id].partitionCollisions[i].colliderNodeName.c_str(), boneName.c_str()) == 0)
                         continue;
+                    // fo4-anatomy: a hand prop pushes only the [Props] targets (not her breasts)
+                    if (partitions[id].partitionCollisions[i].isProp && !PropReaches(boneName.c_str()))
+                        continue;
 
                     callCount++;
 
@@ -524,6 +527,9 @@ void Thing::Update(Actor *actor) {
                     for (int i = 0; i < partitions[id].partitionCollisions.size(); i++)
                     {
                         if (partitions[id].partitionCollisions[i].colliderActor == actor && std::strcmp(partitions[id].partitionCollisions[i].colliderNodeName.c_str(), boneName.c_str()) == 0)
+                            continue;
+                        // fo4-anatomy: a hand prop pushes only the [Props] targets (not her breasts)
+                        if (partitions[id].partitionCollisions[i].isProp && !PropReaches(boneName.c_str()))
                             continue;
 
                         callCount++;

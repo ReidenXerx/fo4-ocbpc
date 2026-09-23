@@ -176,6 +176,7 @@ static void AddPropColliders(Actor* actor, NiNode* root)
 		Collision prop = Collision::Collision(attach, spheres);
 		prop.colliderActor = actor;
 		prop.colliderNodeName = name;
+		prop.isProp = true;
 		otherColliders.emplace_back(prop);
 	}
 }

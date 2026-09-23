@@ -82,6 +82,10 @@ extern float propRadius;
 extern float propSpacing;
 extern float propMaxLength;
 extern float propMinBound;
+// [Props] targets: the only bones a prop may push (empty = every affected bone, OCBPC's own rule).
+// fo4-anatomy lists its genital and anus bones: a mug held at the chest must not push her breasts.
+extern std::vector<std::string> propTargets;
+bool PropReaches(const char* bone);
 
 extern std::vector<std::string> AffectedNodeLines;
 extern std::vector<std::string> ColliderNodeLines;

@@ -33,6 +33,7 @@ public:
 	std::vector<Sphere> collisionSpheres;
 	NiAVObject* CollisionObject;
 	std::string colliderNodeName;
+	bool isProp = false;       // fo4-anatomy: a hand prop ([Props]); pushes only the [Props] targets
 
 };
 

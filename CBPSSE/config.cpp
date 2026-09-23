@@ -62,6 +62,17 @@ float propRadius = 1.6f;
 float propSpacing = 1.5f;
 float propMaxLength = 40.0f;
 float propMinBound = 1.0f;
+std::vector<std::string> propTargets;
+
+bool PropReaches(const char* bone)
+{
+    if (propTargets.empty())
+        return true;
+    for (auto& t : propTargets)
+        if (bone && _stricmp(t.c_str(), bone) == 0)
+            return true;
+    return false;
+}
 
 // [Attach] / [Attach.A] / [Whitelist] / [Override:*] from one ini. fo4-anatomy (A-21): run on the
 // player's ocbp.ini and then on ours (Data\F4SE\Plugins\Anatomy\ocbp.ini), so our bones need no
@@ -242,6 +253,17 @@ bool LoadConfig() {
     propSpacing = (float)propsReader.GetReal("Props", "spacing", 1.5);
     propMaxLength = (float)propsReader.GetReal("Props", "maxLength", 40.0);
     propMinBound = (float)propsReader.GetReal("Props", "minBound", 1.0);
+    propTargets.clear();
+    {
+        std::stringstream targets(propsReader.Get("Props", "targets", ""));
+        std::string target;
+        while (std::getline(targets, target, ',')) {
+            target.erase(0, target.find_first_not_of(" \t"));
+            target.erase(target.find_last_not_of(" \t") + 1);
+            if (!target.empty())
+                propTargets.push_back(target);
+        }
+    }
     if (propSpacing < 0.25f)
         propSpacing = 0.25f;
 
