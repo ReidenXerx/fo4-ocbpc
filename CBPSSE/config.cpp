@@ -1,6 +1,7 @@
 #include "config.h"
 #include "INIReader.h"
 #include "log.h"
+#include "Bones.h"
 #include "Mouth.h"
 #include "SimObj.h"
 #include "Thing.h"
@@ -62,93 +63,11 @@ float propSpacing = 1.5f;
 float propMaxLength = 40.0f;
 float propMinBound = 1.0f;
 
-bool LoadConfig() {
-    logger.Info("loadConfig\n");
-
-    std::set<std::string> bonesSet;
-
-    bool reloadActors = false;
-    auto playerOnlyOld = playerOnly;
-    auto femaleOnlyOld = femaleOnly;
-    auto maleOnlyOld = maleOnly;
-    auto npcOnlyOld = npcOnly;
-    auto useWhitelistOld = useWhitelist;
-
-    boneNames.clear();
-    config.clear();
-    configArmor.clear();
-    configOverrides.clear();
-    configArmorOverrides.clear();
-    armorIgnore.clear();
-
-    // Note: Using INIReader results in a slight double read
-    INIReader configReader("Data\\F4SE\\Plugins\\ocbp.ini");
-    if (configReader.ParseError() < 0) {
-        logger.Error("Can't load 'ocbp.ini'\n");
-    }
-    logger.Error("Reading CBP Config\n");
-
-    // Read general settings
-    playerOnly = configReader.GetBoolean("General", "playerOnly", false);
-    npcOnly    = configReader.GetBoolean("General", "npcOnly", false);
-    useWhitelist = configReader.GetBoolean("General", "useWhitelist", false);
-
-    if (useWhitelist) {
-        maleOnly = false;
-        femaleOnly = false;
-    }
-    else {
-        femaleOnly = configReader.GetBoolean("General", "femaleOnly", false);
-        maleOnly = configReader.GetBoolean("General", "maleOnly", false);
-    }
-
-    reloadActors = (playerOnly ^ playerOnlyOld) ||
-                    (femaleOnly ^ femaleOnlyOld) ||
-                    (maleOnly ^ maleOnlyOld) ||
-                    (npcOnly ^ npcOnlyOld) ||
-                    (useWhitelist ^ useWhitelistOld);
-
-    detectArmor = configReader.GetBoolean("General", "detectArmor", false);
-    configReloadCount = configReader.GetInteger("Tuning", "rate", 0);
-
-    // fo4-anatomy props: attach nodes, comma-separated; none listed = the feature is off
-    propNodes.clear();
-    {
-        std::stringstream nodes(configReader.Get("Props", "nodes", ""));
-        std::string node;
-        while (std::getline(nodes, node, ',')) {
-            node.erase(0, node.find_first_not_of(" \t"));
-            node.erase(node.find_last_not_of(" \t") + 1);
-            if (!node.empty())
-                propNodes.push_back(node);
-        }
-    }
-    propRadius = (float)configReader.GetReal("Props", "radius", 1.6);
-    propSpacing = (float)configReader.GetReal("Props", "spacing", 1.5);
-    propMaxLength = (float)configReader.GetReal("Props", "maxLength", 40.0);
-    propMinBound = (float)configReader.GetReal("Props", "minBound", 1.0);
-    if (propSpacing < 0.25f)
-        propSpacing = 0.25f;
-
-    //Read armorIgnore
-    auto armorIgnoreStr = configReader.Get("General", "armorIgnore", "");
-    {
-        size_t commaPos;
-        do {
-            commaPos = armorIgnoreStr.find_first_of(",");
-            auto token = armorIgnoreStr.substr(0, commaPos);
-            UInt32 formID;
-            std::stringstream ss;
-            ss << std::hex << token;
-            ss >> formID;
-            armorIgnore[formID] = true;
-            armorIgnoreStr = armorIgnoreStr.substr(commaPos + 1);
-
-            //logger.Info("<token:> %s, <rest:> %s, <commaPos:> %d, <colonPos:> %d\n", token.c_str(), whitelistName.c_str(), commaPos >= 0, colonPos < 0);
-        } while (commaPos != -1);
-    }
-
-    // Read sections
+// [Attach] / [Attach.A] / [Whitelist] / [Override:*] from one ini. fo4-anatomy (A-21): run on the
+// player's ocbp.ini and then on ours (Data\F4SE\Plugins\Anatomy\ocbp.ini), so our bones need no
+// line in theirs and nothing of theirs is overwritten. Ours has no whitelist.
+static void ReadBoneSections(INIReader& configReader, bool anatomy)
+{
     auto sections = configReader.Sections();
     for (auto sectionsIter = sections.begin(); sectionsIter != sections.end(); ++sectionsIter) {
 
@@ -193,7 +112,7 @@ bool LoadConfig() {
                 }
             }
         }
-        else if (*sectionsIter == std::string("Whitelist") && useWhitelist) {
+        else if (*sectionsIter == std::string("Whitelist") && useWhitelist && !anatomy) {
             whitelist.clear();
             raceWhitelist.clear();
 
@@ -252,6 +171,102 @@ bool LoadConfig() {
         }
     }
 
+}
+
+bool LoadConfig() {
+    logger.Info("loadConfig\n");
+
+    std::set<std::string> bonesSet;
+
+    bool reloadActors = false;
+    auto playerOnlyOld = playerOnly;
+    auto femaleOnlyOld = femaleOnly;
+    auto maleOnlyOld = maleOnly;
+    auto npcOnlyOld = npcOnly;
+    auto useWhitelistOld = useWhitelist;
+
+    boneNames.clear();
+    config.clear();
+    configArmor.clear();
+    configOverrides.clear();
+    configArmorOverrides.clear();
+    armorIgnore.clear();
+
+    // Note: Using INIReader results in a slight double read
+    INIReader configReader("Data\\F4SE\\Plugins\\ocbp.ini");
+    if (configReader.ParseError() < 0) {
+        logger.Error("Can't load 'ocbp.ini'\n");
+    }
+    logger.Error("Reading CBP Config\n");
+
+    // Read general settings
+    playerOnly = configReader.GetBoolean("General", "playerOnly", false);
+    npcOnly    = configReader.GetBoolean("General", "npcOnly", false);
+    useWhitelist = configReader.GetBoolean("General", "useWhitelist", false);
+
+    if (useWhitelist) {
+        maleOnly = false;
+        femaleOnly = false;
+    }
+    else {
+        femaleOnly = configReader.GetBoolean("General", "femaleOnly", false);
+        maleOnly = configReader.GetBoolean("General", "maleOnly", false);
+    }
+
+    reloadActors = (playerOnly ^ playerOnlyOld) ||
+                    (femaleOnly ^ femaleOnlyOld) ||
+                    (maleOnly ^ maleOnlyOld) ||
+                    (npcOnly ^ npcOnlyOld) ||
+                    (useWhitelist ^ useWhitelistOld);
+
+    detectArmor = configReader.GetBoolean("General", "detectArmor", false);
+    configReloadCount = configReader.GetInteger("Tuning", "rate", 0);
+
+    // fo4-anatomy: [Props], [Mouth] and [Bones] come from our own ini when it is there
+    INIReader anatomyExtras("Data\\F4SE\\Plugins\\Anatomy\\ocbp.ini");
+    auto extrasSections = anatomyExtras.ParseError() >= 0 ? anatomyExtras.Sections() : std::set<std::string>();
+    INIReader& propsReader = extrasSections.count("Props") ? anatomyExtras : configReader;
+    // fo4-anatomy props: attach nodes, comma-separated; none listed = the feature is off
+    propNodes.clear();
+    {
+        std::stringstream nodes(propsReader.Get("Props", "nodes", ""));
+        std::string node;
+        while (std::getline(nodes, node, ',')) {
+            node.erase(0, node.find_first_not_of(" \t"));
+            node.erase(node.find_last_not_of(" \t") + 1);
+            if (!node.empty())
+                propNodes.push_back(node);
+        }
+    }
+    propRadius = (float)propsReader.GetReal("Props", "radius", 1.6);
+    propSpacing = (float)propsReader.GetReal("Props", "spacing", 1.5);
+    propMaxLength = (float)propsReader.GetReal("Props", "maxLength", 40.0);
+    propMinBound = (float)propsReader.GetReal("Props", "minBound", 1.0);
+    if (propSpacing < 0.25f)
+        propSpacing = 0.25f;
+
+    //Read armorIgnore
+    auto armorIgnoreStr = configReader.Get("General", "armorIgnore", "");
+    {
+        size_t commaPos;
+        do {
+            commaPos = armorIgnoreStr.find_first_of(",");
+            auto token = armorIgnoreStr.substr(0, commaPos);
+            UInt32 formID;
+            std::stringstream ss;
+            ss << std::hex << token;
+            ss >> formID;
+            armorIgnore[formID] = true;
+            armorIgnoreStr = armorIgnoreStr.substr(commaPos + 1);
+
+            //logger.Info("<token:> %s, <rest:> %s, <commaPos:> %d, <colonPos:> %d\n", token.c_str(), whitelistName.c_str(), commaPos >= 0, colonPos < 0);
+        } while (commaPos != -1);
+    }
+
+    ReadBoneSections(configReader, false);
+    if (!extrasSections.empty())
+        ReadBoneSections(anatomyExtras, true);
+
     // replace configs with override settings (if any)
     for (auto &boneIter : configOverrides) {
         if (config.count(boneIter.first) > 0) {
@@ -275,20 +290,16 @@ bool LoadConfig() {
     boneNames.assign(bonesSet.begin(), bonesSet.end());
 
     logger.Error("Finished CBP Config\n");
-    LoadMouthConfig(configReader);
+    LoadMouthConfig(extrasSections.count("Mouth") ? anatomyExtras : configReader);
+    LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
 
     return reloadActors;
 }
 
-void LoadCollisionConfig()
+// One collision file, APPENDED to what is loaded: a node already listed keeps its entry and gains
+// the new file's spheres (fo4-anatomy A-21: the player's file first, then ours).
+static bool ParseCollisionFile(std::string filepath)
 {
-    AffectedNodeLines.clear();
-    ColliderNodeLines.clear();
-    AffectedNodesList.clear();
-    ColliderNodesList.clear();
-
-    std::string filepath = "Data\\F4SE\\Plugins\\OCBPCollisionConfig.txt";
-
     std::ifstream file(filepath);
 
     if (!file.is_open())
@@ -338,17 +349,23 @@ void LoadCollisionConfig()
                     }
                     else if (currentSetting == "[AffectedNodes]")
                     {
-                        AffectedNodeLines.emplace_back(line);
-                        ConfigLine newConfigLine;
-                        newConfigLine.NodeName = line;
-                        AffectedNodesList.emplace_back(newConfigLine);
+                        if (std::find(AffectedNodeLines.begin(), AffectedNodeLines.end(), line) == AffectedNodeLines.end())
+                        {
+                            AffectedNodeLines.emplace_back(line);
+                            ConfigLine newConfigLine;
+                            newConfigLine.NodeName = line;
+                            AffectedNodesList.emplace_back(newConfigLine);
+                        }
                     }
                     else if (currentSetting == "[ColliderNodes]")
                     {
-                        ColliderNodeLines.emplace_back(line);
-                        ConfigLine newConfigLine;
-                        newConfigLine.NodeName = line;
-                        ColliderNodesList.emplace_back(newConfigLine);
+                        if (std::find(ColliderNodeLines.begin(), ColliderNodeLines.end(), line) == ColliderNodeLines.end())
+                        {
+                            ColliderNodeLines.emplace_back(line);
+                            ConfigLine newConfigLine;
+                            newConfigLine.NodeName = line;
+                            ColliderNodesList.emplace_back(newConfigLine);
+                        }
                     }
                     else
                     {
@@ -384,14 +401,27 @@ void LoadCollisionConfig()
                 }
             }
         }
+        return true;
+    }
+    return false;
+}
+
+void LoadCollisionConfig()
+{
+    AffectedNodeLines.clear();
+    ColliderNodeLines.clear();
+    AffectedNodesList.clear();
+    ColliderNodesList.clear();
+
+    bool theirs = ParseCollisionFile("Data\\F4SE\\Plugins\\OCBPCollisionConfig.txt");
+    bool ours = ParseCollisionFile("Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig.txt");
+    if (theirs || ours)
+    {
         DumpCollisionConfigsToLog();
         logger.Info("Collision Config file is loaded successfully.\n");
         return;
-
     }
-
     logger.Info("Collision Config file is not loaded.\n");
-    return;
 }
 
 void ConfigLineSplitter(std::string& line, Sphere& newSphere)

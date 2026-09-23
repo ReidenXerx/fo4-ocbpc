@@ -29,6 +29,7 @@
 #include "config.h"
 #include "PapyrusOCBP.h"
 #include "SimObj.h"
+#include "Bones.h"
 #include "Mouth.h"
 #include "Utility.hpp"
 #include "f4se/GameRTTI.h"
@@ -320,6 +321,7 @@ void UpdateActors() {
 
     //logger.error("Updating %d entities\n", actorEntries.size());
     for (auto &a : actorEntries) {
+        EnsureAnatomyBones(a.actor);   // fo4-anatomy (A-21): our bones exist before OCBPC looks them up by name
         auto objIterator = actors.find(a.id);
         if (objIterator == actors.end()) {
             //logger.error("Sim Object not found in tracked actors\n");

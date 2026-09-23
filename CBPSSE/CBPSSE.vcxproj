@@ -180,6 +180,7 @@
     <ClInclude Include="SimObj.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="log.h" />
+    <ClInclude Include="Bones.h" />
     <ClInclude Include="Mouth.h" />
     <ClInclude Include="Thing.h" />
     <ClInclude Include="Utility.hpp" />
@@ -212,6 +213,7 @@
     <ClCompile Include="hookD3D.cpp" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Bones.cpp" />
     <ClCompile Include="Mouth.cpp" />
     <ClCompile Include="scan.cpp" />
     <ClCompile Include="Thing.cpp" />
