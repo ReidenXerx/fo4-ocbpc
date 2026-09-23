@@ -127,6 +127,12 @@ void LoadBonesConfig(INIReader& reader)
 	for (auto& orphan : pending)
 		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin nor one of ours; "
 			"skipped\n", orphan.name.c_str(), orphan.parent.c_str());
+	std::string names;
+	for (auto& def : table)
+		names += (names.empty() ? "" : ", ") + def.name;
+	char key[48];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|table|%d", (int)table.size());
+	Note(key, "[bones] table: %d node(s) from [Bones]: %s\n", (int)table.size(), names.c_str());
 }
 
 bool EnsureAnatomyBones(Actor* actor)
@@ -149,15 +155,26 @@ bool EnsureAnatomyBones(Actor* actor)
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
 		bool namesOurs = false;
+		int nulls = 0, oursCount = 0;
 		for (UInt32 i = 0; i < count; i++) {
 			NiNode* b = skin->bones.entries[i];
-			if (!b)
+			if (!b) {
+				nulls++;
 				continue;
+			}
 			const char* name = b->m_name.c_str();
 			if (name && _stricmp(name, kPelvis) == 0)
 				pelvis = b;
-			else if (IsOurs(name))
+			else if (IsOurs(name)) {
 				namesOurs = true;
+				oursCount++;
+			}
+		}
+		if (pelvis && (namesOurs || nulls)) {           // a body: say once what its skin looks like
+			char key[96];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|skin|%08X|%u|%d|%d", actor->formID, count, oursCount, nulls);
+			Note(key, "[bones] %08X: a skin of %u bones with Pelvis_skin; %d of them ours, %d empty entries\n",
+				actor->formID, count, oursCount, nulls);
 		}
 		if (!pelvis || !namesOurs) {
 			done[skin] = Done{ skin->bones.entries, count, kNone, nullptr };
