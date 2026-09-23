@@ -1,3 +1,7 @@
+// fo4-ocbpc: modified by fo4-anatomy (ReidenXerx), 2026-09-23: installs the mouth hook.
+// The original OpenCBP_FO4 / OCBPC code is under the MIT licence (LICENSE); these changes
+// are under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 #include "common/ITypes.h"
 #include <string>
 #include "f4se/PluginAPI.h"

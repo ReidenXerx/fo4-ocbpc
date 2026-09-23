@@ -1,3 +1,7 @@
+// fo4-ocbpc: modified by fo4-anatomy (ReidenXerx), 2026-09-23: stretch groups.
+// The original OpenCBP_FO4 / OCBPC code is under the MIT licence (LICENSE); these changes
+// are under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 #pragma once
 #include <f4se\NiTypes.h>
 #include <f4se\NiObjects.h>

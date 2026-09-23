@@ -1,3 +1,6 @@
+// fo4-ocbpc: written for fo4-anatomy by ReidenXerx, 2026-09-23: our genital bones, added to the loaded skeleton at run time (ocbp.ini [Bones]).
+// Licensed under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 #include "Bones.h"
 
 #include "CollisionHub.h"

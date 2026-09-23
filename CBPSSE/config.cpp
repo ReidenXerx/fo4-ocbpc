@@ -1,3 +1,7 @@
+// fo4-ocbpc: modified by fo4-anatomy (ReidenXerx), 2026-09-23: [Props], [Mouth] and [Bones]; fo4-anatomy's own ocbp.ini and collision file read after the player's.
+// The original OpenCBP_FO4 / OCBPC code is under the MIT licence (LICENSE); these changes
+// are under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 #include "config.h"
 #include "INIReader.h"
 #include "log.h"
