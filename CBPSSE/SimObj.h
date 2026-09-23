@@ -18,6 +18,7 @@ public:
     ~SimObj();
     bool Bind(Actor *actor, std::vector<std::string> &boneNames, config_t &config);
     void Update(Actor *actor);
+    void UpdateStretch(Actor *actor);
     bool UpdateConfig(Actor* actor, std::vector<std::string>& boneNames, config_t& config);
     bool IsBound() { return bound; }
 

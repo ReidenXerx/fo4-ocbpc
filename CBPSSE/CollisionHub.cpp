@@ -18,6 +18,77 @@ long hashSize;
 //debug variable
 int callCount = 0;
 
+// fo4-anatomy props: whatever an animation hangs on one of the [Props] nodes (a toy, a bat) collides along
+// its length. Its extent is read off the rendered bound of the biggest thing attached there: a line of
+// spheres from the attach node, through the bound's centre, to its far side. Rebuilt every frame with
+// the other colliders, so a prop that appears mid-scene collides at once and one that goes stops.
+static float PropLength(const NiPoint3& p) {
+	return std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+}
+
+static void AddPropColliders(Actor* actor, NiNode* root)
+{
+	for (auto& name : propNodes)
+	{
+		BSFixedString fs(name.c_str());
+		NiAVObject* attach = root->GetObjectByName(&fs);
+		NiNode* attachNode = attach ? attach->GetAsNiNode() : nullptr;
+		if (!attachNode)
+			continue;
+		float bestRadius = 0.0f;
+		NiPoint3 bestCentre;
+		for (UInt32 k = 0; k < attachNode->m_children.m_emptyRunStart; k++)
+		{
+			NiAVObject* child = attachNode->m_children.m_data[k];
+			if (child && child->m_worldBound.m_fRadius > bestRadius)
+			{
+				bestRadius = child->m_worldBound.m_fRadius;
+				bestCentre = child->m_worldBound.m_kCenter;
+			}
+		}
+		if (bestRadius < propMinBound)
+			continue;
+		// the skeleton node whose rotation the collider offsets are written in (UpdateColliderPositions)
+		NiAVObject* skeletonObj = attach;
+		bool skeletonFound = false;
+		while (skeletonObj->m_parent)
+		{
+			if (skeletonObj->m_parent->m_name == BSFixedString("skeleton.nif")) {
+				skeletonObj = skeletonObj->m_parent;
+				skeletonFound = true;
+				break;
+			}
+			skeletonObj = skeletonObj->m_parent;
+		}
+		if (!skeletonFound)
+			continue;
+		NiPoint3 base = attach->m_worldTransform.pos;
+		NiPoint3 toCentre = bestCentre - base;
+		float reach = PropLength(toCentre);
+		NiPoint3 dir = reach > 0.5f ? toCentre / reach
+		                            : attach->m_worldTransform.rot.Transpose() * NiPoint3(0.0f, 1.0f, 0.0f);
+		float length = reach + bestRadius;
+		if (length > propMaxLength)
+			length = propMaxLength;
+		std::vector<Sphere> spheres;
+		for (float t = 0.0f; t <= length - propRadius + 1e-3f; t += propSpacing)
+		{
+			Sphere s;
+			// UpdateColliderPositions puts a sphere at node + skeletonRot^T * offset
+			s.offset = skeletonObj->m_localTransform.rot * (dir * t);
+			s.radius = propRadius;
+			s.radiuspwr2 = propRadius * propRadius;
+			spheres.push_back(s);
+		}
+		if (spheres.empty())
+			continue;
+		Collision prop = Collision::Collision(attach, spheres);
+		prop.colliderActor = actor;
+		prop.colliderNodeName = name;
+		otherColliders.emplace_back(prop);
+	}
+}
+
 void CreateOtherColliders()
 {
 	/*LARGE_INTEGER startingTime, endingTime, elapsedMicroseconds;
@@ -83,6 +154,8 @@ void CreateOtherColliders()
 				otherColliders.emplace_back(newCol);
 			}
 		}
+
+		AddPropColliders(actorEntries[i].actor, mostInterestingRoot);
 	}
 	//printMessageInt("Actor has others around them: ", otherActorCount);
 	//printMessageInt("OtherColliderCount found Total: ", otherColliders.size());

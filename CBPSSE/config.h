@@ -76,6 +76,13 @@ extern float collisionX;
 extern float collisionY;
 extern float collisionZ;
 
+// fo4-anatomy props (ocbp.ini [Props])
+extern std::vector<std::string> propNodes;
+extern float propRadius;
+extern float propSpacing;
+extern float propMaxLength;
+extern float propMinBound;
+
 extern std::vector<std::string> AffectedNodeLines;
 extern std::vector<std::string> ColliderNodeLines;
 

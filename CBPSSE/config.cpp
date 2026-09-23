@@ -54,6 +54,13 @@ float collisionX = 1.0;
 float collisionY = 1.0;
 float collisionZ = 1.0;
 
+// fo4-anatomy props (ocbp.ini [Props]): what an animation puts in a hand collides along its length
+std::vector<std::string> propNodes;
+float propRadius = 1.6f;
+float propSpacing = 1.5f;
+float propMaxLength = 40.0f;
+float propMinBound = 1.0f;
+
 bool LoadConfig() {
     logger.Info("loadConfig\n");
 
@@ -102,6 +109,25 @@ bool LoadConfig() {
 
     detectArmor = configReader.GetBoolean("General", "detectArmor", false);
     configReloadCount = configReader.GetInteger("Tuning", "rate", 0);
+
+    // fo4-anatomy props: attach nodes, comma-separated; none listed = the feature is off
+    propNodes.clear();
+    {
+        std::stringstream nodes(configReader.Get("Props", "nodes", ""));
+        std::string node;
+        while (std::getline(nodes, node, ',')) {
+            node.erase(0, node.find_first_not_of(" \t"));
+            node.erase(node.find_last_not_of(" \t") + 1);
+            if (!node.empty())
+                propNodes.push_back(node);
+        }
+    }
+    propRadius = (float)configReader.GetReal("Props", "radius", 1.6);
+    propSpacing = (float)configReader.GetReal("Props", "spacing", 1.5);
+    propMaxLength = (float)configReader.GetReal("Props", "maxLength", 40.0);
+    propMinBound = (float)configReader.GetReal("Props", "minBound", 1.0);
+    if (propSpacing < 0.25f)
+        propSpacing = 0.25f;
 
     //Read armorIgnore
     auto armorIgnoreStr = configReader.Get("General", "armorIgnore", "");

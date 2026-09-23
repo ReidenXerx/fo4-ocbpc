@@ -145,6 +145,17 @@ void Thing::UpdateConfig(configEntry_t & centry) {
         timeTick = 1;
 
     absRotX = centry["absRotX"] != 0.0;
+
+    // fo4-anatomy stretch groups: an absent key reads 0, which leaves the bone out of any group
+    stretchGroup = centry.find("stretchGroup") != centry.end() ? centry["stretchGroup"] : 0.0f;
+    stretchKnee = centry.find("stretchKnee") != centry.end() ? centry["stretchKnee"] : 0.0f;
+    stretchGain = centry.find("stretchGain") != centry.end() ? centry["stretchGain"] : 0.0f;
+    stretchMax = centry.find("stretchMax") != centry.end() ? centry["stretchMax"] : 0.0f;
+    stretchAxis = NiPoint3(centry.find("stretchAxisX") != centry.end() ? centry["stretchAxisX"] : 0.0f,
+                           centry.find("stretchAxisY") != centry.end() ? centry["stretchAxisY"] : 0.0f,
+                           centry.find("stretchAxisZ") != centry.end() ? centry["stretchAxisZ"] : 0.0f);
+    float axisLength = std::sqrt(stretchAxis.x * stretchAxis.x + stretchAxis.y * stretchAxis.y + stretchAxis.z * stretchAxis.z);
+    stretchAxis = axisLength > 1e-4f ? stretchAxis / axisLength : NiPoint3(0, 0, 0);
 }
 
 //static float clamp(float val, float min, float max) {
@@ -452,6 +463,7 @@ void Thing::Update(Actor *actor) {
             oldWorldPos = target;
             velocity = NiPoint3(0, 0, 0);
             time = clock();
+            lastLocalDiff = NiPoint3(0, 0, 0);
             return;
         }
 
@@ -645,7 +657,8 @@ void Thing::Update(Actor *actor) {
                                         (localDiff.z) + origLocalPos[boneName.c_str()][actor->formID].z
         );
         obj->m_localTransform.pos = newLocalPos;
-        
+        lastLocalDiff = localDiff;              // fo4-anatomy stretch groups read it after every bone ran
+
         if (absRotX) rotDiff.x = fabs(rotDiff.x);
 
         rotDiff.x *= rotationalX;

@@ -53,6 +53,21 @@ public:
 
     bool absRotX = 0;
 
+    // Stretch groups (fo4-anatomy): the bones of one opening share a group number (0 = none). When
+    // ALL of them are pushed out further than stretchKnee - a big object in the opening, not a small
+    // one off-centre, which pushes only one side - each moves its child node "<bone>_Stretch" out by
+    // stretchGain x (the group's smallest push - stretchKnee), at most stretchMax, along its own push.
+    // The body weights the stretch nodes, so an opening grows faster than the object past the knee.
+    float stretchGroup = 0.0f;
+    float stretchKnee = 0.0f;
+    float stretchGain = 0.0f;
+    float stretchMax = 0.0f;
+    // the opening's axis in the parent's frame: only the push ACROSS it counts, so a hand pressing
+    // on the opening from outside (a push along the axis) never stretches it; (0,0,0) = no axis
+    NiPoint3 stretchAxis = NiPoint3(0, 0, 0);
+    // this frame's displacement from rest, in the parent's frame (what Update added to origLocalPos)
+    NiPoint3 lastLocalDiff = NiPoint3(0, 0, 0);
+
     static pos_map origLocalPos;
     static rot_map origLocalRot;
 
