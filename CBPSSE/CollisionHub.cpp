@@ -19,6 +19,11 @@ PartitionMap partitions;
 // compiled out, so this is the one window into what the fork sees. It notes, once each, every node on a
 // nearby actor whose name looks genital or like a toy, and every prop that becomes a collider. That is
 // how an unknown creature's penis or a toy gets a name we can put in the config.
+// The last runs are kept as anatomy_ocbpc.1.log (the run before this one) to .4.log: a tester's run is
+// often followed by another launch before anyone reads it, and a log that starts empty every launch
+// loses exactly the run that mattered.
+static const int kKeptRuns = 4;
+
 static FILE* AnatomyLog()
 {
 	static FILE* handle = nullptr;
@@ -29,11 +34,20 @@ static FILE* AnatomyLog()
 		char docs[MAX_PATH];
 		if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs)))
 		{
-			std::string path = std::string(docs) + "\\My Games\\Fallout4\\F4SE\\anatomy_ocbpc.log";
-			handle = fopen(path.c_str(), "w");
+			std::string base = std::string(docs) + "\\My Games\\Fallout4\\F4SE\\anatomy_ocbpc";
+			auto numbered = [&](int n) { return n ? base + "." + std::to_string(n) + ".log" : base + ".log"; };
+			DeleteFileA(numbered(kKeptRuns).c_str());
+			for (int n = kKeptRuns - 1; n >= 0; n--)
+				MoveFileExA(numbered(n).c_str(), numbered(n + 1).c_str(), MOVEFILE_REPLACE_EXISTING);
+			handle = fopen(numbered(0).c_str(), "w");
 			if (handle)
 			{
-				fprintf(handle, "fo4-ocbpc (fo4-anatomy fork of OCBPC 0.3) discovery log\n");
+				time_t now = time(nullptr);
+				char started[32] = "";
+				tm local;
+				if (localtime_s(&local, &now) == 0)
+					strftime(started, sizeof(started), "%Y-%m-%d %H:%M:%S", &local);
+				fprintf(handle, "fo4-ocbpc (fo4-anatomy fork of OCBPC 0.3) discovery log, started %s\n", started);
 				fflush(handle);
 			}
 		}
