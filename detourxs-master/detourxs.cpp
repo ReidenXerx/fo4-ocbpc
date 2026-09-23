@@ -158,7 +158,13 @@ size_t DetourXS::GetDetourLenAuto(const LPVOID lpStart, JmpType jmpType)
 
 	while(totalLen < jmpType)
 	{
+#ifdef _M_X64
+		// fo4-anatomy: LDE's 0 decodes x86, where a REX prefix is an instruction of its own, so the copy
+		// could end inside an x64 instruction (the face merge: 14 bytes instead of 17). 64 decodes x64.
+		size_t len = LDE(reinterpret_cast<LPVOID>(lpbDataPos), 64);
+#else
 		size_t len = LDE(reinterpret_cast<LPVOID>(lpbDataPos), 0);
+#endif
 		lpbDataPos += len;
 		totalLen += len;
 	}

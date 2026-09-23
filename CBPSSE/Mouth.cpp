@@ -9,8 +9,8 @@
 #include "f4se/GameReferences.h"
 #include "f4se/NiNodes.h"
 #include "f4se/NiObjects.h"
+#include "f4se_common/BranchTrampoline.h"
 #include "f4se_common/Relocation.h"
-#include "../detourxs-master/detourxs.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -80,8 +80,7 @@ namespace
 	LARGE_INTEGER lastTick = {};
 
 	typedef bool (*MergeFn)(void* data, float dt, bool flag);
-	MergeFn origMerge = nullptr;
-	DetourXS mergeDetour;
+	MergeFn origMerge = nullptr;             // the engine's merge itself: its bytes are never touched
 
 	inline float Dot(const NiPoint3& a, const NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 	inline NiPoint3 Cross(const NiPoint3& a, const NiPoint3& b)
@@ -256,14 +255,30 @@ void InstallMouthHook()
 			"call %d): the mouth stays off\n", (int)prologue, (int)calls);
 		return;
 	}
-	if (!mergeDetour.Create(reinterpret_cast<LPVOID>(mergeFn.GetUIntPtr()), reinterpret_cast<LPVOID>(&HookMerge),
-			reinterpret_cast<LPVOID*>(&origMerge)) || !origMerge) {
-		Note("mouth|hook", "[mouth] could not hook the face merge: the mouth stays off\n");
+	// The engine's one CALL to the merge is pointed at ours, and ours calls the merge as it is. Until
+	// 2026-09-23 the merge's entry was detoured instead, with DetourXS, which measures the prologue with
+	// LDE in 32-bit mode: it took 14 bytes where the whole instructions are 17, and resumed the merge on
+	// the tail of "sub rsp,60h", a "sub esp,60h" that clears the stack pointer's upper half. Every save
+	// load then died at +0x668A0D, the merge's first push, with no crash log (no stack to report on).
+	if (!g_branchTrampoline.Create(1024 * 64)) {
+		Note("mouth|hook", "[mouth] no room for a branch trampoline near the game: the mouth stays off\n");
 		return;
 	}
-	hooked = true;
-	Note("mouth|on", "[mouth] on: %d chain(s), props %d, gap F %.2f M %.2f\n", (int)chainNames.size(),
-		(int)useProps, femaleGap, maleGap);
+	origMerge = reinterpret_cast<MergeFn>(mergeFn.GetUIntPtr());
+	if (!g_branchTrampoline.Write5Call(mergeCall.GetUIntPtr(), reinterpret_cast<uintptr_t>(&HookMerge))) {
+		Note("mouth|hook", "[mouth] could not point the merge's call at the mouth: the mouth stays off\n");
+		return;
+	}
+	// read the patch back: the call must now reach a stub that jumps to HookMerge
+	uintptr_t stub = mergeCall.GetUIntPtr() + 5 + *reinterpret_cast<const int32_t*>(call + 1);
+	const unsigned char* s = reinterpret_cast<const unsigned char*>(stub);
+	bool reaches = call[0] == 0xE8 && s[0] == 0xFF && s[1] == 0x25 && *reinterpret_cast<const uint32_t*>(s + 2) == 0 &&
+		*reinterpret_cast<const uintptr_t*>(s + 6) == reinterpret_cast<uintptr_t>(&HookMerge);
+	hooked = reaches;
+	Note("mouth|on", "[mouth] %s: %d chain(s), props %d, gap F %.2f M %.2f; the merge's call hooked, its code "
+		"untouched (prologue still the engine's: %d)\n", reaches ? "on" : "OFF, the hooked call does not reach it",
+		(int)chainNames.size(), (int)useProps, femaleGap, maleGap,
+		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
 }
 
 void UpdateMouths()
