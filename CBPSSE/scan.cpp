@@ -29,6 +29,7 @@
 #include "config.h"
 #include "PapyrusOCBP.h"
 #include "SimObj.h"
+#include "Mouth.h"
 #include "Utility.hpp"
 #include "f4se/GameRTTI.h"
 #include "f4se/GameForms.h"
@@ -237,6 +238,8 @@ void UpdateActors() {
         CreateOtherColliders();
 
         UpdateColliderPositions(otherColliders);
+
+        UpdateMouths();   // fo4-anatomy: every mouth against every penis chain, after the colliders moved
 
         //LoadLastColliderPositions();
 

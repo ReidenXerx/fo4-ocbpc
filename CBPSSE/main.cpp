@@ -8,6 +8,7 @@
 #include "log.h"
 #include "config.h"
 #include "PapyrusOCBP.h"
+#include "Mouth.h"
 
 
 bool RegisterFuncs(VirtualMachine* vm);
@@ -150,6 +151,7 @@ extern "C"
         //g_messagingInterface->RegisterListener(0, "F4SE", MessageHandler); 
         logger.Error("Hooking Game\n");
         DoHook();
+        InstallMouthHook();   // fo4-anatomy: the mouth (ocbp.ini [Mouth]); checks the build first
         logger.Error("CBP Load Complete\n");
         return true;
     }

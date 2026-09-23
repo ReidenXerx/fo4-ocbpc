@@ -1,6 +1,7 @@
 #include "config.h"
 #include "INIReader.h"
 #include "log.h"
+#include "Mouth.h"
 #include "SimObj.h"
 #include "Thing.h"
 #include "Utility.hpp"
@@ -274,6 +275,8 @@ bool LoadConfig() {
     boneNames.assign(bonesSet.begin(), bonesSet.end());
 
     logger.Error("Finished CBP Config\n");
+    LoadMouthConfig(configReader);
+
     return reloadActors;
 }
 

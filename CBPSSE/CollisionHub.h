@@ -21,6 +21,9 @@ extern int callCount;
 
 void CreateOtherColliders();
 
+// fo4-anatomy discovery log (anatomy_ocbpc.log): writes the line once per key
+void AnatomyLogLine(const std::string& key, const char* line);
+
 void UpdateColliderPositions(std::vector<Collision> &colliderList);
 
 

@@ -57,6 +57,11 @@ static void AnatomyNote(const std::string& key, const char* fmt, ...)
 	fflush(log);
 }
 
+void AnatomyLogLine(const std::string& key, const char* line)
+{
+	AnatomyNote(key, "%s", line);
+}
+
 static bool LooksGenital(const char* name)
 {
 	if (!name)
