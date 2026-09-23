@@ -5,8 +5,90 @@
 #include "log.h"
 #include "Utility.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <ctime>
+#include <set>
+#include <shlobj.h>
+
 std::vector<Collision> otherColliders;
 PartitionMap partitions;
+
+// fo4-anatomy discovery log (Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log): OCBPC's own logging is
+// compiled out, so this is the one window into what the fork sees. It notes, once each, every node on a
+// nearby actor whose name looks genital or like a toy, and every prop that becomes a collider. That is
+// how an unknown creature's penis or a toy gets a name we can put in the config.
+static FILE* AnatomyLog()
+{
+	static FILE* handle = nullptr;
+	static bool tried = false;
+	if (!tried)
+	{
+		tried = true;
+		char docs[MAX_PATH];
+		if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs)))
+		{
+			std::string path = std::string(docs) + "\\My Games\\Fallout4\\F4SE\\anatomy_ocbpc.log";
+			handle = fopen(path.c_str(), "w");
+			if (handle)
+			{
+				fprintf(handle, "fo4-ocbpc (fo4-anatomy fork of OCBPC 0.3) discovery log\n");
+				fflush(handle);
+			}
+		}
+	}
+	return handle;
+}
+
+static std::set<std::string> anatomyLogged;
+
+static void AnatomyNote(const std::string& key, const char* fmt, ...)
+{
+	if (anatomyLogged.size() > 4000 || !anatomyLogged.insert(key).second)
+		return;
+	FILE* log = AnatomyLog();
+	if (!log)
+		return;
+	va_list args;
+	va_start(args, fmt);
+	vfprintf(log, fmt, args);
+	va_end(args);
+	fflush(log);
+}
+
+static bool LooksGenital(const char* name)
+{
+	if (!name)
+		return false;
+	std::string n(name);
+	std::transform(n.begin(), n.end(), n.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+	static const char* words[] = { "penis", "cock", "dick", "knot", "dildo", "strap", "toy", "tentacle", "baseball", "vibr", "genit", "phallus" };
+	for (auto w : words)
+		if (n.find(w) != std::string::npos)
+			return true;
+	return false;
+}
+
+static void AnatomyScan(Actor* actor, NiAVObject* obj, const char* parentName, int depth)
+{
+	if (!obj || depth > 40)
+		return;
+	const char* name = obj->m_name.c_str();
+	if (LooksGenital(name))
+	{
+		char key[512];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "%08X|%s|%s", actor->formID, parentName ? parentName : "", name);
+		AnatomyNote(key, "[node] actor %08X: '%s' under '%s', world bound r %.2f at (%.1f, %.1f, %.1f)\n",
+			actor->formID, name, parentName ? parentName : "", obj->m_worldBound.m_fRadius,
+			obj->m_worldBound.m_kCenter.x, obj->m_worldBound.m_kCenter.y, obj->m_worldBound.m_kCenter.z);
+	}
+	NiNode* node = obj->GetAsNiNode();
+	if (!node)
+		return;
+	for (UInt32 k = 0; k < node->m_children.m_emptyRunStart; k++)
+		AnatomyScan(actor, node->m_children.m_data[k], name, depth + 1);
+}
 
 
 
@@ -82,6 +164,10 @@ static void AddPropColliders(Actor* actor, NiNode* root)
 		}
 		if (spheres.empty())
 			continue;
+		char key[256];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "prop|%08X|%s|%d", actor->formID, name.c_str(), (int)bestRadius);
+		AnatomyNote(key, "[prop] actor %08X: '%s' carries a prop, bound r %.2f, reach %.2f -> %d spheres over %.1f\n",
+			actor->formID, name.c_str(), bestRadius, reach, (int)spheres.size(), length);
 		Collision prop = Collision::Collision(attach, spheres);
 		prop.colliderActor = actor;
 		prop.colliderNodeName = name;
@@ -156,6 +242,20 @@ void CreateOtherColliders()
 		}
 
 		AddPropColliders(actorEntries[i].actor, mostInterestingRoot);
+	}
+
+	// the discovery scan: every 2 seconds at most, so a whole scene graph walk never costs a frame
+	static clock_t lastScan = 0;
+	clock_t now = clock();
+	if (now - lastScan > 2 * CLOCKS_PER_SEC)
+	{
+		lastScan = now;
+		for (int i = 0; i < actorEntries.size(); i++)
+		{
+			Actor* actor = actorEntries[i].actor;
+			if (actor && actor->unkF0 && actor->unkF0->rootNode)
+				AnatomyScan(actor, actor->unkF0->rootNode, "", 0);
+		}
 	}
 	//printMessageInt("Actor has others around them: ", otherActorCount);
 	//printMessageInt("OtherColliderCount found Total: ", otherColliders.size());
