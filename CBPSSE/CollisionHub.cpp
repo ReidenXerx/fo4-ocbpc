@@ -13,6 +13,8 @@
 #include <cctype>
 #include <cstdio>
 #include <ctime>
+#include <fcntl.h>
+#include <io.h>
 #include <set>
 #include <shlobj.h>
 
@@ -26,6 +28,11 @@ PartitionMap partitions;
 // The last runs are kept as anatomy_ocbpc.1.log (the run before this one) to .4.log: a tester's run is
 // often followed by another launch before anyone reads it, and a log that starts empty every launch
 // loses exactly the run that mattered.
+// A second game process started while one runs (a launcher firing twice: seen 2026-09-23) must not
+// touch the first one's log. The log is opened with delete sharing, so the newcomer's rotation can move
+// it aside while it is written (the first process keeps writing into .1). Where the move still fails
+// (a log held by an older build, which did not share delete), the newcomer writes anatomy_ocbpc.pid<N>.log
+// instead: its "w" once truncated the running game's log and left a hole of NUL bytes where its lines were.
 static const int kKeptRuns = 4;
 
 static FILE* AnatomyLog()
@@ -41,9 +48,22 @@ static FILE* AnatomyLog()
 			std::string base = std::string(docs) + "\\My Games\\Fallout4\\F4SE\\anatomy_ocbpc";
 			auto numbered = [&](int n) { return n ? base + "." + std::to_string(n) + ".log" : base + ".log"; };
 			DeleteFileA(numbered(kKeptRuns).c_str());
+			bool current = true;                     // the name anatomy_ocbpc.log is free for this run
 			for (int n = kKeptRuns - 1; n >= 0; n--)
-				MoveFileExA(numbered(n).c_str(), numbered(n + 1).c_str(), MOVEFILE_REPLACE_EXISTING);
-			handle = fopen(numbered(0).c_str(), "w");
+				if (!MoveFileExA(numbered(n).c_str(), numbered(n + 1).c_str(), MOVEFILE_REPLACE_EXISTING) && n == 0 &&
+						GetLastError() != ERROR_FILE_NOT_FOUND)
+					current = false;
+			std::string path = current ? numbered(0) : base + ".pid" + std::to_string(GetCurrentProcessId()) + ".log";
+			HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+				NULL, current ? CREATE_ALWAYS : CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+			if (file != INVALID_HANDLE_VALUE)
+			{
+				int fd = _open_osfhandle(reinterpret_cast<intptr_t>(file), _O_WRONLY | _O_TEXT);
+				if (fd < 0)
+					CloseHandle(file);                   // the descriptor never took it
+				else if (!(handle = _fdopen(fd, "w")))
+					_close(fd);                          // the descriptor owns the handle now
+			}
 			if (handle)
 			{
 				time_t now = time(nullptr);
