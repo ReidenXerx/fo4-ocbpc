@@ -54,6 +54,19 @@ namespace
 	float blendRate = 12.0f;         // 1/s: how fast the override takes over and gives the mouth back
 	float holdSeconds = 0.35f;       // keeps the shape between two strokes
 
+	// The rest of the face while the mouth is busy (the owner, 2026-09-24: "expressions on the face
+	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
+	//   atContact + atDepth x (how deep the tip is past the lips) + atStroke x (how fast it moves),
+	// and only ever RAISES it (max with what the face already has), so Rapport's oral set and the
+	// animation's own face are never erased. [Mouth] face=id:contact:depth:stroke,...
+	struct FaceTerm { int id; float atContact, atDepth, atStroke; };
+	const int kMaxFace = 16;
+	std::vector<FaceTerm> faceTerms;
+	float faceDepth = 6.0f;          // units past the lips for the full depth share
+	float faceStroke = 20.0f;        // units/s of in-and-out for the full stroke share
+	float faceRate = 6.0f;           // 1/s toward the new expression
+	float strokeRate = 4.0f;         // 1/s: how fast the felt stroke speed follows the real one
+
 	// ---- the engine, 1.10.163 (Steam and GOG share the code: checked byte for byte) ----
 	RelocAddr<uintptr_t> mergeFn(0x6689D0);
 	RelocAddr<uintptr_t> mergeCall(0x6860FA);
@@ -61,6 +74,10 @@ namespace
 	const unsigned char kMergePrologue[] = { 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x68, 0x18, 0x48, 0x89, 0x78, 0x20,
 	                                         0x41, 0x56, 0x48, 0x83, 0xEC, 0x60 };
 	const int kWeights = 0x18;                  // float[54]: what the face mesh is built from
+	const int kMorphs = 54;
+	const int kExpressionMorphs = 50;           // ids 0-49 are the named expression table
+	const int kLeftUpperEyeLidDown = 18;        // the blink: never ours to hold
+	const int kRightUpperEyeLidDown = 41;
 	const int kJawOpen = 2;
 	const int kLeftUpperLipUp = 21;
 	const int kLowerLipFunnel = 22;
@@ -68,7 +85,14 @@ namespace
 	const int kUpperLipFunnel = 46;
 	bool hooked = false;
 
-	struct Override { void* data; float inside, jaw, floor, funnel, lift; };
+	struct Override
+	{
+		void* data;
+		float inside, jaw, floor, funnel, lift;
+		int faceCount;
+		int faceId[kMaxFace];
+		float faceValue[kMaxFace];
+	};
 	std::mutex publishLock;   // the face update may run on another thread than UpdateActors
 	std::vector<Override> published;
 
@@ -77,6 +101,8 @@ namespace
 		float inside = 0.0f, jaw = 0.0f, floor = 0.0f, funnel = 0.0f, lift = 0.0f;
 		float sinceContact = 1e9f;
 		unsigned frame = 0;
+		float depth = 0.0f, lastDepth = -1.0f, stroke = 0.0f;
+		float face[kMaxFace] = {};
 	};
 	std::unordered_map<UInt32, State> states;
 	unsigned frameCount = 0;
@@ -187,6 +213,11 @@ namespace
 		w[kUpperLipFunnel] += (o.funnel - w[kUpperLipFunnel]) * o.inside;
 		w[kLeftUpperLipUp] += (o.lift - w[kLeftUpperLipUp]) * o.inside;
 		w[kRightUpperLipUp] += (o.lift - w[kRightUpperLipUp]) * o.inside;
+		for (int k = 0; k < o.faceCount; k++) {   // the rest of the face: raised, never lowered
+			int id = o.faceId[k];
+			if (id >= 0 && id < kMorphs)
+				w[id] = (std::max)(w[id], o.faceValue[k] * o.inside);
+		}
 		return true;                              // the mesh is rebuilt from what we wrote
 	}
 
@@ -235,6 +266,35 @@ void LoadMouthConfig(INIReader& reader)
 	closeRate = (float)reader.GetReal("Mouth", "closeRate", closeRate);
 	blendRate = (float)reader.GetReal("Mouth", "blendRate", blendRate);
 	holdSeconds = (float)reader.GetReal("Mouth", "holdSeconds", holdSeconds);
+	faceDepth = (std::max)(0.5f, (float)reader.GetReal("Mouth", "faceDepth", faceDepth));
+	faceStroke = (std::max)(1.0f, (float)reader.GetReal("Mouth", "faceStroke", faceStroke));
+	faceRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "faceRate", faceRate));
+	strokeRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "strokeRate", strokeRate));
+	// face=id:contact:depth:stroke,... ids 0-49 of the expression table; never the mouth's own
+	// morphs (written above) nor the blink
+	faceTerms.clear();
+	int refused = 0;
+	for (auto& term : Split(reader.Get("Mouth", "face", ""), ',')) {
+		auto parts = Split(term, ':');
+		if (parts.size() != 4) {
+			refused++;
+			continue;
+		}
+		FaceTerm ft{ atoi(parts[0].c_str()), (float)atof(parts[1].c_str()), (float)atof(parts[2].c_str()),
+			(float)atof(parts[3].c_str()) };
+		bool ours = ft.id == kJawOpen || ft.id == kLeftUpperLipUp || ft.id == kRightUpperLipUp ||
+			ft.id == kLowerLipFunnel || ft.id == kUpperLipFunnel;
+		bool blink = ft.id == kLeftUpperEyeLidDown || ft.id == kRightUpperEyeLidDown;
+		if (ft.id < 0 || ft.id >= kExpressionMorphs || ours || blink || (int)faceTerms.size() >= kMaxFace) {
+			refused++;
+			continue;
+		}
+		faceTerms.push_back(ft);
+	}
+	char key[48];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "mouth|face|%d|%d", (int)faceTerms.size(), refused);
+	Note(key, "[mouth] face while busy: %d term(s)%s\n", (int)faceTerms.size(),
+		refused ? " (some refused: bad form, out of range, the mouth's own or the blink)" : "");
 	if (enabled && chainNames.empty() && !useProps)
 		enabled = false;                          // nothing could ever reach a mouth
 }
@@ -358,7 +418,7 @@ void UpdateMouths()
 			"(%.2f, %.2f, %.2f)\n", a->formID, male ? "male" : "female", t.pos.x, t.pos.y, t.pos.z, t.scale,
 			M.x, M.y, M.z, F.x, F.y, F.z);
 
-		float need = 0.0f, over = -1e9f, approach = 0.0f;
+		float need = 0.0f, over = -1e9f, approach = 0.0f, depth = 0.0f;
 		bool inside = false;
 		const Chain* who = nullptr;
 		for (auto& ch : chains) {
@@ -366,6 +426,7 @@ void UpdateMouths()
 				continue;                         // her own penis bones are never in her mouth
 			if (Length(ch.pts.back().pos - M) > 60.0f && Length(ch.pts.front().pos - M) > 60.0f)
 				continue;
+			bool crossed = false;
 			auto consider = [&](const NiPoint3& X, float r, const NiPoint3& dir) {
 				NiPoint3 q = X - M;
 				float qs = Dot(q, S), qu = Dot(q, U);
@@ -373,6 +434,7 @@ void UpdateMouths()
 					return;
 				float hu = SectionHalfU(dir, F, U, r);
 				inside = true;
+				crossed = true;
 				who = &ch;
 				need = (std::max)(need, hu - qu);     // the lower lip drops below its bottom
 				over = (std::max)(over, qu + hu);     // its top above the lip line lifts the upper lip
@@ -402,6 +464,8 @@ void UpdateMouths()
 				if (std::fabs(Dot(q, S)) <= halfWidth && Dot(q, U) >= -below && Dot(q, U) <= above)
 					approach = (std::max)(approach, 1.0f - (dT - rT) / ahead);
 			}
+			if (crossed && dT < 0.0f)
+				depth = (std::max)(depth, -dT);       // how far the tip is past her lips (F points out)
 		}
 
 		State& st = states[a->formID];
@@ -426,8 +490,27 @@ void UpdateMouths()
 		}
 		st.floor = Toward(st.floor, anticipate * approach, anticipate * approach > st.floor ? openRate : closeRate, dt);
 		st.inside = Toward(st.inside, st.sinceContact <= holdSeconds ? 1.0f : 0.0f, blendRate, dt);
-		if (st.inside > 0.001f || st.floor > 0.001f)
-			next.push_back(Override{ data, st.inside, st.jaw, st.floor, st.funnel, st.lift });
+		// the rest of the face: how deep the tip is, and how fast it moves in and out
+		float depthNow = inside ? depth : 0.0f;
+		if (st.lastDepth >= 0.0f && dt > 0.0f)
+			st.stroke = Toward(st.stroke, std::fabs(depthNow - st.lastDepth) / dt, strokeRate, dt);
+		st.lastDepth = depthNow;
+		st.depth = Toward(st.depth, depthNow, faceRate, dt);
+		int terms = (std::min)((int)faceTerms.size(), kMaxFace);
+		for (int k = 0; k < terms; k++) {
+			const FaceTerm& ft = faceTerms[k];
+			float target = ft.atContact + ft.atDepth * Clamp(st.depth / faceDepth, 0.0f, 1.0f)
+				+ ft.atStroke * Clamp(st.stroke / faceStroke, 0.0f, 1.0f);
+			st.face[k] = Toward(st.face[k], Clamp(target, 0.0f, 1.0f), faceRate, dt);
+		}
+		if (st.inside > 0.001f || st.floor > 0.001f) {
+			Override o{ data, st.inside, st.jaw, st.floor, st.funnel, st.lift, terms, {}, {} };
+			for (int k = 0; k < terms; k++) {
+				o.faceId[k] = faceTerms[k].id;
+				o.faceValue[k] = st.face[k];
+			}
+			next.push_back(o);
+		}
 	}
 	// forget whoever left: a stale entry would steer a face that is not theirs any more
 	for (auto it = states.begin(); it != states.end();)
