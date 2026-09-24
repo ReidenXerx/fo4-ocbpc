@@ -118,7 +118,7 @@ struct Hook
 		bool changed = e.Merge(dt);
 		if (!published)
 			return changed || restore.has;
-		FaceCompose::AfterMerge(e.fin, last, held ? &face : nullptr, e.speaking, mouth);
+		FaceCompose::AfterMerge(e.fin, last, held ? &face : nullptr, e.speaking, mouth, true);   // [Face] react=1
 		return true;
 	}
 };
@@ -266,19 +266,36 @@ int main()
 		m.termCount = 1;
 		m.termId[0] = 14;
 		m.termValue[0] = 0.9f;
-		FaceCompose::AfterMerge(w, keep, &r, false, m);
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
 		Check("full contact over a held jaw 0.35: the mouth opens to the fit (0.8)", Near(w[2], 0.8f));
-		Check("A-26 raises nothing on a held face (brow stays Rapport's 0)", Near(w[14], 0.0f));
+		Check("A-26 rises above a held face (Rapport's brow 0, the reaction 0.9 at full contact)", Near(w[14], 0.9f));
 		Check("the engine's own weights are kept before ours go on", keep.has && Near(keep.weight[2], 0.10f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		FaceCompose::AfterMerge(w, keep, &r, false, m, false);
+		Check("[Face] react=0: a held face gets no reaction (brow stays Rapport's 0)", Near(w[14], 0.0f));
+		Face strong = r;
+		strong.value[14] = 0.95f;
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		FaceCompose::AfterMerge(w, keep, &strong, false, m, true);
+		Check("A-26 only raises: Rapport's stronger brow 0.95 stays over the reaction's 0.9", Near(w[14], 0.95f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		FaceCompose::Mouth after = m;
+		after.inside = 0.0f;                        // contact over: the reaction has faded with it
+		FaceCompose::AfterMerge(w, keep, &r, false, after, true);
+		Check("with no contact left the reaction adds nothing (brow back to Rapport's 0)", Near(w[14], 0.0f));
 		for (int i = 0; i < kMorphs; i++)
 			w[i] = 0.0f;
 		w[2] = 0.10f;
 		m.inside = 0.5f;
-		FaceCompose::AfterMerge(w, keep, &r, false, m);
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
 		Check("half contact over a held jaw 0.35: 0.35 + (0.8 - 0.35) x 0.5", Near(w[2], 0.575f));
+		Check("half contact: the reaction is half (0.45)", Near(w[14], 0.45f));
 		for (int i = 0; i < kMorphs; i++)
 			w[i] = 0.0f;
-		FaceCompose::AfterMerge(w, keep, nullptr, false, m);
+		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
 		Check("no held face: A-26 raises the brow to 0.9 x 0.5", Near(w[14], 0.45f));
 	}
 

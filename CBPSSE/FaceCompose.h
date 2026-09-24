@@ -7,11 +7,18 @@
 
 // Everything this plugin writes over the engine's merged face weights (BSFaceGenAnimationData + 0x18),
 // as pure functions, so the order and the frame-to-frame behaviour run in a test outside the game
-// (tests/face). The order is the policy of decisions A-20, A-26 and A-27:
+// (tests/face). This is the ONE place where the layers of a face meet; each layer's right is written
+// here and nowhere else (decisions A-20, A-26, A-27):
+//   0. the engine: its merge of MFG, lip sync and keyframes, and the blink;
 //   1. the face Rapport holds (FaceAuthority::Compose): owned morphs replaced, the blink kept, the
 //      mouth left to the line's lip sync while the actor speaks;
 //   2. the contact mouth (A-20): from whatever the jaw is now, open to what is inside, by `inside`;
-//   3. the face while the mouth is busy (A-26): raised, never lowered; none on a face Rapport holds.
+//      only the jaw, the two funnels and the upper lip (2, 21, 22, 44, 46);
+//   3. the face while the mouth is busy (A-26): only RAISES its own ids (never the mouth's nor the
+//      blink: the loader refuses them), by at most its terms, and only as far as `inside`, so it
+//      comes and goes with the contact. On a face Rapport holds it rises above Rapport's values: the
+//      owner, 2026-09-24, "if it will work smoothly and won't bite", so Rapport stays the base and
+//      this is the one physical exception, like the mouth. [Face] react=0 takes it off held faces.
 //
 // The engine must never see what we wrote. It reads its own final weights back on the next frame:
 // the eyelids always (the blink is added to them, and the blink machine does not write while a line
@@ -50,7 +57,7 @@ namespace FaceCompose
 	void BeforeMerge(float* weights, const Engine& last);
 
 	// After it: keep the engine's weights, then write ours. held is Rapport's face or null; speaking
-	// is the engine's lip state (a line is playing).
+	// is the engine's lip state (a line is playing); reactOverHeld lets layer 3 rise above a held face.
 	void AfterMerge(float* weights, Engine& keep, const FaceAuthority::Face* held, bool speaking,
-		const Mouth& mouth);
+		const Mouth& mouth, bool reactOverHeld);
 }

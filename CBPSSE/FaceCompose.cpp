@@ -14,7 +14,8 @@ namespace FaceCompose
 			std::memcpy(weights, last.weight, sizeof(last.weight));
 	}
 
-	void AfterMerge(float* w, Engine& keep, const FaceAuthority::Face* held, bool speaking, const Mouth& m)
+	void AfterMerge(float* w, Engine& keep, const FaceAuthority::Face* held, bool speaking, const Mouth& m,
+		bool reactOverHeld)
 	{
 		std::memcpy(keep.weight, w, sizeof(keep.weight));
 		keep.has = true;
@@ -26,8 +27,8 @@ namespace FaceCompose
 		w[kUpperLipFunnel] += (m.funnel - w[kUpperLipFunnel]) * m.inside;
 		w[kLeftUpperLipUp] += (m.lift - w[kLeftUpperLipUp]) * m.inside;
 		w[kRightUpperLipUp] += (m.lift - w[kRightUpperLipUp]) * m.inside;
-		if (held)
-			return;                                 // A-26 raises nothing on a face Rapport holds
+		if (held && !reactOverHeld)
+			return;                                 // [Face] react=0: Rapport's face alone
 		for (int k = 0; k < m.termCount && k < kMaxTerms; k++) {
 			int id = m.termId[k];
 			if (id >= 0 && id < kMorphs)

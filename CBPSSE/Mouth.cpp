@@ -63,7 +63,7 @@ namespace
 	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
 	//   atContact + atDepth x (how deep the tip is past the lips) + atStroke x (how fast it moves),
 	// and only ever RAISES it (max with what the face already has), so the animation's own face is
-	// never erased. A face Rapport holds (A-27) gets none: Rapport's is the face then.
+	// never erased. On a face Rapport holds (A-27) it rises above Rapport's ([Face] react, FaceCompose.h).
 	// [Mouth] face=id:contact:depth:stroke,...
 	struct FaceTerm { int id; float atContact, atDepth, atStroke; };
 	const int kMaxFace = 16;
@@ -75,10 +75,12 @@ namespace
 
 	// Rapport's face authority (A-27, FaceAuthority.h), ocbp.ini [Face]:
 	//   authority=1  Rapport's faces are written here (0: no listener, no hello, Rapport keeps its own way)
+	//   react=1      the face while the mouth is busy (A-26) rises above a held face too (FaceCompose.h)
 	//   probe=0      1: log what each line's lip sync moves on a held face (a research aid, off for players)
 	//   test=<hex>   the self-test: this plugin sends itself, through F4SE, the messages Rapport would
 	//                (FaceAuthority::TestFace for that actor), held 20 s and released 10 s, over and over
 	bool authority = true;
+	bool react = true;
 	bool probe = false;
 	std::uint32_t testConfigured = 0;           // [Face] test as read; latched into testForm on a load
 
@@ -288,7 +290,7 @@ namespace
 		if (probe)
 			std::memcpy(now.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(now.mfg));
 		// Rapport's face, then the contact mouth, then A-26 (FaceCompose.h)
-		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.speaking, o.mouth);
+		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.speaking, o.mouth, react);
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
 			written[data] = now;
@@ -472,6 +474,7 @@ static std::uint32_t ParseForm(const std::string& text)
 void LoadFaceConfig(INIReader& reader)
 {
 	authority = reader.GetBoolean("Face", "authority", true);
+	react = reader.GetBoolean("Face", "react", true);
 	probe = reader.GetBoolean("Face", "probe", false);
 	std::string test = reader.Get("Face", "test", "");
 	testConfigured = ParseForm(test);
@@ -520,9 +523,9 @@ void InstallMouthHook()
 		*reinterpret_cast<const uintptr_t*>(s + 6) == reinterpret_cast<uintptr_t>(&HookMerge);
 	hooked = reaches;
 	Note("mouth|on", "[mouth] %s: mouth %s (%d chain(s), props %d, gap F %.2f M %.2f), [Face] authority %d, "
-		"probe %d; the merge's call hooked, its code untouched (prologue still the engine's: %d)\n",
+		"react %d, probe %d; the merge's call hooked, its code untouched (prologue still the engine's: %d)\n",
 		reaches ? "on" : "OFF, the hooked call does not reach it", enabled ? "on" : "off", (int)chainNames.size(),
-		(int)useProps, femaleGap, maleGap, (int)authority, (int)probe,
+		(int)useProps, femaleGap, maleGap, (int)authority, (int)react, (int)probe,
 		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
 }
 
