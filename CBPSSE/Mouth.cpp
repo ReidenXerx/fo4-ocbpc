@@ -845,7 +845,8 @@ void SayFaceHello()
 		Note("face|hello", "[face] no hello: the merge is not hooked, so Rapport keeps its own way\n");
 		return;
 	}
-	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatures };
+	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatureSetClear |
+		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) };
 	bool heard = messaging->Dispatch(selfHandle, FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
 		: "[face] hello not heard: Rapport is not loaded, or is not listening to \"OCBPC plugin\"\n");

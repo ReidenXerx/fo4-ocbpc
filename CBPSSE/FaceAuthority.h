@@ -37,7 +37,13 @@ namespace FaceAuthority
 	constexpr std::uint32_t kClear = 0x52464143;    // 'RFAC'
 	constexpr std::uint32_t kHello = 0x52464148;    // 'RFAH'
 	constexpr std::uint32_t kVersion = 1;
-	constexpr std::uint32_t kFeatures = 1;          // bit 0: set/clear with the speaking bit
+	// The hello's features: what this build does with a held face, so the sender can rely on it
+	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
+	constexpr std::uint32_t kFeatureEngineLines = 1u << 1;   // while the engine plays a line on a held face,
+	                                                         // the MOUTH ids are its lip sync: no need to
+	                                                         // clear them or set bit 63 for a line
+	constexpr std::uint32_t kFeatureReaction = 1u << 2;      // during oral contact the reaction (A-26) may
+	                                                         // RAISE brows, cheeks and nose above a held face
 	constexpr int kMorphs = 54;
 	constexpr int kSpeakingBit = 63;
 
