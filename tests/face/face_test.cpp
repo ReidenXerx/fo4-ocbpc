@@ -551,6 +551,32 @@ int main()
 		Check("a Clear clears both", Snapshot().empty());
 	}
 
+	printf("the fitted lips (A-32): they replace jaw, funnel and lift, by inside\n");
+	{
+		float w[kMorphs] = {};
+		w[2] = 0.1f;                                // the animation's jaw
+		w[20] = 0.4f;                               // and its Upper Lip Down
+		FaceCompose::Mouth m;
+		m.inside = 0.5f;
+		m.jaw = 0.9f;                               // the old path's jaw: must NOT show when lips are fitted
+		m.funnel = 0.7f;
+		m.lipCount = 3;
+		m.lipId[0] = 2;  m.lipValue[0] = 0.7f;      // jaw
+		m.lipId[1] = 20; m.lipValue[1] = 0.0f;      // Upper Lip Down eased off
+		m.lipId[2] = 14; m.lipValue[2] = 1.0f;      // a brow: not a mouth id, refused
+		FaceCompose::Engine keep;
+		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
+		Check("half inside: the jaw halfway from the animation's 0.1 to the fit's 0.7", Near(w[2], 0.4f));
+		Check("half inside: Upper Lip Down halfway from 0.4 to 0", Near(w[20], 0.2f));
+		Check("the old funnel does not show when lips are fitted", Near(w[22], 0.0f) && Near(w[46], 0.0f));
+		Check("a non-mouth id sent as a lip is refused", Near(w[14], 0.0f));
+		float v[kMorphs] = {};
+		m.floor = 0.6f;
+		m.lipValue[0] = 0.2f;
+		FaceCompose::AfterMerge(v, keep, nullptr, false, m, true);
+		Check("a tip on its way still opens the jaw to its floor over the fit", Near(v[2], 0.6f));
+	}
+
 	printf("store\n");
 	{
 		Face held = RapportFace(0.3f, 0.3f);

@@ -23,7 +23,8 @@
 //      `deep` (how deep the contact is), so a pleading face can frown as the shaft goes deep, a thing a
 //      raise-only layer cannot do (the brows must come DOWN). Never a MOUTH id; the blink keeps its max;
 //   2. the contact mouth (A-20): from whatever the jaw is now, open to what is inside, by `inside`;
-//      only the jaw, the two funnels and the upper lip (2, 21, 22, 44, 46);
+//      only the jaw, the two funnels and the upper lip (2, 21, 22, 44, 46), or (A-32) the lips fitted
+//      round it: those and Lower Lip Down / Up and Upper Lip Down (11, 12, 20, 34, 35, 43);
 //   3. the face while the mouth is busy (A-26): only RAISES its own ids (never Rapport's MOUTH ids
 //      nor the blink: AfterMerge skips them, the loader refuses them), by at most its terms, and only
 //      as far as `inside`, so it
@@ -55,6 +56,9 @@ namespace FaceCompose
 		float inside = 0.0f;                        // 0..1: how far the contact mouth has taken over
 		float deep = 0.0f;                          // 0..1: how deep the contact is (A-29's blend)
 		float jaw = 0.0f, floor = 0.0f, funnel = 0.0f, lift = 0.0f;
+		int lipCount = 0;                           // A-32: the lips fitted round what is inside (LipFit);
+		int lipId[kMaxTerms] = {};                  // when there are any, they replace jaw, funnel and lift
+		float lipValue[kMaxTerms] = {};
 		int termCount = 0;                          // A-26: raise termId toward termValue x inside
 		int termId[kMaxTerms] = {};
 		float termValue[kMaxTerms] = {};

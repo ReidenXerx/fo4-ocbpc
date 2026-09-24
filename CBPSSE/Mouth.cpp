@@ -18,6 +18,7 @@
 #include "f4se_common/Relocation.h"
 #include "FaceAuthority.h"
 #include "FaceCompose.h"
+#include "LipFit.h"
 #include "Aim.h"
 
 #include <windows.h>
@@ -26,6 +27,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -59,6 +61,15 @@ namespace
 	float closeRate = 6.0f;          // 1/s toward a narrower one
 	float blendRate = 12.0f;         // 1/s: how fast the override takes over and gives the mouth back
 	float holdSeconds = 0.35f;       // keeps the shape between two strokes
+
+	// The lips round what is inside (A-32, LipFit.h): per sex, how each mouth morph moves the lips' inner
+	// edges at lipXs across the mouth, in the head's units ([Mouth] lipXs, lip<F|M><id>, tools/lips.py).
+	// With a table, the fit replaces jaw/funnel/lift: the old gap (femaleGap) was the outer lips' distance,
+	// and at the inner edge Jaw Open 1.0 opens 1.91, so the jaw opened a third too little (the clipping).
+	const int kLipIds[] = { 2, 22, 46, 21, 44, 11, 34, 20, 43, 12, 35 };
+	float lipXs[LipFit::kSamples] = { -1.2f, -0.8f, -0.4f, 0.0f, 0.4f, 0.8f, 1.2f };
+	LipFit::Table lipTable[2];       // 0 female, 1 male; count 0 = none (the old jaw/funnel/lift)
+	LipFit::Params lipParams;
 
 	// The rest of the face while the mouth is busy (the owner, 2026-09-24: "expressions on the face
 	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
@@ -131,6 +142,7 @@ namespace
 		unsigned frame = 0;
 		float depth = 0.0f, lastDepth = -1.0f, stroke = 0.0f;
 		float face[kMaxFace] = {};
+		float lip[LipFit::kMaxMorphs] = {};     // A-32: the fitted lips as they show (eased toward the fit)
 	};
 	std::unordered_map<UInt32, State> states;
 	unsigned frameCount = 0;
@@ -444,6 +456,42 @@ void LoadMouthConfig(INIReader& reader)
 	faceStroke = (std::max)(1.0f, (float)reader.GetReal("Mouth", "faceStroke", faceStroke));
 	faceRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "faceRate", faceRate));
 	strokeRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "strokeRate", strokeRate));
+	// A-32's lip table: all of it or none of it (a partial table would fit the lips with half the morphs)
+	{
+		auto xs = Split(reader.Get("Mouth", "lipXs", ""), ',');
+		bool xsOk = xs.size() == (size_t)LipFit::kSamples;
+		for (int k = 0; xsOk && k < LipFit::kSamples; k++)
+			lipXs[k] = (float)std::atof(xs[k].c_str());
+		const char* sexes[2] = { "F", "M" };
+		for (int s = 0; s < 2; s++) {
+			LipFit::Table t;
+			bool ok = xsOk;
+			for (int id : kLipIds) {
+				auto halves = Split(reader.Get("Mouth", std::string("lip") + sexes[s] + std::to_string(id), ""), ';');
+				if (halves.size() != 2) {
+					ok = false;
+					break;
+				}
+				auto up = Split(halves[0], ','), lo = Split(halves[1], ',');
+				if (up.size() != (size_t)LipFit::kSamples || lo.size() != (size_t)LipFit::kSamples) {
+					ok = false;
+					break;
+				}
+				int m = t.count++;
+				t.id[m] = id;
+				for (int k = 0; k < LipFit::kSamples; k++) {
+					t.up[m][k] = (float)std::atof(up[k].c_str());
+					t.lo[m][k] = (float)std::atof(lo[k].c_str());
+				}
+			}
+			lipTable[s] = ok ? t : LipFit::Table{};
+		}
+		lipParams.clearance = (float)reader.GetReal("Mouth", "lipClearance", lipParams.clearance);
+		Note("mouth|lips|" + std::to_string(lipTable[0].count) + "|" + std::to_string(lipTable[1].count),
+			lipTable[0].count || lipTable[1].count ? "[mouth] lips fitted round what is inside: %d morphs (women), %d (men)\n"
+			: "[mouth] no lip table ([Mouth] lip*): the jaw opens by femaleGap/maleGap as before (%d/%d)\n",
+			lipTable[0].count, lipTable[1].count);
+	}
 	// face=id:contact:depth:stroke,... ids 0-49 of the expression table; never a mouth id (Rapport's
 	// MOUTH set: the contact mouth's and a line's lip sync) nor the blink
 	faceTerms.clear();
@@ -678,6 +726,8 @@ void UpdateMouths()
 		float need = 0.0f, over = -1e9f, approach = 0.0f, depth = 0.0f;
 		bool inside = false;
 		const Chain* who = nullptr;
+		struct Section { float qs, qu, hs, hu; };     // A-32: where each crossing cuts her lip plane
+		std::vector<Section> sections;
 		for (auto& ch : chains) {
 			if (ch.owner == a && !ch.prop)
 				continue;                         // her own penis bones are never in her mouth
@@ -690,6 +740,7 @@ void UpdateMouths()
 				if (std::fabs(qs) > halfWidth || qu < -below || qu > above)
 					return;
 				float hu = SectionHalfU(dir, F, U, r);
+				sections.push_back(Section{ qs, qu, SectionHalfU(dir, F, S, r), hu });
 				inside = true;
 				crossed = true;
 				who = &ch;
@@ -735,6 +786,34 @@ void UpdateMouths()
 			st.funnel = Toward(st.funnel, funnelMax, openRate, dt);
 			st.lift = Toward(st.lift, liftT, liftT > st.lift ? openRate : closeRate, dt);
 			st.sinceContact = 0.0f;
+			const LipFit::Table& lt = lipTable[male ? 1 : 0];
+			if (lt.count > 0) {
+				// A-32: what crosses her lips, in the head's own units (the table's), across the mouth; the
+				// head's +x is S = F x U. Several crossings (two fingers): the lips go round all of them.
+				LipFit::Want want;
+				float sc = t.scale > 0.01f ? t.scale : 1.0f;
+				for (int k = 0; k < LipFit::kSamples; k++) {
+					for (const Section& sec : sections) {
+						float dx = (lipXs[k] - sec.qs / sc) / (std::max)(sec.hs / sc, 0.05f);
+						if (std::fabs(dx) >= 1.0f)
+							continue;
+						float h = sec.hu / sc * std::sqrt(1.0f - dx * dx);
+						float top = sec.qu / sc + h, bottom = sec.qu / sc - h;
+						want.top[k] = want.spans[k] ? (std::max)(want.top[k], top) : top;
+						want.bottom[k] = want.spans[k] ? (std::min)(want.bottom[k], bottom) : bottom;
+						want.spans[k] = true;
+					}
+				}
+				float fit[LipFit::kMaxMorphs] = {};
+				LipFit::Fit(lt, want, lipParams, st.lip, fit);
+				for (int m = 0; m < lt.count; m++)
+					st.lip[m] = Toward(st.lip[m], fit[m], fit[m] > st.lip[m] ? openRate : closeRate, dt);
+				char lk[96];
+				_snprintf_s(lk, sizeof(lk), _TRUNCATE, "mouth|lips|%08X", a->formID);
+				Note(lk, "[mouth] %08X: lips round it: jaw %.2f, funnels %.2f/%.2f, upper lip up %.2f/%.2f down %.2f/%.2f, "
+					"lower lip down %.2f/%.2f up %.2f/%.2f\n", a->formID, fit[0], fit[1], fit[2], fit[3], fit[4], fit[7], fit[8],
+					fit[5], fit[6], fit[9], fit[10]);
+			}
 			char pair[96];
 			_snprintf_s(pair, sizeof(pair), _TRUNCATE, "mouth|%08X|%08X|%s", a->formID,
 				who && who->owner ? who->owner->formID : 0, who ? who->name.c_str() : "");
@@ -770,6 +849,12 @@ void UpdateMouths()
 			o.mouth.floor = st.floor;
 			o.mouth.funnel = st.funnel;
 			o.mouth.lift = st.lift;
+			const LipFit::Table& lt = lipTable[actorUtils::IsActorMale(a) ? 1 : 0];
+			o.mouth.lipCount = (std::min)(lt.count, FaceCompose::kMaxTerms);   // A-32: they replace jaw/funnel/lift
+			for (int k = 0; k < o.mouth.lipCount; k++) {
+				o.mouth.lipId[k] = lt.id[k];
+				o.mouth.lipValue[k] = st.lip[k];
+			}
 			o.mouth.termCount = terms;
 			for (int k = 0; k < terms; k++) {
 				o.mouth.termId[k] = faceTerms[k].id;

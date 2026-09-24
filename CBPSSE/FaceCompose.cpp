@@ -24,12 +24,22 @@ namespace FaceCompose
 			if (held->deepMask)
 				FaceAuthority::BlendDeep(w, keep.weight, *held, m.deep);   // 1b: the deep face, by depth
 		}
-		float jaw = w[kJawOpen] + (m.jaw - w[kJawOpen]) * m.inside;
-		w[kJawOpen] = (std::max)(jaw, m.floor);
-		w[kLowerLipFunnel] += (m.funnel - w[kLowerLipFunnel]) * m.inside;
-		w[kUpperLipFunnel] += (m.funnel - w[kUpperLipFunnel]) * m.inside;
-		w[kLeftUpperLipUp] += (m.lift - w[kLeftUpperLipUp]) * m.inside;
-		w[kRightUpperLipUp] += (m.lift - w[kRightUpperLipUp]) * m.inside;
+		if (m.lipCount > 0) {                       // A-32: the fitted lips, each by inside
+			for (int k = 0; k < m.lipCount && k < kMaxTerms; k++) {
+				int id = m.lipId[k];
+				if (id >= 0 && id < kMorphs && FaceAuthority::IsMouth(id))
+					w[id] += (m.lipValue[k] - w[id]) * m.inside;
+			}
+			w[kJawOpen] = (std::max)(w[kJawOpen], m.floor);
+		}
+		else {
+			float jaw = w[kJawOpen] + (m.jaw - w[kJawOpen]) * m.inside;
+			w[kJawOpen] = (std::max)(jaw, m.floor);
+			w[kLowerLipFunnel] += (m.funnel - w[kLowerLipFunnel]) * m.inside;
+			w[kUpperLipFunnel] += (m.funnel - w[kUpperLipFunnel]) * m.inside;
+			w[kLeftUpperLipUp] += (m.lift - w[kLeftUpperLipUp]) * m.inside;
+			w[kRightUpperLipUp] += (m.lift - w[kRightUpperLipUp]) * m.inside;
+		}
 		if (held && !reactOverHeld)
 			return;                                 // [Face] react=0: Rapport's face alone
 		for (int k = 0; k < m.termCount && k < kMaxTerms; k++) {
