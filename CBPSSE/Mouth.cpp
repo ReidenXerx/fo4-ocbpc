@@ -18,6 +18,7 @@
 #include "f4se_common/Relocation.h"
 #include "FaceAuthority.h"
 #include "FaceCompose.h"
+#include "Aim.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -371,8 +372,10 @@ namespace
 		}
 		char key[48];
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|speech|%08X|%d", formID, s.lines);
-		Note(key, "[face] %08X (%s) spoke a line for %.1f s: its lip sync moved %s; held steady %s (MFG layer)\n",
-			formID, s.held ? "held by Rapport" : "its own face", s.seconds, IdList(moved).c_str(), IdList(steady).c_str());
+		// in a scene, AAF writes expressions to the same MFG layer: a line outside one is the clean sample
+		Note(key, "[face] %08X (%s, %s) spoke a line for %.1f s: its lip sync moved %s; held steady %s (MFG layer)\n",
+			formID, s.held ? "held by Rapport" : "its own face", AimSeesScene(formID) ? "in a scene" : "outside scenes",
+			s.seconds, IdList(moved).c_str(), IdList(steady).c_str());
 	}
 
 	// speaking and mfg are what the engine's last merge of this face left (HookMerge keeps them)

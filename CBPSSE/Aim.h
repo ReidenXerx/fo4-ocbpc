@@ -20,3 +20,4 @@ void LoadAimConfig(INIReader& reader);
 void UpdateAims();                         // scan.cpp: each frame, before the colliders are built
 void ResetAims();                          // a save is loading: nothing we wrote is on the new skeletons
 bool RegisterAimFuncs(VirtualMachine* vm);
+bool AimSeesScene(unsigned int formID);    // in an AAF scene, per Anatomy:Arousal's last report (the probe)

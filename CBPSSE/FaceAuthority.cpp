@@ -15,14 +15,13 @@ namespace FaceAuthority
 		std::mutex lock;
 		std::unordered_map<std::uint32_t, Face> held;
 
-		// The mouth handed back to the engine while an actor speaks: Rapport's own MOUTH set
-		// (fo4-rapport tools/make_mfg.py), a superset of whatever lip sync drives. Ids are the
-		// engine's 50-morph expression table: the jaw (1 2 6 29), both funnels (22 46), the rolls
-		// (23 24 47 48), pucker (25), sticky lips (45), the tongue (49), and per side the lip corners
-		// in/out, lower lip down/up, upper lip down/up, smile and frown.
-		constexpr int kMouth[] = { 1, 2, 6, 29, 22, 46, 23, 24, 47, 48, 25, 45, 49,
-			7, 8, 11, 12, 20, 21, 17, 5,
-			30, 31, 34, 35, 43, 44, 40, 28 };
+		// The mouth handed back to the engine while an actor speaks: Rapport's own MOUTH set (fo4-rapport
+		// faces.json "mouth"). Measured 2026-09-24 by [Face] probe on 14 lines: the ids lip sync moved,
+		// minus the six Rapport attributes to a face reaction (3/26, 4/27, 14/37). Ids are the engine's
+		// 50-morph expression table. Dropped from the first guess, never moved by a line: 5/28 (frown),
+		// 6/29 (jaw sideways), 8/31 (lip corner out). 23 ids.
+		constexpr int kMouth[] = { 1, 2, 7, 11, 12, 17, 20, 21, 22, 23, 24, 25,
+			30, 34, 35, 40, 43, 44, 45, 46, 47, 48, 49 };
 		constexpr int kLeftBlink = 18, kRightBlink = 41;
 	}
 

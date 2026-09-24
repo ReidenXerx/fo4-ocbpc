@@ -580,6 +580,11 @@ void UpdateAims()
 	}
 }
 
+bool AimSeesScene(unsigned int formID)
+{
+	return InScene(formID, NowMs());
+}
+
 bool RegisterAimFuncs(VirtualMachine* vm)
 {
 	vm->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, VMArray<Actor*>>("SetBusy", "AnatomyAim", SetBusy, vm));

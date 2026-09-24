@@ -231,7 +231,11 @@ int main()
 		int mouth = 0;
 		for (int i = 0; i < 50; i++)
 			mouth += IsMouth(i);
-		Check("the mouth set is Rapport's MOUTH: 29 ids", mouth == 29);
+		Check("the mouth set is Rapport's MOUTH: 23 ids (measured, faces.json)", mouth == 23);
+		Check("the frown, sideways jaw and lip corner out are not MOUTH (never moved by a line)",
+			!IsMouth(5) && !IsMouth(28) && !IsMouth(6) && !IsMouth(29) && !IsMouth(8) && !IsMouth(31));
+		Check("the A-26 brows and cheeks are not MOUTH", !IsMouth(3) && !IsMouth(26) && !IsMouth(4) &&
+			!IsMouth(27) && !IsMouth(14) && !IsMouth(37));
 		Face loud = held;
 		loud.value[3] = 7.0f;
 		loud.value[4] = -2.0f;
