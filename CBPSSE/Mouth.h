@@ -25,7 +25,9 @@ void UpdateMouths();
 
 // Rapport's face authority (fo4-anatomy A-27, FaceAuthority.h): the same hook writes the faces Rapport
 // holds, under the mouth. main.cpp forwards F4SE's own messages here.
+void LoadFaceConfig(INIReader& reader);         // ocbp.ini [Face]: authority, probe, test
 void ListenForFaces(F4SEMessagingInterface* messaging, PluginHandle self);   // PostLoad: every plugin is loaded
 void SayFaceHello();                            // PostPostLoad: Rapport listens by now
-void ReleaseAllFaces(const char* why);          // PreLoadGame, NewGame
-void StartFaceAuthorityTest();                  // PostLoadGame: [Mouth] authorityTest, if set
+void ReleaseAllFaces(const char* why);          // PreLoadGame, PostLoadGame, NewGame
+void RefreshHeldFaces();                        // a cell change: the frame OCBPC's scan skips
+void StartFaceAuthorityTest();                  // PostLoadGame: [Face] test, if set

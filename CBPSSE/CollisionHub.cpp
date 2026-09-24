@@ -83,10 +83,22 @@ static FILE* AnatomyLog()
 static std::set<std::string> anatomyLogged;
 static std::mutex anatomyLock;   // Rapport's face messages arrive on a Papyrus thread, the rest on the main one
 
+static const size_t kLogKeys = 4000;   // distinct lines per run; past it, one line says so and no more
+static bool anatomyFull = false;       // that line is written
+
 static void AnatomyNote(const std::string& key, const char* fmt, ...)
 {
 	std::lock_guard<std::mutex> guard(anatomyLock);
-	if (anatomyLogged.size() > 4000 || !anatomyLogged.insert(key).second)
+	if (anatomyLogged.size() >= kLogKeys) {
+		FILE* log = anatomyFull ? nullptr : AnatomyLog();
+		anatomyFull = true;
+		if (log) {
+			fprintf(log, "[log] full: %u distinct lines, nothing more is noted this run\n", (unsigned)kLogKeys);
+			fflush(log);
+		}
+		return;
+	}
+	if (!anatomyLogged.insert(key).second)
 		return;
 	FILE* log = AnatomyLog();
 	if (!log)
@@ -101,6 +113,12 @@ static void AnatomyNote(const std::string& key, const char* fmt, ...)
 void AnatomyLogLine(const std::string& key, const char* line)
 {
 	AnatomyNote(key, "%s", line);
+}
+
+bool AnatomyLogSeen(const std::string& key)
+{
+	std::lock_guard<std::mutex> guard(anatomyLock);
+	return anatomyFull || anatomyLogged.count(key) != 0;
 }
 
 static bool LooksGenital(const char* name)

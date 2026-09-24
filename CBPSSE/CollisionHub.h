@@ -27,6 +27,8 @@ void CreateOtherColliders();
 
 // fo4-anatomy discovery log (anatomy_ocbpc.log): writes the line once per key
 void AnatomyLogLine(const std::string& key, const char* line);
+// ... and whether that key is written already, or the log is full (a caller need not format the line)
+bool AnatomyLogSeen(const std::string& key);
 
 void UpdateColliderPositions(std::vector<Collision> &colliderList);
 

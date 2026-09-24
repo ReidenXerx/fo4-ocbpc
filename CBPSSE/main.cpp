@@ -73,6 +73,9 @@ void MessageHandler(F4SEMessagingInterface::Message * msg)
         case F4SEMessagingInterface::kMessage_PostLoadGame:
         {
             logger.Info("kMessage_PostLoadGame\n");
+            // again: a face Rapport sent while the load ran (after PreLoadGame's release) would outlive
+            // the save it belonged to, and Rapport forgets its own on a load
+            ReleaseAllFaces("a save finished loading");
             StartFaceAuthorityTest();
         }
         break;
@@ -158,13 +161,15 @@ extern "C"
         logger.Error("Loading Config\n");
         LoadConfig();
         LoadCollisionConfig();
-        // fo4-anatomy: F4SE's own messages (PostLoad, loads) drive Rapport's face authority
-        g_messaging = (F4SEMessagingInterface *)f4se->QueryInterface(kInterface_Messaging);
-        if (!g_messaging || !g_messaging->RegisterListener(g_pluginHandle, "F4SE", MessageHandler))
-            logger.Error("Couldn't listen to F4SE's messages: no face authority\n");
         logger.Error("Hooking Game\n");
         DoHook();
         InstallMouthHook();   // fo4-anatomy: the mouth (ocbp.ini [Mouth]); checks the build first
+        // fo4-anatomy: F4SE's own messages (PostLoad, loads) drive Rapport's face authority. Last, after
+        // the hooks: F4SE unloads a plugin whose Load faults, and a listener registered before the fault
+        // would be called in a DLL that is gone.
+        g_messaging = (F4SEMessagingInterface *)f4se->QueryInterface(kInterface_Messaging);
+        if (!g_messaging || !g_messaging->RegisterListener(g_pluginHandle, "F4SE", MessageHandler))
+            logger.Error("Couldn't listen to F4SE's messages: no face authority\n");
         logger.Error("CBP Load Complete\n");
         return true;
     }

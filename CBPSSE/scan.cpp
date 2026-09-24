@@ -171,6 +171,7 @@ void UpdateActors() {
         curCell = cell;
         actors.clear();
         actorEntries.clear();
+        RefreshHeldFaces();   // fo4-anatomy: no scan this frame; the held faces are found again by form
     } else {
         // Attempt to get cell's objects
         for (int i = 0; i < cell->objectList.count; i++) {

@@ -50,8 +50,8 @@ namespace FaceAuthority
 			}
 			SetMessage m;
 			std::memcpy(&m, data, sizeof(m));
-			if (m.version != kVersion) {
-				d.refused = "a set of another version";
+			if (m.version < kVersion) {
+				d.refused = "a set of version 0";       // a later version only appends: read what we know
 				return d;
 			}
 			if (m.formID == 0) {
@@ -63,8 +63,12 @@ namespace FaceAuthority
 					d.refused = "a set with a value that is not a number";
 					return d;
 				}
-			d.command = Command::Set;
 			d.formID = m.formID;
+			if (!(m.owned & ((1ull << kMorphs) - 1))) {
+				d.command = Command::Clear;             // a face that holds no morph holds nothing
+				return d;
+			}
+			d.command = Command::Set;
 			d.face.owned = m.owned;
 			std::memcpy(d.face.value, m.value, sizeof(m.value));
 			return d;
@@ -75,8 +79,8 @@ namespace FaceAuthority
 		}
 		ClearMessage m;
 		std::memcpy(&m, data, sizeof(m));
-		if (m.version != kVersion) {
-			d.refused = "a clear of another version";
+		if (m.version < kVersion) {
+			d.refused = "a clear of version 0";
 			return d;
 		}
 		d.command = Command::Clear;
@@ -84,9 +88,9 @@ namespace FaceAuthority
 		return d;
 	}
 
-	void Compose(float* weights, const Face& face)
+	void Compose(float* weights, const Face& face, bool speaking)
 	{
-		const bool speaking = (face.owned >> kSpeakingBit) & 1u;
+		speaking = speaking || ((face.owned >> kSpeakingBit) & 1u);
 		for (int i = 0; i < kMorphs; i++) {
 			if (!((face.owned >> i) & 1u))
 				continue;                               // not Rapport's: the merge stands
@@ -133,11 +137,5 @@ namespace FaceAuthority
 	{
 		std::lock_guard<std::mutex> guard(lock);
 		return std::vector<std::pair<std::uint32_t, Face>>(held.begin(), held.end());
-	}
-
-	std::size_t Count()
-	{
-		std::lock_guard<std::mutex> guard(lock);
-		return held.size();
 	}
 }

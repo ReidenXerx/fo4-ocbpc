@@ -317,6 +317,7 @@ bool LoadConfig() {
 
     logger.Error("Finished CBP Config\n");
     LoadMouthConfig(extrasSections.count("Mouth") ? anatomyExtras : configReader);
+    LoadFaceConfig(extrasSections.count("Face") ? anatomyExtras : configReader);
     LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
 
     return reloadActors;

@@ -183,6 +183,7 @@
     <ClInclude Include="Bones.h" />
     <ClInclude Include="Mouth.h" />
     <ClInclude Include="FaceAuthority.h" />
+    <ClInclude Include="FaceCompose.h" />
     <ClInclude Include="Thing.h" />
     <ClInclude Include="Utility.hpp" />
   </ItemGroup>
@@ -217,6 +218,7 @@
     <ClCompile Include="Bones.cpp" />
     <ClCompile Include="Mouth.cpp" />
     <ClCompile Include="FaceAuthority.cpp" />
+    <ClCompile Include="FaceCompose.cpp" />
     <ClCompile Include="scan.cpp" />
     <ClCompile Include="Thing.cpp" />
   </ItemGroup>

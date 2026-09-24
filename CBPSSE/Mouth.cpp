@@ -17,6 +17,7 @@
 #include "f4se_common/BranchTrampoline.h"
 #include "f4se_common/Relocation.h"
 #include "FaceAuthority.h"
+#include "FaceCompose.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -72,10 +73,14 @@ namespace
 	float faceRate = 6.0f;           // 1/s toward the new expression
 	float strokeRate = 4.0f;         // 1/s: how fast the felt stroke speed follows the real one
 
-	// Rapport's face authority (A-27, FaceAuthority.h). [Mouth] authorityTest=<form id, hex> makes this
-	// plugin send itself, through F4SE, the messages Rapport would: FaceAuthority::TestFace for that
-	// actor, held 20 s and released 10 s, over and over. Read at startup; 0 = off.
-	std::uint32_t authorityTest = 0;
+	// Rapport's face authority (A-27, FaceAuthority.h), ocbp.ini [Face]:
+	//   authority=1  Rapport's faces are written here (0: no listener, no hello, Rapport keeps its own way)
+	//   probe=0      1: log what each line's lip sync moves on a held face (a research aid, off for players)
+	//   test=<hex>   the self-test: this plugin sends itself, through F4SE, the messages Rapport would
+	//                (FaceAuthority::TestFace for that actor), held 20 s and released 10 s, over and over
+	bool authority = true;
+	bool probe = false;
+	std::uint32_t testConfigured = 0;           // [Face] test as read; latched into testForm on a load
 
 	// ---- the engine, 1.10.163 (Steam and GOG share the code: checked byte for byte) ----
 	RelocAddr<uintptr_t> mergeFn(0x6689D0);
@@ -84,7 +89,8 @@ namespace
 	const unsigned char kMergePrologue[] = { 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x68, 0x18, 0x48, 0x89, 0x78, 0x20,
 	                                         0x41, 0x56, 0x48, 0x83, 0xEC, 0x60 };
 	const int kWeights = 0x18;                  // float[54]: what the face mesh is built from
-	const int kAnimation = 0x1C8;               // float[54]: the animation's own values (keyframes, lip sync)
+	const int kMfg = 0xF0;                      // float[54]: MFG, and the lip sync of a line being spoken
+	const int kLipSync = 0x2C0;                 // the lip-sync object of the line being spoken, or null
 	const int kMorphs = 54;
 	const int kExpressionMorphs = 50;           // ids 0-49 are the named expression table
 	const int kLeftUpperEyeLidDown = 18;        // the blink: never ours to hold
@@ -99,15 +105,23 @@ namespace
 	struct Override
 	{
 		void* data;
-		float inside, jaw, floor, funnel, lift;
-		int faceCount;
-		int faceId[kMaxFace];
-		float faceValue[kMaxFace];
+		UInt32 formID;
+		FaceCompose::Mouth mouth;               // the contact mouth's share (all 0 on a face it is not at)
 		bool held;                              // Rapport holds this face (face authority)
 		FaceAuthority::Face rapport;            // and this is the face it holds
 	};
 	std::mutex publishLock;   // the face update may run on another thread than UpdateActors
 	std::vector<Override> published;
+	// Per face we write over, kept by HookMerge (under publishLock): the engine's own weights from its
+	// last merge (FaceCompose.h: the engine must never read ours back), and for the probe the engine's
+	// lip state and its MFG layer as that merge left them
+	struct Written
+	{
+		FaceCompose::Engine engine;
+		bool speaking = false;
+		float mfg[kMorphs] = {};
+	};
+	std::unordered_map<void*, Written> written;
 
 	struct State
 	{
@@ -121,10 +135,10 @@ namespace
 	unsigned frameCount = 0;
 	LARGE_INTEGER lastTick = {};
 
-	// What lip sync moves (Rapport asked, 2026-09-24, to narrow the mouth it hands back for a line):
-	// while a held face has handed the mouth back, its animation layer is watched, and when the face
-	// takes it again the log names the ids that MOVED (lip sync) apart from the ones that only HELD a
-	// value (an expression the line carries). A few lines per actor are enough.
+	// What lip sync moves ([Face] probe; Rapport asked, 2026-09-24, to narrow its MOUTH set): while the
+	// engine plays a line on a held face, its MFG layer (+0xF0, where the lip sync goes) is watched, and
+	// when the line ends the log names the ids that MOVED (the lip sync) apart from the ones that only
+	// HELD a value. A few lines per actor are enough.
 	struct Speech
 	{
 		bool on = false;
@@ -144,6 +158,7 @@ namespace
 
 	std::atomic<bool> testOn{ false };          // the self-test runs (from the first load on)
 	std::atomic<bool> testRestart{ false };
+	std::atomic<std::uint32_t> testForm{ 0 };   // its actor, latched when it starts: a reload cannot move it
 	float testClock = 0.0f;
 	bool testHeld = false;
 
@@ -184,6 +199,8 @@ namespace
 
 	void Note(const std::string& key, const char* fmt, ...)
 	{
+		if (AnatomyLogSeen(key))
+			return;                               // said once already: not even formatted again
 		char line[512];
 		va_list args;
 		va_start(args, fmt);
@@ -228,11 +245,24 @@ namespace
 		return std::sqrt(mu * mu + nu * nu);
 	}
 
+	// A line is playing: the engine's own test (+0x667E86, +0x668302), state 3 or 4 of the lip-sync
+	// object. Read on the merge's thread right after it: the end-of-line release (+0x668040, the merge's
+	// last call) nulls the pointer before it lets the object go.
+	bool LipPlaying(void* data)
+	{
+		const char* lip = *reinterpret_cast<const char* const*>(reinterpret_cast<const char*>(data) + kLipSync);
+		if (!lip)
+			return false;
+		std::uint32_t state = (*reinterpret_cast<const std::uint32_t*>(lip + 0xC) >> 28) & 7;
+		return state == 3 || state == 4;
+	}
+
 	bool HookMerge(void* data, float dt, bool flag)
 	{
-		bool changed = origMerge(data, dt, flag);
+		float* w = reinterpret_cast<float*>(reinterpret_cast<char*>(data) + kWeights);
 		Override o;
 		bool found = false;
+		FaceCompose::Engine last;
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
 			for (auto& p : published) {
@@ -242,24 +272,26 @@ namespace
 					break;
 				}
 			}
+			auto it = written.find(data);
+			if (it != written.end()) {
+				last = it->second.engine;
+				if (!found)
+					written.erase(it);            // this merge gives the face back to the engine
+			}
 		}
+		FaceCompose::BeforeMerge(w, last);        // the engine reads its own last face back, never ours
+		bool changed = origMerge(data, dt, flag);
 		if (!found)
-			return changed;
-		float* w = reinterpret_cast<float*>(reinterpret_cast<char*>(data) + kWeights);
-		// Rapport's face first (it is the source of truth for the faces it holds); the physical mouth
-		// below still opens around what is in it, and blends back to Rapport's value after
-		if (o.held)
-			FaceAuthority::Compose(w, o.rapport);
-		float jaw = w[kJawOpen] + (o.jaw - w[kJawOpen]) * o.inside;
-		w[kJawOpen] = (std::max)(jaw, o.floor);
-		w[kLowerLipFunnel] += (o.funnel - w[kLowerLipFunnel]) * o.inside;
-		w[kUpperLipFunnel] += (o.funnel - w[kUpperLipFunnel]) * o.inside;
-		w[kLeftUpperLipUp] += (o.lift - w[kLeftUpperLipUp]) * o.inside;
-		w[kRightUpperLipUp] += (o.lift - w[kRightUpperLipUp]) * o.inside;
-		for (int k = 0; k < (o.held ? 0 : o.faceCount); k++) {   // the rest of the face: raised, never
-			int id = o.faceId[k];                                  // lowered; not on a face Rapport holds
-			if (id >= 0 && id < kMorphs)
-				w[id] = (std::max)(w[id], o.faceValue[k] * o.inside);
+			return changed || last.has;           // a face just let go is rebuilt as the engine's
+		Written now;
+		now.speaking = LipPlaying(data);
+		if (probe)
+			std::memcpy(now.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(now.mfg));
+		// Rapport's face, then the contact mouth, then A-26 (FaceCompose.h)
+		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.speaking, o.mouth);
+		{
+			std::lock_guard<std::mutex> guard(publishLock);
+			written[data] = now;
 		}
 		return true;                              // the mesh is rebuilt from what we wrote
 	}
@@ -273,21 +305,21 @@ namespace
 		published.swap(next);
 	}
 
-	// A held face on an actor the mouth has nothing to do with: the mouth's share is 0, so its writes in
-	// HookMerge leave Rapport's values as they are
-	Override HeldOnly(void* data, const FaceAuthority::Face& face)
+	// A held face on an actor the mouth has nothing to do with: the mouth's share is all 0, so its writes
+	// leave Rapport's values as they are
+	Override HeldOnly(void* data, UInt32 formID, const FaceAuthority::Face& face)
 	{
-		return Override{ data, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, {}, {}, true, face };
+		return Override{ data, formID, {}, true, face };
 	}
 
-	bool Speaking(const FaceAuthority::Face& face) { return (face.owned >> FaceAuthority::kSpeakingBit) & 1u; }
-
-	// The mouth is the engine's again while a line plays: by the speaking bit, or (Rapport's way, since
-	// 2026-09-24) by a mask that holds the face but not the jaw
-	bool MouthHandedBack(const FaceAuthority::Face& face)
+	// A held actor's face data, found by its form: for the actors OCBPC's scan does not reach (another
+	// cell, beyond its distance). Null unless it has 3D and a middle-high process with a face.
+	void* HeldFaceData(UInt32 formID)
 	{
-		const std::uint64_t table = (1ull << kExpressionMorphs) - 1;
-		return Speaking(face) || ((face.owned & table) && !((face.owned >> kJawOpen) & 1u));
+		Actor* a = DYNAMIC_CAST(LookupFormByID(formID), TESForm, Actor);
+		if (!a || (a->flags & TESForm::kFlag_IsDeleted) || !a->unkF0 || !a->unkF0->rootNode)
+			return nullptr;
+		return FaceData(a);
 	}
 
 	int OwnedCount(const FaceAuthority::Face& face)
@@ -327,11 +359,12 @@ namespace
 		}
 		char key[48];
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|speech|%08X|%d", formID, s.lines);
-		Note(key, "[face] %08X spoke for %.1f s: the animation layer moved %s; held steady %s\n", formID, s.seconds,
-			IdList(moved).c_str(), IdList(steady).c_str());
+		Note(key, "[face] %08X spoke a line for %.1f s: its lip sync moved %s; held steady %s (MFG layer)\n",
+			formID, s.seconds, IdList(moved).c_str(), IdList(steady).c_str());
 	}
 
-	void WatchSpeech(UInt32 formID, void* data, bool speaking, float dt)
+	// speaking and mfg are what the engine's last merge of this face left (HookMerge keeps them)
+	void WatchSpeech(UInt32 formID, bool speaking, const float* mfg, float dt)
 	{
 		if (!speaking) {
 			auto it = speech.find(formID);
@@ -341,18 +374,17 @@ namespace
 		}
 		Speech& s = speech[formID];
 		s.seen = frameCount;
-		const float* animation = reinterpret_cast<const float*>(reinterpret_cast<char*>(data) + kAnimation);
 		if (!s.on) {
 			s.on = true;
 			s.seconds = 0.0f;
 			for (int i = 0; i < kMorphs; i++)
-				s.lo[i] = s.hi[i] = animation[i];
+				s.lo[i] = s.hi[i] = mfg[i];
 			return;
 		}
 		s.seconds += dt;
 		for (int i = 0; i < kMorphs; i++) {
-			s.lo[i] = (std::min)(s.lo[i], animation[i]);
-			s.hi[i] = (std::max)(s.hi[i], animation[i]);
+			s.lo[i] = (std::min)(s.lo[i], mfg[i]);
+			s.hi[i] = (std::max)(s.hi[i], mfg[i]);
 		}
 	}
 }
@@ -421,17 +453,39 @@ void LoadMouthConfig(INIReader& reader)
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "mouth|face|%d|%d", (int)faceTerms.size(), refused);
 	Note(key, "[mouth] face while busy: %d term(s)%s\n", (int)faceTerms.size(),
 		refused ? " (some refused: bad form, out of range, the mouth's own or the blink)" : "");
-	authorityTest = (std::uint32_t)strtoul(reader.Get("Mouth", "authorityTest", "0").c_str(), nullptr, 16);
 	if (enabled && chainNames.empty() && !useProps)
 		enabled = false;                          // nothing could ever reach a mouth
+}
+
+// [Face] test=<form id>: hex, 1 to 8 digits, an optional 0x. Anything else is no test at all (strtoul
+// would read "false" as 0xFA).
+static std::uint32_t ParseForm(const std::string& text)
+{
+	std::string s = text;
+	if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+		s = s.substr(2);
+	if (s.empty() || s.size() > 8 || s.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+		return 0;
+	return (std::uint32_t)strtoul(s.c_str(), nullptr, 16);
+}
+
+void LoadFaceConfig(INIReader& reader)
+{
+	authority = reader.GetBoolean("Face", "authority", true);
+	probe = reader.GetBoolean("Face", "probe", false);
+	std::string test = reader.Get("Face", "test", "");
+	testConfigured = ParseForm(test);
+	if (!test.empty() && !testConfigured)
+		Note("face|test|refused", "[face] [Face] test=%s is not a form id (hex): no self-test\n", test.c_str());
 }
 
 void InstallMouthHook()
 {
 	if (hooked)
 		return;
-	if (!enabled) {
-		Note("mouth|off", "[mouth] off (ocbp.ini [Mouth] enabled=0 or no chains)\n");
+	if (!enabled && !authority) {
+		Note("mouth|off", "[mouth] off ([Mouth] enabled=0 or no chains) and [Face] authority=0: the merge is "
+			"not hooked\n");
 		return;
 	}
 	// never patch a build we have not read: the merge's prologue, the one call to it, and the vtable
@@ -465,9 +519,10 @@ void InstallMouthHook()
 	bool reaches = call[0] == 0xE8 && s[0] == 0xFF && s[1] == 0x25 && *reinterpret_cast<const uint32_t*>(s + 2) == 0 &&
 		*reinterpret_cast<const uintptr_t*>(s + 6) == reinterpret_cast<uintptr_t>(&HookMerge);
 	hooked = reaches;
-	Note("mouth|on", "[mouth] %s: %d chain(s), props %d, gap F %.2f M %.2f; the merge's call hooked, its code "
-		"untouched (prologue still the engine's: %d)\n", reaches ? "on" : "OFF, the hooked call does not reach it",
-		(int)chainNames.size(), (int)useProps, femaleGap, maleGap,
+	Note("mouth|on", "[mouth] %s: mouth %s (%d chain(s), props %d, gap F %.2f M %.2f), [Face] authority %d, "
+		"probe %d; the merge's call hooked, its code untouched (prologue still the engine's: %d)\n",
+		reaches ? "on" : "OFF, the hooked call does not reach it", enabled ? "on" : "off", (int)chainNames.size(),
+		(int)useProps, femaleGap, maleGap, (int)authority, (int)probe,
 		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
 }
 
@@ -486,8 +541,9 @@ void UpdateMouths()
 	dt = Clamp(dt, 0.0f, 0.1f);
 	frameCount++;
 
-	// the self-test ([Mouth] authorityTest): our own messages through F4SE, as Rapport's would come
-	if (testOn) {
+	// the self-test ([Face] test): our own messages through F4SE, as Rapport's would come
+	std::uint32_t test = testForm;
+	if (testOn && test) {
 		if (testRestart.exchange(false)) {
 			testClock = 0.0f;
 			testHeld = false;
@@ -498,11 +554,11 @@ void UpdateMouths()
 			testHeld = hold;
 			bool delivered;
 			if (hold) {
-				FaceAuthority::SetMessage m = FaceAuthority::TestFace(authorityTest);
+				FaceAuthority::SetMessage m = FaceAuthority::TestFace(test);
 				delivered = messaging->Dispatch(selfHandle, FaceAuthority::kSet, &m, sizeof(m), kSelf);
 			}
 			else {
-				FaceAuthority::ClearMessage m{ FaceAuthority::kVersion, authorityTest };
+				FaceAuthority::ClearMessage m{ FaceAuthority::kVersion, test };   // never form 0: everyone
 				delivered = messaging->Dispatch(selfHandle, FaceAuthority::kClear, &m, sizeof(m), kSelf);
 			}
 			if (!delivered)
@@ -511,7 +567,9 @@ void UpdateMouths()
 	}
 
 	// the faces Rapport holds: matched to the actors scanned below, and looked up by form for the rest
-	auto held = FaceAuthority::Snapshot();
+	std::vector<std::pair<std::uint32_t, FaceAuthority::Face>> held;
+	if (authority)
+		held = FaceAuthority::Snapshot();
 	std::unordered_map<UInt32, size_t> heldAt;
 	std::vector<bool> heldDone(held.size(), false);
 	for (size_t i = 0; i < held.size(); i++)
@@ -667,17 +725,22 @@ void UpdateMouths()
 		auto h = heldAt.find(a->formID);
 		const FaceAuthority::Face* rapport = h != heldAt.end() ? &held[h->second].second : nullptr;
 		if (st.inside > 0.001f || st.floor > 0.001f || rapport) {
-			Override o{ data, st.inside, st.jaw, st.floor, st.funnel, st.lift, terms, {}, {}, false, {} };
+			Override o{ data, a->formID, {}, false, {} };
+			o.mouth.inside = st.inside;
+			o.mouth.jaw = st.jaw;
+			o.mouth.floor = st.floor;
+			o.mouth.funnel = st.funnel;
+			o.mouth.lift = st.lift;
+			o.mouth.termCount = terms;
 			for (int k = 0; k < terms; k++) {
-				o.faceId[k] = faceTerms[k].id;
-				o.faceValue[k] = st.face[k];
+				o.mouth.termId[k] = faceTerms[k].id;
+				o.mouth.termValue[k] = st.face[k];
 			}
 			if (rapport) {
 				o.held = true;
 				o.rapport = *rapport;
 				heldDone[h->second] = true;
 				Applied(a->formID, "found by OCBPC's scan");
-				WatchSpeech(a->formID, data, MouthHandedBack(*rapport), dt);
 			}
 			next.push_back(o);
 		}
@@ -687,17 +750,30 @@ void UpdateMouths()
 		if (heldDone[i])
 			continue;
 		UInt32 formID = held[i].first;
-		Actor* a = DYNAMIC_CAST(LookupFormByID(formID), TESForm, Actor);
-		void* data = a && !(a->flags & TESForm::kFlag_IsDeleted) && a->unkF0 && a->unkF0->rootNode ? FaceData(a) : nullptr;
+		void* data = HeldFaceData(formID);
 		if (!data) {
 			char key[48];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "face|absent|%08X", formID);
-			Note(key, "[face] %08X: a face is held for an actor that is not loaded (it applies once it is)\n", formID);
+			Note(key, "[face] %08X: a face is held for an actor with no face to write yet (not loaded, or not "
+				"in high process); it applies once there is one\n", formID);
 			continue;
 		}
-		next.push_back(HeldOnly(data, held[i].second));
+		next.push_back(HeldOnly(data, formID, held[i].second));
 		Applied(formID, "looked up by form");
-		WatchSpeech(formID, data, MouthHandedBack(held[i].second), dt);
+	}
+	// the probe: each held face's line, as the engine's last merge of it left the lip state and MFG layer
+	if (probe) {
+		std::vector<std::pair<UInt32, Written>> seen;
+		{
+			std::lock_guard<std::mutex> guard(publishLock);
+			for (auto& o : next) {
+				auto it = o.held ? written.find(o.data) : written.end();
+				if (it != written.end())
+					seen.emplace_back(o.formID, it->second);
+			}
+		}
+		for (auto& s : seen)
+			WatchSpeech(s.first, s.second.speaking, s.second.mfg, dt);
 	}
 	// a line whose actor is no longer held has ended too
 	for (auto& s : speech)
@@ -725,8 +801,8 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 	if (d.command == FaceAuthority::Command::Set) {
 		FaceAuthority::Set(d.formID, d.face);
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|set|%s|%08X", who, d.formID);
-		Note(key, "[face] %s holds %08X's face: %d morph(s)%s%s\n", who, d.formID, OwnedCount(d.face),
-			MouthHandedBack(d.face) ? ", the mouth handed back" : "", hooked ? "" : " (but the merge is not hooked: nothing will show)");
+		Note(key, "[face] %s holds %08X's face: %d morph(s)%s\n", who, d.formID, OwnedCount(d.face),
+			hooked && authority ? "" : " (but [Face] authority is off or the merge is not hooked: nothing will show)");
 	}
 	else if (d.command == FaceAuthority::Command::Clear) {
 		FaceAuthority::Clear(d.formID);
@@ -744,21 +820,26 @@ void ListenForFaces(F4SEMessagingInterface* m, PluginHandle self)
 	selfHandle = self;
 	if (!messaging)
 		return;
+	if (!authority) {
+		Note("face|listen", "[face] [Face] authority=0: not listening to Rapport, and no hello\n");
+		return;
+	}
 	// F4SE refuses a sender it has not loaded, which is why this waits for PostLoad
 	bool rapport = messaging->RegisterListener(selfHandle, kRapport, FaceMessage);
 	Note("face|listen", rapport ? "[face] Rapport is loaded: listening for the faces it holds\n"
 		: "[face] Rapport is not loaded: no faces to hold\n");
-	if (authorityTest && !messaging->RegisterListener(selfHandle, kSelf, FaceMessage))
+	if (testConfigured && !messaging->RegisterListener(selfHandle, kSelf, FaceMessage))
 		Note("face|test|listen", "[face] self-test: F4SE would not let this plugin listen to itself\n");
 }
 
 void SayFaceHello()
 {
-	// the hello promises Rapport that its faces are applied here, so only with the merge hooked
-	if (!messaging)
+	// the hello promises Rapport that its faces are applied here: only with the authority on and the
+	// merge hooked
+	if (!messaging || !authority)
 		return;
 	if (!hooked) {
-		Note("face|hello", "[face] no hello: the merge is not hooked ([Mouth] off), so Rapport keeps its own way\n");
+		Note("face|hello", "[face] no hello: the merge is not hooked, so Rapport keeps its own way\n");
 		return;
 	}
 	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatures };
@@ -770,19 +851,41 @@ void SayFaceHello()
 void ReleaseAllFaces(const char* why)
 {
 	FaceAuthority::Clear(0);
-	Publish({});   // the faces about to be unloaded; their addresses may be handed to other actors' faces
+	{
+		// the faces about to be unloaded: their addresses may be handed to other actors' faces
+		std::lock_guard<std::mutex> guard(publishLock);
+		published.clear();
+		written.clear();
+	}
 	std::string key = std::string("face|release|") + why;
-	Note(key, "[face] every held face let go: %s (Rapport sends them again)\n", why);
+	Note(key, "[face] every held face let go: %s (Rapport sends each again on its next change)\n", why);
+}
+
+void RefreshHeldFaces()
+{
+	// A cell change: OCBPC's scan skips this frame, so UpdateMouths does not run, and the faces of the
+	// cell just left may be gone, their addresses free for others. Publish only the held faces, each
+	// found again by its form; the contact mouths come back with the next scan.
+	if (!hooked)
+		return;
+	std::vector<Override> next;
+	if (authority)
+		for (auto& h : FaceAuthority::Snapshot())
+			if (void* data = HeldFaceData(h.first))
+				next.push_back(HeldOnly(data, h.first, h.second));
+	Publish(std::move(next));
 }
 
 void StartFaceAuthorityTest()
 {
-	if (!authorityTest || !messaging || !hooked)
+	// latched here: a config reload later cannot move the test to another actor or make it clear everyone
+	testForm = testConfigured;
+	if (!testConfigured || !messaging || !hooked || !authority)
 		return;
 	testRestart = true;
 	testOn = true;
 	char key[48];
-	_snprintf_s(key, sizeof(key), _TRUNCATE, "face|test|%08X", authorityTest);
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "face|test|%08X", testConfigured);
 	Note(key, "[face] self-test on: %08X's test face held 20 s of every 30, by our own messages through F4SE\n",
-		authorityTest);
+		testConfigured);
 }
