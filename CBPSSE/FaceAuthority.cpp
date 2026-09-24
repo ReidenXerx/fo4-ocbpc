@@ -36,33 +36,41 @@ namespace FaceAuthority
 	Decoded Decode(std::uint32_t type, const void* data, std::uint32_t length)
 	{
 		Decoded d;
-		if (type != kSet && type != kClear)
+		if (type != kSet && type != kClear && type != kDeep)
 			return d;                                   // not ours to read
 		if (!data) {
 			d.refused = "no data";
 			return d;
 		}
-		if (type == kSet) {
+		if (type == kSet || type == kDeep) {
+			bool deep = type == kDeep;
 			if (length < sizeof(SetMessage)) {
-				d.refused = "a set shorter than 232 bytes";
+				d.refused = deep ? "a deep face shorter than 232 bytes" : "a set shorter than 232 bytes";
 				return d;
 			}
 			SetMessage m;
 			std::memcpy(&m, data, sizeof(m));
 			if (m.version < kVersion) {
-				d.refused = "a set of version 0";       // a later version only appends: read what we know
+				d.refused = deep ? "a deep face of version 0" : "a set of version 0";   // later versions append
 				return d;
 			}
 			if (m.formID == 0) {
-				d.refused = "a set for form 0";
+				d.refused = deep ? "a deep face for form 0" : "a set for form 0";
 				return d;
 			}
 			for (int i = 0; i < kMorphs; i++)
 				if (!std::isfinite(m.value[i])) {
-					d.refused = "a set with a value that is not a number";
+					d.refused = deep ? "a deep face with a value that is not a number"
+					                 : "a set with a value that is not a number";
 					return d;
 				}
 			d.formID = m.formID;
+			if (deep) {                                 // a mask of nothing drops the deep face
+				d.command = Command::Deep;
+				d.face.deepMask = m.owned & ((1ull << kMorphs) - 1);
+				std::memcpy(d.face.deep, m.value, sizeof(m.value));
+				return d;
+			}
 			if (!(m.owned & ((1ull << kMorphs) - 1))) {
 				d.command = Command::Clear;             // a face that holds no morph holds nothing
 				return d;
@@ -103,6 +111,26 @@ namespace FaceAuthority
 		}
 	}
 
+	void BlendDeep(float* weights, const float* engine, const Face& face, float w)
+	{
+		w = w < 0.0f ? 0.0f : (w > 1.0f ? 1.0f : w);
+		for (int i = 0; i < kMorphs; i++) {
+			if (!((face.deepMask >> i) & 1u) || IsMouth(i))
+				continue;
+			float to = face.deep[i] < 0.0f ? 0.0f : (face.deep[i] > 1.0f ? 1.0f : face.deep[i]);
+			if (i == kLeftBlink || i == kRightBlink) {
+				// the held face's own lid (Compose has already taken the max with the blink), blended, and
+				// then the blink's max again: the eye still closes over a deep look
+				float from = ((face.owned >> i) & 1u) ? face.value[i] : engine[i];
+				from = from < 0.0f ? 0.0f : (from > 1.0f ? 1.0f : from);
+				float v = from + (to - from) * w;
+				weights[i] = engine[i] > v ? engine[i] : v;
+			}
+			else
+				weights[i] += (to - weights[i]) * w;
+		}
+	}
+
 	SetMessage TestFace(std::uint32_t formID)
 	{
 		SetMessage m{};
@@ -130,6 +158,17 @@ namespace FaceAuthority
 			held.clear();
 		else
 			held.erase(formID);
+	}
+
+	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		auto it = held.find(formID);
+		if (it == held.end())
+			return false;                               // a deep face belongs to a held one
+		it->second.deepMask = mask;
+		std::memcpy(it->second.deep, values, sizeof(it->second.deep));
+		return true;
 	}
 
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot()

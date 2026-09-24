@@ -19,6 +19,9 @@
 //   0. the engine: its merge of MFG, lip sync and keyframes, and the blink;
 //   1. the face Rapport holds (FaceAuthority::Compose): owned morphs replaced, the blink kept, the
 //      mouth left to the line's lip sync while the actor speaks;
+//   1b. the deep face (A-29): the ids Rapport masks blend from the held face toward its deep face by
+//      `deep` (how deep the contact is), so a pleading face can frown as the shaft goes deep, a thing a
+//      raise-only layer cannot do (the brows must come DOWN). Never a MOUTH id; the blink keeps its max;
 //   2. the contact mouth (A-20): from whatever the jaw is now, open to what is inside, by `inside`;
 //      only the jaw, the two funnels and the upper lip (2, 21, 22, 44, 46);
 //   3. the face while the mouth is busy (A-26): only RAISES its own ids (never Rapport's MOUTH ids
@@ -50,6 +53,7 @@ namespace FaceCompose
 	struct Mouth
 	{
 		float inside = 0.0f;                        // 0..1: how far the contact mouth has taken over
+		float deep = 0.0f;                          // 0..1: how deep the contact is (A-29's blend)
 		float jaw = 0.0f, floor = 0.0f, funnel = 0.0f, lift = 0.0f;
 		int termCount = 0;                          // A-26: raise termId toward termValue x inside
 		int termId[kMaxTerms] = {};

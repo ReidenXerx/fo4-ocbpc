@@ -24,6 +24,10 @@
 // Messages, F4SE messaging, sender "Rapport" -> receiver "OCBPC plugin" (agreed with the Rapport session):
 //   'RFAS' Set   { u32 version; u32 formID; u64 owned; float value[54]; }   232 bytes, values 0..1
 //   'RFAC' Clear { u32 version; u32 formID; }                               formID 0 = everyone
+//   'RFAD' Deep  { u32 version; u32 formID; u64 mask; float value[54]; }    232 bytes, as a Set (A-29)
+// A Deep is the face at FULL depth of oral contact for the ids in mask, for a face already held. It
+// follows the Set it belongs to; a later Set for that actor drops it; a Clear clears both; a Deep that
+// masks nothing drops it. Only when the hello has kFeatureDepthBlend.
 // and back, this plugin -> "Rapport" at PostPostLoad:
 //   'RFAH' Hello { u32 version; u32 features; }                             no hello, no authority
 // Versions: a reader takes any version from 1 up and reads the fields it knows; a later version only
@@ -36,6 +40,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kSet = 0x52464153;      // 'RFAS'
 	constexpr std::uint32_t kClear = 0x52464143;    // 'RFAC'
 	constexpr std::uint32_t kHello = 0x52464148;    // 'RFAH'
+	constexpr std::uint32_t kDeep = 0x52464144;     // 'RFAD'
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -44,6 +49,8 @@ namespace FaceAuthority
 	                                                         // clear them or set bit 63 for a line
 	constexpr std::uint32_t kFeatureReaction = 1u << 2;      // during oral contact the reaction (A-26) may
 	                                                         // RAISE brows, cheeks and nose above a held face
+	constexpr std::uint32_t kFeatureDepthBlend = 1u << 3;    // a held face blends toward its Deep face by the
+	                                                         // depth of oral contact (A-29)
 	constexpr int kMorphs = 54;
 	constexpr int kSpeakingBit = 63;
 
@@ -72,9 +79,11 @@ namespace FaceAuthority
 	{
 		std::uint64_t owned = 0;
 		float value[kMorphs] = {};
+		std::uint64_t deepMask = 0;                 // A-29: the ids that blend toward deep[] with depth
+		float deep[kMorphs] = {};
 	};
 
-	enum class Command { None, Set, Clear };
+	enum class Command { None, Set, Clear, Deep };
 	struct Decoded
 	{
 		Command command = Command::None;
@@ -91,6 +100,12 @@ namespace FaceAuthority
 	// (`speaking`, the engine's lip state, or the face's bit 63) the mouth morphs keep the engine's value.
 	void Compose(float* weights, const Face& face, bool speaking);
 
+	// A-29, after Compose: each id in the face's deepMask goes from what the held face gave toward its
+	// deep value by w (0 no contact .. 1 full depth). MOUTH ids are never blended (the contact mouth and a
+	// line's lip sync own them); the blink keeps the larger of the engine's and the blend. `engine` is the
+	// engine's own merged weights (FaceCompose keeps them before anything is written).
+	void BlendDeep(float* weights, const float* engine, const Face& face, float w);
+
 	// Rapport's MOUTH set (fo4-rapport tools/make_mfg.py): what a line's lip sync may need
 	bool IsMouth(int id);
 
@@ -102,5 +117,7 @@ namespace FaceAuthority
 	// The held faces (thread-safe: Rapport dispatches on its thread, the merge runs on another)
 	void Set(std::uint32_t formID, const Face& face);
 	void Clear(std::uint32_t formID);              // 0 = everyone
+	// A-29: the deep face of a face already held (false: none is held for that form, and nothing is kept)
+	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values);
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot();
 }

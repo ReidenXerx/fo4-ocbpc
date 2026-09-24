@@ -19,8 +19,11 @@ namespace FaceCompose
 	{
 		std::memcpy(keep.weight, w, sizeof(keep.weight));
 		keep.has = true;
-		if (held)
+		if (held) {
 			FaceAuthority::Compose(w, *held, speaking);
+			if (held->deepMask)
+				FaceAuthority::BlendDeep(w, keep.weight, *held, m.deep);   // 1b: the deep face, by depth
+		}
 		float jaw = w[kJawOpen] + (m.jaw - w[kJawOpen]) * m.inside;
 		w[kJawOpen] = (std::max)(jaw, m.floor);
 		w[kLowerLipFunnel] += (m.funnel - w[kLowerLipFunnel]) * m.inside;
@@ -33,6 +36,8 @@ namespace FaceCompose
 			int id = m.termId[k];
 			if (id < 0 || id >= kMorphs || FaceAuthority::IsMouth(id) || id == kLeftBlink || id == kRightBlink)
 				continue;                           // layer 3's right: brows, cheeks, nose; never the mouth
+			if (held && ((held->deepMask >> id) & 1u))
+				continue;                           // a deep face authors this id: one author, not two
 			w[id] = (std::max)(w[id], m.termValue[k] * m.inside);   // nor the blink
 		}
 	}

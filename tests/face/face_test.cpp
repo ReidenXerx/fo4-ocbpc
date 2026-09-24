@@ -483,6 +483,74 @@ int main()
 		Check("a brow stays Rapport's all along", Near(e.fin[14], 0.0f));
 	}
 
+	printf("the deep face (A-29): a held face blends toward it by oral depth\n");
+	{
+		SetMessage dm = MakeSet(0x00115E9F, (1ull << 14) | (1ull << 13));
+		dm.value[14] = 0.0f;
+		dm.value[13] = 0.55f;
+		Decoded d = Decode(kDeep, &dm, sizeof(dm));
+		Check("a deep face decodes as Deep, its mask and values kept",
+			d.command == Command::Deep && d.formID == 0x00115E9F && d.face.deepMask == ((1ull << 14) | (1ull << 13)) &&
+			Near(d.face.deep[13], 0.55f));
+		Check("a short deep face is refused", Decode(kDeep, &dm, 100).command == Command::None);
+		SetMessage bad = dm;
+		bad.formID = 0;
+		Check("a deep face for form 0 is refused", Decode(kDeep, &bad, sizeof(bad)).command == Command::None);
+		bad = dm;
+		bad.value[3] = std::numeric_limits<float>::quiet_NaN();
+		Check("a deep face with a NaN is refused", Decode(kDeep, &bad, sizeof(bad)).command == Command::None);
+
+		// the owner's frown: Rapport holds pleading brows (14 up 0.75); deep brings them down and in
+		Face r = RapportFace(0.2f, 0.3f);
+		r.value[14] = 0.75f;
+		// 2 (jaw) and 17 are MOUTH: never blended. The contact mouth writes the jaw anyway; 17 it never touches.
+		r.deepMask = (1ull << 14) | (1ull << 13) | (1ull << 18) | (1ull << 2) | (1ull << 17);
+		r.deep[14] = 0.0f;
+		r.deep[13] = 0.55f;
+		r.deep[18] = 0.75f;
+		r.deep[2] = 0.9f;
+		r.deep[17] = 0.9f;
+		FaceCompose::Mouth m;
+		m.inside = 1.0f;
+		m.jaw = 0.8f;
+		m.termCount = 1;
+		m.termId[0] = 14;                           // A-26 would raise the middle brow to 0.9
+		m.termValue[0] = 0.9f;
+		auto run = [&](float deep, float blink) {
+			static float w[kMorphs];
+			for (int i = 0; i < kMorphs; i++)
+				w[i] = 0.0f;
+			w[18] = blink;
+			FaceCompose::Engine keep;
+			m.deep = deep;
+			FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+			return w;
+		};
+		float* w = run(0.0f, 0.0f);
+		Check("no depth: the held face (brow up 0.75), and A-26 stands down on the deep face's ids",
+			Near(w[14], 0.75f) && Near(w[13], 0.0f));
+		w = run(1.0f, 0.0f);
+		Check("full depth: the frown (brow up 0, brow down 0.55), lid to 0.75",
+			Near(w[14], 0.0f) && Near(w[13], 0.55f) && Near(w[18], 0.75f));
+		Check("full depth: the jaw is the contact mouth's (0.8), never the deep face's", Near(w[2], 0.8f));
+		Check("full depth: a MOUTH id in the mask keeps the held face's value (17 stays 0)", Near(w[17], 0.0f));
+		w = run(0.5f, 0.0f);
+		Check("half depth: halfway (brow up 0.375, lid 0.2 -> 0.475)", Near(w[14], 0.375f) && Near(w[18], 0.475f));
+		w = run(1.0f, 1.0f);
+		Check("a blink still closes the eye over the deep face", Near(w[18], 1.0f));
+
+		Set(0x00115E9F, r);
+		Check("a deep face for a held form is kept", SetDeep(0x00115E9F, (1ull << 13), r.deep) &&
+			Snapshot()[0].second.deepMask == (1ull << 13));
+		Check("a deep face for a form nobody holds is dropped", !SetDeep(0x14, (1ull << 13), r.deep));
+		Face plain = RapportFace(0.2f, 0.3f);
+		Set(0x00115E9F, plain);
+		Check("a later Set drops the deep face", Snapshot()[0].second.deepMask == 0);
+		SetDeep(0x00115E9F, (1ull << 13), r.deep);
+		Clear(0x00115E9F);
+		Check("a Clear clears both", Snapshot().empty());
+	}
+
 	printf("store\n");
 	{
 		Face held = RapportFace(0.3f, 0.3f);

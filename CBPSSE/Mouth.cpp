@@ -765,6 +765,7 @@ void UpdateMouths()
 		if (st.inside > 0.001f || st.floor > 0.001f || rapport) {
 			Override o{ data, a->formID, {}, false, {} };
 			o.mouth.inside = st.inside;
+			o.mouth.deep = st.inside * Clamp(st.depth / faceDepth, 0.0f, 1.0f);   // A-29: the same depth as A-26
 			o.mouth.jaw = st.jaw;
 			o.mouth.floor = st.floor;
 			o.mouth.funnel = st.funnel;
@@ -846,6 +847,15 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 		Note(key, "[face] %s holds %08X's face: %d morph(s)%s\n", who, d.formID, OwnedCount(d.face),
 			hooked && authority ? "" : " (but [Face] authority is off or the merge is not hooked: nothing will show)");
 	}
+	else if (d.command == FaceAuthority::Command::Deep) {
+		bool kept = FaceAuthority::SetDeep(d.formID, d.face.deepMask, d.face.deep);
+		int n = 0;
+		for (int i = 0; i < FaceAuthority::kMorphs; i++)
+			n += (int)((d.face.deepMask >> i) & 1u);
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|deep|%s|%08X|%d", who, d.formID, n);
+		Note(key, kept ? "[face] %s: %08X's deep face, %d morph(s), blends in with oral depth\n"
+			: "[face] %s: a deep face for %08X, who is not held: dropped\n", who, d.formID, n);
+	}
 	else if (d.command == FaceAuthority::Command::Clear) {
 		FaceAuthority::Clear(d.formID);
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|clear|%s|%08X", who, d.formID);
@@ -885,7 +895,8 @@ void SayFaceHello()
 		return;
 	}
 	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatureSetClear |
-		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) };
+		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
+		FaceAuthority::kFeatureDepthBlend };
 	bool heard = messaging->Dispatch(selfHandle, FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
 		: "[face] hello not heard: Rapport is not loaded, or is not listening to \"OCBPC plugin\"\n");
