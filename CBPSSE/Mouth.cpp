@@ -76,7 +76,7 @@ namespace
 	// Rapport's face authority (A-27, FaceAuthority.h), ocbp.ini [Face]:
 	//   authority=1  Rapport's faces are written here (0: no listener, no hello, Rapport keeps its own way)
 	//   react=1      the face while the mouth is busy (A-26) rises above a held face too (FaceCompose.h)
-	//   probe=0      1: log what each line's lip sync moves on a held face (a research aid, off for players)
+	//   probe=0      1: log what each line's lip sync moves, on any face in reach (a research aid, off for players)
 	//   test=<hex>   the self-test: this plugin sends itself, through F4SE, the messages Rapport would
 	//                (FaceAuthority::TestFace for that actor), held 20 s and released 10 s, over and over
 	// The hello tells Rapport authority and react as they were at startup; a [Tuning] reload changes
@@ -112,14 +112,16 @@ namespace
 	std::mutex publishLock;   // the face update may run on another thread than UpdateActors
 	std::vector<Override> published;
 	// Per face we write over (FaceCompose::Ledger, under publishLock): the engine's own weights from its
-	// last merge (the engine must never read ours back), and for the probe the engine's lip state and
-	// its MFG layer as that merge left them
+	// last merge, so the engine never reads ours back
+	FaceCompose::Ledger<char> ledger;
+	// [Face] probe: EVERY face merged since the last frame, held or not, with the engine's lip state and
+	// MFG layer as its merge left them (under publishLock; emptied each frame)
 	struct Probe
 	{
 		bool speaking = false;
 		float mfg[kMorphs] = {};
 	};
-	FaceCompose::Ledger<Probe> ledger;
+	std::unordered_map<const void*, Probe> heard;
 
 	struct State
 	{
@@ -134,12 +136,13 @@ namespace
 	LARGE_INTEGER lastTick = {};
 
 	// What lip sync moves ([Face] probe; Rapport asked, 2026-09-24, to narrow its MOUTH set): while the
-	// engine plays a line on a held face, its MFG layer (+0xF0, where the lip sync goes) is watched, and
-	// when the line ends the log names the ids that MOVED (the lip sync) apart from the ones that only
-	// HELD a value. A few lines per actor are enough.
+	// engine plays a line on any face in reach, held by Rapport or not, its MFG layer (+0xF0, where the
+	// lip sync goes) is watched, and when the line ends the log names the ids that MOVED (the lip sync)
+	// apart from the ones that only HELD a value. A few lines per actor are enough.
 	struct Speech
 	{
 		bool on = false;
+		bool held = false;                          // Rapport held the face when the line began
 		unsigned seen = 0;                          // the frame it was last watched
 		float seconds = 0.0f;
 		float lo[kMorphs] = {}, hi[kMorphs] = {};
@@ -274,15 +277,21 @@ namespace
 		}
 		FaceCompose::BeforeMerge(w, last);        // the engine reads its own last face back, never ours
 		bool changed = origMerge(data, dt, flag);
+		const bool listen = probe;
+		bool speaking = (found || listen) && LipPlaying(data);
+		if (listen) {
+			Probe p;
+			p.speaking = speaking;
+			std::memcpy(p.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(p.mfg));
+			std::lock_guard<std::mutex> guard(publishLock);
+			heard[data] = p;
+		}
 		if (!found)
 			return changed || last.has;           // a face just let go is rebuilt as the engine's
-		FaceCompose::Ledger<Probe>::Entry now;
+		FaceCompose::Ledger<char>::Entry now;
 		now.formID = o.formID;
-		now.extra.speaking = LipPlaying(data);
-		if (probe)
-			std::memcpy(now.extra.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(now.extra.mfg));
 		// Rapport's face, then the contact mouth, then A-26 (FaceCompose.h)
-		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.extra.speaking, o.mouth, react);
+		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, speaking, o.mouth, react);
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
 			ledger.After(data, now);
@@ -362,12 +371,12 @@ namespace
 		}
 		char key[48];
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|speech|%08X|%d", formID, s.lines);
-		Note(key, "[face] %08X spoke a line for %.1f s: its lip sync moved %s; held steady %s (MFG layer)\n",
-			formID, s.seconds, IdList(moved).c_str(), IdList(steady).c_str());
+		Note(key, "[face] %08X (%s) spoke a line for %.1f s: its lip sync moved %s; held steady %s (MFG layer)\n",
+			formID, s.held ? "held by Rapport" : "its own face", s.seconds, IdList(moved).c_str(), IdList(steady).c_str());
 	}
 
 	// speaking and mfg are what the engine's last merge of this face left (HookMerge keeps them)
-	void WatchSpeech(UInt32 formID, bool speaking, const float* mfg, float dt)
+	void WatchSpeech(UInt32 formID, bool held, bool speaking, const float* mfg, float dt)
 	{
 		if (!speaking) {
 			auto it = speech.find(formID);
@@ -379,6 +388,7 @@ namespace
 		s.seen = frameCount;
 		if (!s.on) {
 			s.on = true;
+			s.held = held;
 			s.seconds = 0.0f;
 			for (int i = 0; i < kMorphs; i++)
 				s.lo[i] = s.hi[i] = mfg[i];
@@ -615,6 +625,7 @@ void UpdateMouths()
 	}
 
 	std::vector<Override> next;
+	std::vector<std::pair<UInt32, const void*>> listened;   // [Face] probe: every face in reach, held or not
 	BSFixedString headName("HEAD");
 	for (auto& e : actorEntries) {
 		Actor* a = e.actor;
@@ -623,6 +634,8 @@ void UpdateMouths()
 		void* data = FaceData(a);
 		if (!data)
 			continue;
+		if (probe)
+			listened.emplace_back(a->formID, data);
 		NiAVObject* head = a->unkF0->rootNode->GetObjectByName(&headName);
 		if (!head)
 			continue;
@@ -765,22 +778,26 @@ void UpdateMouths()
 		}
 		next.push_back(HeldOnly(data, formID, held[i].second));
 		Applied(formID, "looked up by form");
+		if (probe)
+			listened.emplace_back(formID, data);
 	}
 	// the probe: each held face's line, as the engine's last merge of it left the lip state and MFG layer
 	if (probe) {
-		std::vector<std::pair<UInt32, Probe>> seen;
+		struct Heard { UInt32 formID; bool held; Probe probe; };
+		std::vector<Heard> got;
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
-			for (auto& o : next) {
-				auto entry = o.held ? ledger.Find(o.data) : nullptr;
-				if (entry && entry->formID == o.formID)
-					seen.emplace_back(o.formID, entry->extra);
+			for (auto& l : listened) {
+				auto it = heard.find(l.second);
+				if (it != heard.end())
+					got.push_back(Heard{ l.first, heldAt.count(l.first) != 0, it->second });
 			}
+			heard.clear();                        // every merge fills it again
 		}
-		for (auto& s : seen)
-			WatchSpeech(s.first, s.second.speaking, s.second.mfg, dt);
+		for (auto& g : got)
+			WatchSpeech(g.formID, g.held, g.probe.speaking, g.probe.mfg, dt);
 	}
-	// a line whose actor is no longer held has ended too
+	// a line whose actor was not seen this frame has ended too
 	for (auto& s : speech)
 		if (s.second.on && s.second.seen != frameCount)
 			EndSpeech(s.first, s.second);
@@ -862,6 +879,7 @@ void ReleaseAllFaces(const char* why)
 		std::lock_guard<std::mutex> guard(publishLock);
 		published.clear();
 		ledger.Clear();
+		heard.clear();
 	}
 	std::string key = std::string("face|release|") + why;
 	Note(key, "[face] every held face let go: %s (Rapport sends each again on its next change)\n", why);
