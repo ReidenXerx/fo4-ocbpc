@@ -165,6 +165,13 @@ namespace AimSolve
 	Fit Judge(const Chain& c, const std::vector<V3>& joints, const Target& t, const Params& p, bool keep);
 	bool Held(const Chain& c, const std::vector<V3>& joints, const std::vector<Hand>& hands, const Params& p);
 
+	// The middle of a gripping hand, from its four fingers' three joints each (index to little, knuckle
+	// out). A curled finger's joints lie on a circle around what it holds, so the grip is the centre of
+	// that circle, not the joints' average, which sits in the fingers: a shaft aimed there ran outside
+	// the grip, along the fingers (the owner's look, 2026-09-25). A finger that does not curl (a circle
+	// wider than maxRadius, or joints in line) is skipped; with fewer than two curled, no grip.
+	bool GripCentre(const V3 joints[4][3], float maxRadius, V3& centre);
+
 	// The corrections that lay the chain along root -> entrance -> path, joint by joint (no smoothing).
 	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch);
 

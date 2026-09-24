@@ -226,6 +226,30 @@ namespace AimSolve
 		return Length(Sub(x, Add(a, Scale(ab, t))));
 	}
 
+	bool GripCentre(const V3 joints[4][3], float maxRadius, V3& centre)
+	{
+		V3 sum{};
+		int curled = 0;
+		for (int f = 0; f < 4; f++) {
+			// the circle through three points: C + ((|a|^2 b - |b|^2 a) x (a x b)) / (2 |a x b|^2)
+			const V3& c = joints[f][2];
+			V3 a = Sub(joints[f][0], c), b = Sub(joints[f][1], c);
+			V3 n = Cross(a, b);
+			float nn = Dot(n, n);
+			if (nn < 1e-8f)
+				continue;                             // in line: a straight finger holds nothing
+			V3 at = Add(c, Scale(Cross(Sub(Scale(b, Dot(a, a)), Scale(a, Dot(b, b))), n), 0.5f / nn));
+			if (Length(Sub(at, c)) > maxRadius)
+				continue;                             // barely bent: its circle's centre is nowhere near a shaft
+			sum = Add(sum, at);
+			curled++;
+		}
+		if (curled < 2)
+			return false;
+		centre = Scale(sum, 1.0f / curled);
+		return true;
+	}
+
 	bool Held(const Chain& c, const std::vector<V3>& joints, const std::vector<Hand>& hands, const Params& p)
 	{
 		// the shaft's outer part, from the first joint past the root to the tip: a hand at its base (a

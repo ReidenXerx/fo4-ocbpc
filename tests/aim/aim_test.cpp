@@ -351,6 +351,56 @@ int main()
 			m.m[2][0] * a.x + m.m[2][1] * a.y + m.m[2][2] * a.z };
 		Expect(Length(Sub(viaM, b)) < 1e-4f, "17: ToMatrix is v' = m v");
 	}
+	{   // 21. A grip's middle is where its curled fingers wrap, not the average of their joints
+		// four fingers along x, each curled around the x axis at radius 2 (a shaft of 1.55 and the
+		// finger's own flesh), knuckle on top and curling down over 160 degrees
+		auto ring = [](float x, float r, float from, float to) {
+			std::vector<V3> j;
+			for (int k = 0; k < 3; k++) {
+				float a = (from + (to - from) * k / 2.0f) / kDeg;
+				j.push_back({ x, r * std::cos(a), r * std::sin(a) });
+			}
+			return j;
+		};
+		auto grip = [&](std::vector<std::vector<V3>> fingers, Quat turn, V3 shift, V3& out) {
+			V3 js[4][3];
+			for (int f = 0; f < 4; f++)
+				for (int k = 0; k < 3; k++)
+					js[f][k] = Add(Rotate(turn, fingers[f][k]), shift);
+			return GripCentre(js, 4.0f, out);
+		};
+		std::vector<std::vector<V3>> curled;
+		V3 mean{};
+		for (int f = 0; f < 4; f++) {
+			curled.push_back(ring(0.8f * f, 2.0f, 90.0f, 250.0f));
+			for (auto& q : curled.back())
+				mean = Add(mean, Scale(q, 1.0f / 12.0f));
+		}
+		V3 at;
+		Expect(grip(curled, Quat{}, {}, at) && Length(Sub(at, { 1.2f, 0, 0 })) < 0.01f,
+			"21: the grip is on the axis the fingers wrap around");
+		Expect(Length(Sub(mean, { 1.2f, 0, 0 })) > 0.8f, "21: (the joints' average is 0.9 off: the case can fail)");
+		Quat turn = FromTo(Normalized({ 1, 0, 0 }), Normalized({ 0.3f, -0.8f, 0.5f }));
+		V3 shift{ 12, -7, 40 };
+		Expect(grip(curled, turn, shift, at) && Length(Sub(at, Add(Rotate(turn, { 1.2f, 0, 0 }), shift))) < 0.01f,
+			"21: a hand turned and moved: the grip goes with it");
+		std::vector<std::vector<V3>> flat(4);
+		for (int f = 0; f < 4; f++)
+			flat[f] = { { 0.8f * f, 0, 0 }, { 0.8f * f, 2.5f, 0 }, { 0.8f * f, 4.5f, 0 } };
+		Expect(!grip(flat, Quat{}, {}, at), "21: an open hand, fingers straight, is no grip");
+		std::vector<std::vector<V3>> slack(4);
+		for (int f = 0; f < 4; f++)
+			slack[f] = ring(0.8f * f, 30.0f, 90.0f, 99.0f);   // bent a little: a circle 30 wide
+		Expect(!grip(slack, Quat{}, {}, at), "21: fingers barely bent are no grip");
+		std::vector<std::vector<V3>> one = flat;
+		one[1] = curled[1];
+		Expect(!grip(one, Quat{}, {}, at), "21: one curled finger is not a grip");
+		std::vector<std::vector<V3>> two = flat;
+		two[1] = curled[1];
+		two[3] = curled[3];
+		Expect(grip(two, Quat{}, {}, at) && Length(Sub(at, { 1.6f, 0, 0 })) < 0.01f,
+			"21: two curled fingers are, and the straight ones do not pull it off the axis");
+	}
 
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);

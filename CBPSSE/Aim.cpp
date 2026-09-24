@@ -43,9 +43,11 @@ namespace
 	std::vector<std::string> gripSides;           // LArm, RArm: <side>_Finger21..53 make a grip
 	AimSolve::Params params;
 	// Her openings, in Pelvis_skin's frame (physics_config.py writes them): entrance, inward axis, the
-	// path inside. The throat, in HEAD's frame, per sex; the entrance is [Mouth]'s mouth.
+	// path inside. The throat per sex, the entrance [Mouth]'s mouth: its part in the mouth in HEAD's frame,
+	// its part down the neck in Neck's, so it bends where her neck bends (her head thrown back swung a
+	// HEAD-only path forward out of her throat: the owner's x-ray, 2026-09-25).
 	NiPoint3 vaginaAt, vaginaIn, anusAt, anusIn;
-	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM;
+	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM, throatNeckF, throatNeckM;
 	bool vagina = false, anus = false, mouths = true;
 	// The shaft enters a mouth this far BELOW the line where her lips meet: centred on that line its upper
 	// half rode over her upper lip and into her cheek and nose (the owner's look, 2026-09-24). With its axis
@@ -266,42 +268,43 @@ namespace
 		g.kind = AimSolve::kMouth;
 		g.point = AimSolve::Add(ToV3(m), down);
 		g.in = AimSolve::Normalized(ToV3(outward * -1.0f));
-		if (NiAVObject* head = Find(a->unkF0->rootNode, "HEAD"))
-			for (auto& q : WorldPath(head->m_worldTransform, actorUtils::IsActorMale(a) ? throatM : throatF))
-				g.path.push_back(AimSolve::Add(q, down));   // the throat, lowered with the entrance
+		bool male = actorUtils::IsActorMale(a);
+		if (NiAVObject* head = Find(a->unkF0->rootNode, "HEAD")) {
+			for (auto& q : WorldPath(head->m_worldTransform, male ? throatM : throatF))
+				g.path.push_back(AimSolve::Add(q, down));   // in the mouth, lowered with the entrance
+			if (NiAVObject* neck = Find(a->unkF0->rootNode, "Neck"))
+				for (auto& q : WorldPath(neck->m_worldTransform, male ? throatNeckM : throatNeckF))
+					g.path.push_back(q);                    // down the neck: where the neck is, not the head
+		}
 		g.inScene = inScene;
 		out.push_back(g);
 	}
 
-	// A hand as an opening: the grip is the middle of its four fingers' joints (around a shaft they close
-	// into a ring), along the line of its knuckles, index to little finger. Entered either way (AimSolve).
+	// A hand as an opening: the grip is the centre its curled fingers wrap around (AimSolve::GripCentre),
+	// along the line of its knuckles, index to little finger. Entered either way (AimSolve).
+	const float kGripMaxRadius = 4.0f;               // a finger around a shaft (1.55) curls far tighter
 	void AddGripTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
 		for (auto& side : gripSides) {
-			V3 sum{};
+			V3 joints[4][3];
 			int found = 0;
-			V3 index{}, little{};
 			for (int f = 2; f <= 5; f++) {
 				for (int j = 1; j <= 3; j++) {
 					NiAVObject* n = Find(a->unkF0->rootNode, side + "_Finger" + std::to_string(f * 10 + j));
 					if (!n)
 						continue;
-					V3 at = ToV3(n->m_worldTransform.pos);
-					sum = AimSolve::Add(sum, at);
+					joints[f - 2][j - 1] = ToV3(n->m_worldTransform.pos);
 					found++;
-					if (j == 1 && f == 2)
-						index = at;
-					if (j == 1 && f == 5)
-						little = at;
 				}
 			}
-			if (found != 12)
-				continue;
+			V3 centre;
+			if (found != 12 || !AimSolve::GripCentre(joints, kGripMaxRadius, centre))
+				continue;                                 // an open hand is not a grip
 			AimSolve::Target g;
 			g.owner = a->formID;
 			g.kind = AimSolve::kHand;
-			g.point = AimSolve::Scale(sum, 1.0f / 12.0f);
-			g.in = AimSolve::Normalized(AimSolve::Sub(little, index));
+			g.point = centre;
+			g.in = AimSolve::Normalized(AimSolve::Sub(joints[3][0], joints[0][0]));
 			g.inScene = inScene;
 			out.push_back(g);
 		}
@@ -387,6 +390,8 @@ void LoadAimConfig(INIReader& reader)
 	anusPath = ReadPath(reader, "anusPath");
 	throatF = ReadPath(reader, "throatF");
 	throatM = ReadPath(reader, "throatM");
+	throatNeckF = ReadPath(reader, "throatNeckF");
+	throatNeckM = ReadPath(reader, "throatNeckM");
 	mouths = reader.GetBoolean("Aim", "mouths", true);
 	mouthDrop = (float)reader.GetReal("Aim", "mouthDrop", mouthDrop);
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
@@ -406,7 +411,7 @@ void LoadAimConfig(INIReader& reader)
 		"knuckles %d, grips %d, scene required %d; capture %.0f / keep %.0f degrees, miss %.1f / %.1f, entry %.0f, reach %.2f x, "
 		"stretch up to %.2f\n", enabled ? "on" : "off", (int)chainNames.size(), chainNames.empty() ? "-" : chainNames.front().c_str(),
 		chainNames.empty() ? "-" : chainNames.back().c_str(), (int)vagina, (int)vaginaPath.size(), (int)anus, (int)anusPath.size(),
-		(int)mouths, (int)throatF.size(), (int)throatM.size(), (int)handNames.size(), (int)gripSides.size(), (int)params.requireScene,
+		(int)mouths, (int)(throatF.size() + throatNeckF.size()), (int)(throatM.size() + throatNeckM.size()), (int)handNames.size(), (int)gripSides.size(), (int)params.requireScene,
 		params.captureAngle * 57.29578f, params.keepAngle * 57.29578f, params.captureMiss, params.keepMiss,
 		params.entryAngle * 57.29578f, params.reach, params.maxStretch);
 }
