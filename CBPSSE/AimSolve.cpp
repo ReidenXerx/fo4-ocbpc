@@ -163,10 +163,14 @@ namespace AimSolve
 		Fit f;
 		float length = ChainLength(c);
 		bool hand = t.kind == kHand;
-		if ((t.owner == c.owner && !hand) || length <= 0.0f || joints.size() < 2)
+		if ((t.owner == c.owner && !hand) || length <= 0.0f || joints.size() < 2) {
+			f.why = "their own";
 			return f;                                // never one's own opening (one's own hand, yes)
-		if (p.requireScene && !(c.inScene && t.inScene))
+		}
+		if (p.requireScene && !(c.inScene && t.inScene)) {
+			f.why = "not in a scene";
 			return f;
+		}
 		V3 base = joints.front();
 		V3 shaft = Sub(joints.back(), base);
 		if (Length(shaft) < 1e-4f)
@@ -174,21 +178,29 @@ namespace AimSolve
 		V3 u = Normalized(shaft);
 		V3 q = Sub(t.point, base);
 		float entrance = Length(q);
-		if (entrance < p.minReach || entrance > length * p.reach)
+		if (entrance < p.minReach || entrance > length * p.reach) {
+			f.why = entrance < p.minReach ? "too close to the root" : "out of reach";
 			return f;
+		}
 		// how far the animation's shaft line passes from the entrance: a near miss is an entry the
 		// animation meant; a hand job beside her is not
 		float miss = Length(Sub(q, Scale(u, Dot(q, u))));
-		if (miss > (keep ? p.keepMiss : p.captureMiss))
+		if (miss > (keep ? p.keepMiss : p.captureMiss)) {
+			f.why = "the animation's shaft passes too far from it";
 			return f;
+		}
 		V3 aim = Add(t.point, Scale(t.in, p.depth));
 		V3 d = Normalized(Sub(aim, base));
 		// (an opening behind the root needs a turn far past keepAngle: the angle below refuses it)
-		if (Dot(d, t.in) < std::cos(p.entryAngle))
-			return f;                                // from the side, or from inside
-		float angle = std::acos((std::max)(-1.0f, (std::min)(1.0f, Dot(u, d))));
-		if (angle > (keep ? p.keepAngle : p.captureAngle))
+		if (Dot(d, t.in) < std::cos(p.entryAngle)) {
+			f.why = "from the side or from inside";
 			return f;
+		}
+		float angle = std::acos((std::max)(-1.0f, (std::min)(1.0f, Dot(u, d))));
+		if (angle > (keep ? p.keepAngle : p.captureAngle)) {
+			f.why = "the turn it needs is too wide";
+			return f;
+		}
 		f.ok = true;
 		f.angle = angle;
 		f.miss = miss;
@@ -308,16 +320,26 @@ namespace AimSolve
 		Fit best;
 		Target chosenT;
 		const Target* chosen = nullptr;
+		bool wasLocked = s.locked;
+		std::uint32_t wasOwner = s.lockedOwner;
+		int wasKind = s.lockedKind;
+		const char* lost = "it is gone";
 		if (s.locked) {                             // a lock held stays while it still fits, loosely
 			for (auto& t : targets) {
 				if (t.owner == s.lockedOwner && t.kind == s.lockedKind) {
 					Target o = Oriented(t, pose);
-					Fit f = allowed(t) ? Judge(c, pose, o, p, true) : Fit{};
+					Fit f;
+					if (allowed(t))
+						f = Judge(c, pose, o, p, true);
+					else
+						f.why = r.held ? "a hand holds the shaft" : "a hand just let go";
 					if (f.ok) {
 						best = f;
 						chosenT = o;
 						chosen = &chosenT;
 					}
+					else
+						lost = f.why;
 					break;
 				}
 			}
@@ -340,15 +362,44 @@ namespace AimSolve
 		s.lockedOwner = chosen ? chosen->owner : 0;
 		s.lockedKind = chosen ? chosen->kind : -1;
 
-		std::vector<Quat> want = chosen ? Bend(c, *chosen, best.stretch) : std::vector<Quat>(joints, Quat{});
-		float wantStretch = chosen ? best.stretch : 1.0f;
+		if (wasLocked && !chosen) {
+			r.released = true;
+			r.why = lost;
+		}
+		if (s.want.size() != joints)
+			s.want.assign(joints, Quat{});
 		float a = dt > 0.0f ? 1.0f - std::exp(-p.rate * dt) : 0.0f;
+		// another opening than the one showing (a switch, or a new lock while the last still fades): the
+		// pose on screen fades into the new one instead of jumping
+		bool other = chosen && (!wasLocked || wasOwner != chosen->owner || wasKind != chosen->kind);
+		if (other && s.weight > 1e-3f) {
+			s.from = s.correction;
+			s.fromStretch = s.stretch;
+			s.fromFade = 1.0f;
+		}
+		if (chosen) {                               // exact, every frame: no lag behind a moving head
+			s.want = Bend(c, *chosen, best.stretch);
+			s.wantStretch = best.stretch;
+		}
+		s.weight += ((chosen ? 1.0f : 0.0f) - s.weight) * a;
+		if (s.weight > 0.999f)
+			s.weight = 1.0f;
+		if (s.weight < 1e-4f)
+			s.weight = 0.0f;
 		bool moving = false;
 		for (size_t i = 0; i < joints; i++) {
-			s.correction[i] = Slerp(s.correction[i], want[i], a);
-			moving = moving || Angle(s.correction[i]) >= 1e-4f;
+			Quat q = Slerp(Quat{}, s.want[i], s.weight);
+			if (s.fromFade > 0.0f && i < s.from.size())
+				q = Slerp(q, s.from[i], s.fromFade);
+			s.correction[i] = q;
+			moving = moving || Angle(q) >= 1e-4f;
 		}
-		s.stretch += (wantStretch - s.stretch) * a;
+		s.stretch = 1.0f + (s.wantStretch - 1.0f) * s.weight;
+		if (s.fromFade > 0.0f)
+			s.stretch += (s.fromStretch - s.stretch) * s.fromFade;
+		s.fromFade *= (1.0f - a);
+		if (s.fromFade < 1e-3f)
+			s.fromFade = 0.0f;
 
 		r.local = s.correction;
 		r.stretch = s.stretch;

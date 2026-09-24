@@ -110,19 +110,29 @@ namespace AimSolve
 		float depth = 2.0f;           // the angle is judged toward a point this far inside
 		float minInside = 3.0f;       // the stretch lets at least this much of the shaft pass the entrance
 		float maxStretch = 1.10f;     // ... up to this x its length
-		float rate = 8.0f;            // 1/s: how fast the correction follows (in and out)
+		float rate = 8.0f;            // 1/s: how fast a lock fades in and out (and one opening hands to the next)
 		float handRadius = 4.0f;      // a knuckle this close to the shaft's outer part: a hand holds it
 		float handHold = 1.0f;        // seconds a held shaft stays unaimed after the hand lets go
 		bool requireScene = true;     // both the chain's owner and the opening's in a scene
 	};
 
+	// While locked, the bend is computed EXACTLY every frame: a correction that chased it at a fixed pace
+	// lagged behind a moving head, and on a fast pull-out the glans went through her chin (the owner's
+	// look, 2026-09-24). Only the lock's weight is smoothed (in and out), and a switch from one opening to
+	// another crossfades from the pose that was showing.
 	struct State
 	{
 		bool locked = false;
 		std::uint32_t lockedOwner = 0;
 		int lockedKind = -1;
-		std::vector<Quat> correction; // per joint (all but the tip), in its parent's frame, smoothed
-		float stretch = 1.0f;         // smoothed
+		float weight = 0.0f;          // 0..1: how much of the bend is on
+		std::vector<Quat> want;       // the last exact bend (a released lock fades out from it)
+		float wantStretch = 1.0f;
+		std::vector<Quat> from;       // the pose showing when the opening changed, fading out
+		float fromStretch = 1.0f;
+		float fromFade = 0.0f;
+		std::vector<Quat> correction; // what was applied last frame, per joint but the tip
+		float stretch = 1.0f;
 		float clock = 0.0f;           // seconds this state has run
 		float heldUntil = -1.0f;      // a hand held the shaft: no aim before this
 	};
@@ -135,6 +145,8 @@ namespace AimSolve
 		bool locked = false;
 		bool newLock = false;         // locked this frame (a new opening)
 		bool held = false;            // a hand holds the shaft this frame
+		bool released = false;        // the lock let go this frame, for `why`
+		const char* why = "";
 		std::uint32_t targetOwner = 0;
 		int targetKind = -1;
 		float angle = 0.0f;           // radians the lock asks of the root (0 without one)
@@ -148,6 +160,7 @@ namespace AimSolve
 		float angle = 0.0f;
 		float miss = 0.0f;
 		float stretch = 1.0f;
+		const char* why = "";         // why not, when not ok
 	};
 	Fit Judge(const Chain& c, const std::vector<V3>& joints, const Target& t, const Params& p, bool keep);
 	bool Held(const Chain& c, const std::vector<V3>& joints, const std::vector<Hand>& hands, const Params& p);

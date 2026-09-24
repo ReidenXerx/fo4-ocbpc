@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 using namespace AimSolve;
@@ -301,6 +302,43 @@ int main()
 		Target own = grip;
 		own.owner = 1;
 		Expect(Settle(s3, c, { own }, p, knuckle).locked, "18: his own hand grips too");
+	}
+	{   // 19. no lag: a head bobbing 6 units a second (a pull-out) stays ON the shaft, frame by frame
+		Chain c = Shaft();
+		State s;
+		V3 at{ 0, 12, 1 };
+		Target t = Opening(2, kMouth, at, { 0, 1, 0 });
+		Settle(s, c, { t }, p);
+		float worst = 0;
+		for (int f = 0; f < 60; f++) {
+			at.z += 0.1f * std::sin(f * 0.3f);                      // up and down, 6 units/s at the fastest
+			at.y -= 0.05f;                                         // and backing off
+			t.point = at;
+			Result r = Update(s, c, { t }, {}, p, kStep);
+			std::vector<V3> j = Written(c, r);
+			std::vector<V3> line{ c.root, t.point, Add(t.point, Scale(t.in, 24.0f)) };
+			for (auto& x : j)
+				worst = (std::max)(worst, PolyDist(x, line));
+		}
+		Expect(worst < 0.01f, "19: a moving mouth is tracked exactly every frame (no lag through her chin)");
+	}
+	{   // 20. a switch between openings fades from the pose on screen, not a jump; a release says why
+		Chain c = Shaft();
+		Target a = Opening(2, kMouth, { 0, 12, 2 }, { 0, 1, 0 });
+		Target b = Opening(3, kMouth, { 0, 12, -2 }, { 0, 1, 0 });
+		State s;
+		Result r = Settle(s, c, { a }, p);
+		V3 tipA = Written(c, r).back();
+		r = Update(s, c, { b }, {}, p, kStep);                      // a is gone, b is there
+		V3 tipNow = Written(c, r).back();
+		Expect(r.locked && r.targetOwner == 3, "20: the lock moves to the other opening");
+		Expect(Length(Sub(tipNow, tipA)) < 1.0f, "20: the first frame after the switch is near the old pose (no jump)");
+		State s2;
+		Settle(s2, c, { a }, p);
+		Target far = a;
+		far.point = { 9, 12, 0 };                                  // the animation now misses it by 9
+		r = Update(s2, c, { far }, {}, p, kStep);
+		Expect(r.released && std::string(r.why).find("too far") != std::string::npos, "20: a release says why");
 	}
 	{   // 17. FromTo / matrix round trip
 		V3 a = Normalized({ 1, 2, 3 }), b = Normalized({ -2, 0.5f, 1 });

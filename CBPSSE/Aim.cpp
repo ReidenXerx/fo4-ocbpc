@@ -532,7 +532,14 @@ void UpdateAims()
 			}
 		}
 
+		std::uint32_t wasOwner = h.state.lockedOwner;
+		int wasKind = h.state.lockedKind;
 		AimSolve::Result r = AimSolve::Update(h.state, c, targets, hands, params, dt);
+		if (r.released) {
+			char key[128];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|release|%08X|%08X|%d|%s", a->formID, wasOwner, wasKind, r.why);
+			Note(key, "[aim] %08X: let go of %08X's %s: %s\n", a->formID, wasOwner, AimSolve::KindName(wasKind), r.why);
+		}
 		if (r.held) {
 			Note("aim|held|" + std::to_string(a->formID), "[aim] %08X: a hand holds the shaft - it is not aimed while "
 				"held\n", a->formID);
