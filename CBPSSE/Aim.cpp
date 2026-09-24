@@ -55,6 +55,9 @@ namespace
 	float mouthDrop = 1.3f;
 	std::string anatomyBone = "AnatVulva";        // an actor carries our openings only with our bones
 	const char* kPelvis = "Pelvis_skin";
+	// The shape ([Shape], A-31): every chain's shaft this thin and its head this big, one head size per man
+	bool shapeOn = false;
+	float shaftScale = 1.0f, headLo = 1.0f, headHi = 1.0f;
 
 	// AAF's busy actors, from Anatomy:Arousal's tick (AnatomyAim.SetBusy); old news counts as none
 	std::mutex busyLock;
@@ -67,6 +70,7 @@ namespace
 		AimSolve::State state;
 		std::vector<NiMatrix43> baseRot, wroteRot;   // per joint but the tip: the animation's, and ours
 		std::vector<NiPoint3> basePos, wrotePos;     // per joint after the root: its offset, the same way
+		std::vector<float> baseScale, wroteScale;    // per node: its local scale, the same way (the shape)
 		bool wrote = false;
 		bool toldKeyed = false;
 		ULONGLONG seenAt = 0;
@@ -344,6 +348,8 @@ namespace
 			nodes[i]->m_localTransform.rot = h.baseRot[i];
 		for (size_t k = 1; k < nodes.size() && k - 1 < h.basePos.size(); k++)
 			nodes[k]->m_localTransform.pos = h.basePos[k - 1];
+		for (size_t i = 0; i < nodes.size() && i < h.baseScale.size(); i++)
+			nodes[i]->m_localTransform.scale = h.baseScale[i];
 		UpdateWorldFrom(nodes[0], nodes[0]->m_parent->m_worldTransform);
 		h.wrote = false;
 	}
@@ -395,6 +401,13 @@ void LoadAimConfig(INIReader& reader)
 	mouths = reader.GetBoolean("Aim", "mouths", true);
 	mouthDrop = (float)reader.GetReal("Aim", "mouthDrop", mouthDrop);
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
+	shaftScale = (float)reader.GetReal("Shape", "shaft", 1.0);
+	headLo = (float)reader.GetReal("Shape", "headMin", 1.0);
+	headHi = (std::max)(headLo, (float)reader.GetReal("Shape", "headMax", headLo));
+	shapeOn = reader.GetBoolean("Shape", "enabled", false) && chainNames.size() >= 2 && shaftScale >= 0.5f &&
+		shaftScale <= 1.5f && headLo >= 0.5f && headHi <= 2.0f;   // sane or nothing: a typo must not deform him
+	Note("aim|shapecfg|" + std::to_string((int)shapeOn), shapeOn ? "[aim] shape on: shaft x%.2f, head x%.2f .. %.2f per man\n"
+		: "[aim] shape off (shaft x%.2f, head x%.2f .. %.2f)\n", shaftScale, headLo, headHi);
 	if (chainNames.size() < 2)
 		enabled = false;                              // a root and at least a tip
 	for (auto& n : chainNames) {
@@ -480,7 +493,7 @@ void UpdateAims()
 			continue;
 		}
 		auto found = held.find(a->formID);
-		if (!enabled && found == held.end())
+		if (!enabled && !shapeOn && found == held.end())
 			continue;
 		Held& h = held[a->formID];
 		h.seenAt = ms;
@@ -503,6 +516,12 @@ void UpdateAims()
 			if (!(h.wrote && k - 1 < h.wrotePos.size() && SamePos(cur, h.wrotePos[k - 1])))
 				h.basePos[k - 1] = cur;
 		}
+		h.baseScale.resize(n, 1.0f);
+		for (size_t i = 0; i < n; i++) {
+			float cur = nodes[i]->m_localTransform.scale;
+			if (!(h.wrote && i < h.wroteScale.size() && cur == h.wroteScale[i]))
+				h.baseScale[i] = cur;
+		}
 		if (h.wrote && !h.toldKeyed) {
 			Note("aim|keyed|" + std::to_string(a->formID) + (keyed ? "|1" : "|0"), keyed ?
 				"[aim] %08X: the animation keys %s every frame - the correction is laid on its pose each frame\n" :
@@ -511,7 +530,7 @@ void UpdateAims()
 			h.toldKeyed = true;
 		}
 
-		if (!enabled) {                               // switched off: put the animation's pose back, once
+		if (!enabled && !shapeOn) {                   // switched off: put the animation's pose back, once
 			if (h.wrote)
 				PutBack(h, nodes);
 			held.erase(a->formID);
@@ -527,19 +546,22 @@ void UpdateAims()
 		c.root = WorldPoint(parent, nodes[0]->m_localTransform.pos);
 		c.locals.resize(n);
 		c.offsets.assign(n, V3{});
-		float scale = parent.scale * nodes[0]->m_localTransform.scale;
+		// the animation's scales, not the shape's: the shape keeps every joint where the animation put it
+		float scale = parent.scale * h.baseScale[0];
 		for (size_t i = 0; i < n; i++) {
 			const NiMatrix43& rot = i + 1 < n ? h.baseRot[i] : nodes[i]->m_localTransform.rot;
 			c.locals[i] = AimSolve::FromMatrix(Actual(rot));
 			if (i > 0) {
 				c.offsets[i] = AimSolve::Scale(ToV3(h.basePos[i - 1]), scale);
-				scale *= nodes[i]->m_localTransform.scale;
+				scale *= h.baseScale[i];
 			}
 		}
 
 		std::uint32_t wasOwner = h.state.lockedOwner;
 		int wasKind = h.state.lockedKind;
-		AimSolve::Result r = AimSolve::Update(h.state, c, targets, hands, params, dt);
+		AimSolve::Result r;
+		if (enabled)
+			r = AimSolve::Update(h.state, c, targets, hands, params, dt);
 		if (r.released) {
 			char key[128];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|release|%08X|%08X|%d|%s", a->formID, wasOwner, wasKind, r.why);
@@ -555,16 +577,29 @@ void UpdateAims()
 			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
 				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
 		}
-		if (r.active) {
+		if (r.active || shapeOn) {
+			// the aim's turns (or the animation's own), its stretch, and the shape on top
+			std::vector<float> scaleMul, offsetMul;
+			if (shapeOn)
+				AimSolve::ShapeFactors(n, shaftScale, AimSolve::HeadFor(a->formID, headLo, headHi), scaleMul, offsetMul);
+			else
+				AimSolve::ShapeFactors(n, 1.0f, 1.0f, scaleMul, offsetMul);
+			float stretch = r.active ? r.stretch : 1.0f;
 			h.wroteRot.resize(n - 1);
 			h.wrotePos.resize(n - 1);
+			h.wroteScale.resize(n);
 			for (size_t i = 0; i + 1 < n; i++) {
-				nodes[i]->m_localTransform.rot = Stored(Mul(AimSolve::ToMatrix(r.local[i]), Actual(h.baseRot[i])));
+				nodes[i]->m_localTransform.rot = r.active ? Stored(Mul(AimSolve::ToMatrix(r.local[i]), Actual(h.baseRot[i])))
+					: h.baseRot[i];
 				h.wroteRot[i] = nodes[i]->m_localTransform.rot;
 			}
 			for (size_t k = 1; k < n; k++) {
-				nodes[k]->m_localTransform.pos = h.basePos[k - 1] * r.stretch;
+				nodes[k]->m_localTransform.pos = h.basePos[k - 1] * (stretch * offsetMul[k]);
 				h.wrotePos[k - 1] = nodes[k]->m_localTransform.pos;
+			}
+			for (size_t i = 0; i < n; i++) {
+				nodes[i]->m_localTransform.scale = h.baseScale[i] * scaleMul[i];
+				h.wroteScale[i] = nodes[i]->m_localTransform.scale;
 			}
 			h.wrote = true;
 			UpdateWorldFrom(nodes[0], parent);

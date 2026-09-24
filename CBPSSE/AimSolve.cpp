@@ -226,6 +226,29 @@ namespace AimSolve
 		return Length(Sub(x, Add(a, Scale(ab, t))));
 	}
 
+	void ShapeFactors(size_t n, float shaft, float head, std::vector<float>& scaleMul, std::vector<float>& offsetMul)
+	{
+		scaleMul.assign(n, 1.0f);
+		offsetMul.assign(n, 1.0f);
+		if (n < 2 || shaft <= 0.0f || head <= 0.0f)
+			return;
+		if (n == 2) {
+			scaleMul[1] = head;
+			return;
+		}
+		scaleMul[1] = shaft;
+		for (size_t k = 2; k < n; k++)
+			offsetMul[k] = 1.0f / shaft;                  // under node 1's scale: the joint stays put
+		scaleMul[n - 1] = head / shaft;                   // the tip inherits the shaft's; this makes it head
+	}
+
+	float HeadFor(std::uint32_t formID, float lo, float hi)
+	{
+		std::uint32_t h = formID * 2654435761u;           // Knuth's multiplicative hash: neighbours spread
+		h ^= h >> 16;
+		return lo + (hi - lo) * (float)(h & 0xFFFF) / 65535.0f;
+	}
+
 	bool GripCentre(const V3 joints[4][3], float maxRadius, V3& centre)
 	{
 		V3 sum{};

@@ -401,6 +401,61 @@ int main()
 		Expect(grip(two, Quat{}, {}, at) && Length(Sub(at, { 1.6f, 0, 0 })) < 0.01f,
 			"21: two curled fingers are, and the straight ones do not pull it off the axis");
 	}
+	{   // 22. The shape: a thinner shaft and a bigger head, every joint where it was
+		// a chain of six turned every which way, composed as the engine does: world pos = parent pos +
+		// parent rot (offset x parent world scale); world scale = parent's x own
+		const size_t n = 6;
+		std::vector<Quat> rots;
+		std::vector<V3> offs;
+		for (size_t i = 0; i < n; i++) {
+			rots.push_back(FromTo(Normalized({ 0, 1, 0 }), Normalized({ 0.2f * i, 1.0f, -0.15f * i })));
+			offs.push_back({ 0.1f * i, 2.5f + 0.2f * i, 0.05f });
+		}
+		auto compose = [&](const std::vector<float>& sm, const std::vector<float>& om, std::vector<V3>& at, std::vector<float>& sc) {
+			at.assign(n, {});
+			sc.assign(n, 1.0f);
+			Quat r{};
+			V3 p{ 3, -2, 60 };
+			float s = 1.0f;
+			for (size_t i = 0; i < n; i++) {
+				if (i > 0)
+					p = Add(p, Rotate(r, Scale(offs[i], om[i] * s)));
+				s *= sm[i];
+				Quat q = rots[i];
+				r = { r.w * q.w - r.x * q.x - r.y * q.y - r.z * q.z, r.w * q.x + r.x * q.w + r.y * q.z - r.z * q.y,
+					r.w * q.y - r.x * q.z + r.y * q.w + r.z * q.x, r.w * q.z + r.x * q.y - r.y * q.x + r.z * q.w };
+				at[i] = p;
+				sc[i] = s;
+			}
+		};
+		std::vector<float> one(n, 1.0f), sm, om;
+		std::vector<V3> before, after;
+		std::vector<float> s0, s1;
+		compose(one, one, before, s0);
+		ShapeFactors(n, 0.85f, 1.3f, sm, om);
+		compose(sm, om, after, s1);
+		float worst = 0.0f;
+		for (size_t i = 0; i < n; i++)
+			worst = (std::max)(worst, Length(Sub(before[i], after[i])));
+		Expect(worst < 1e-4f, "22: every joint stays where the animation put it");
+		bool shaft = true;
+		for (size_t i = 1; i + 1 < n; i++)
+			shaft = shaft && Near(s1[i], 0.85f, 1e-5f);
+		Expect(shaft && Near(s1[0], 1.0f, 1e-6f), "22: the shaft's bones are 0.85 in the world, the root untouched");
+		Expect(Near(s1[n - 1], 1.3f, 1e-5f), "22: the head is 1.3 in the world");
+		ShapeFactors(2, 0.85f, 1.3f, sm, om);
+		Expect(Near(sm[1], 1.3f, 1e-6f) && Near(om[1], 1.0f, 1e-6f), "22: a chain of two: its tip is the head");
+		float lo = 9.0f, hi = 0.0f;
+		bool stable = true;
+		for (std::uint32_t id = 0x14; id < 0x14 + 400; id++) {
+			float h = HeadFor(id, 1.2f, 1.4f);
+			lo = (std::min)(lo, h);
+			hi = (std::max)(hi, h);
+			stable = stable && h == HeadFor(id, 1.2f, 1.4f);
+		}
+		Expect(lo >= 1.2f && hi <= 1.4f && lo < 1.22f && hi > 1.38f, "22: heads spread over 1.2 .. 1.4, even for neighbours");
+		Expect(stable, "22: a man's head is the same every time");
+	}
 
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);

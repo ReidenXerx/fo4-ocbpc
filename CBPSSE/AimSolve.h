@@ -172,6 +172,15 @@ namespace AimSolve
 	// wider than maxRadius, or joints in line) is skipped; with fewer than two curled, no grip.
 	bool GripCentre(const V3 joints[4][3], float maxRadius, V3& centre);
 
+	// The shape (A-31, the owner's poll 2026-09-25: "everyone mushroom"): a thinner shaft and a bigger head,
+	// every joint where the animation put it. Node 1, the shaft's first weighted bone, carries the shaft
+	// scale and its children inherit it. Every later offset is divided by it, so the joints stay put, and
+	// the tip's own scale makes the head `head` in world terms. Out: what to multiply each node's local
+	// scale and offset by (offsetMul[0], the root's, stays 1). A chain of two has no shaft: its tip is the head.
+	void ShapeFactors(size_t n, float shaft, float head, std::vector<float>& scaleMul, std::vector<float>& offsetMul);
+	// A man's own head size in [lo, hi], the same for him every time (from his form id).
+	float HeadFor(std::uint32_t formID, float lo, float hi);
+
 	// The corrections that lay the chain along root -> entrance -> path, joint by joint (no smoothing).
 	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch);
 
