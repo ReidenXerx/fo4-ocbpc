@@ -47,6 +47,10 @@ namespace
 	NiPoint3 vaginaAt, vaginaIn, anusAt, anusIn;
 	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM;
 	bool vagina = false, anus = false, mouths = true;
+	// The shaft enters a mouth this far BELOW the line where her lips meet: centred on that line its upper
+	// half rode over her upper lip and into her cheek and nose (the owner's look, 2026-09-24). With its axis
+	// a radius down, its top runs under her upper lip and the contact mouth drops her jaw around the rest.
+	float mouthDrop = 1.3f;
 	std::string anatomyBone = "AnatVulva";        // an actor carries our openings only with our bones
 	const char* kPelvis = "Pelvis_skin";
 
@@ -253,16 +257,18 @@ namespace
 
 	void AddMouthTarget(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
-		NiPoint3 m, outward;
-		if (!mouths || !MouthOpening(a, m, outward))
+		NiPoint3 m, outward, up;
+		if (!mouths || !MouthOpening(a, m, outward, &up))
 			return;
+		V3 down = AimSolve::Scale(ToV3(up), -mouthDrop);
 		AimSolve::Target g;
 		g.owner = a->formID;
 		g.kind = AimSolve::kMouth;
-		g.point = ToV3(m);
+		g.point = AimSolve::Add(ToV3(m), down);
 		g.in = AimSolve::Normalized(ToV3(outward * -1.0f));
 		if (NiAVObject* head = Find(a->unkF0->rootNode, "HEAD"))
-			g.path = WorldPath(head->m_worldTransform, actorUtils::IsActorMale(a) ? throatM : throatF);
+			for (auto& q : WorldPath(head->m_worldTransform, actorUtils::IsActorMale(a) ? throatM : throatF))
+				g.path.push_back(AimSolve::Add(q, down));   // the throat, lowered with the entrance
 		g.inScene = inScene;
 		out.push_back(g);
 	}
@@ -382,6 +388,7 @@ void LoadAimConfig(INIReader& reader)
 	throatF = ReadPath(reader, "throatF");
 	throatM = ReadPath(reader, "throatM");
 	mouths = reader.GetBoolean("Aim", "mouths", true);
+	mouthDrop = (float)reader.GetReal("Aim", "mouthDrop", mouthDrop);
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
 	if (chainNames.size() < 2)
 		enabled = false;                              // a root and at least a tip

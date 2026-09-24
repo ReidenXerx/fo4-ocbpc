@@ -23,11 +23,11 @@ void LoadMouthConfig(INIReader& reader);
 void InstallMouthHook();
 void UpdateMouths();
 
-// The mouth [Mouth] places on this actor's HEAD, and the way the face looks (out of the mouth): what the
-// aim (Aim.h, A-28) enters. False without a head.
+// The mouth [Mouth] places on this actor's HEAD (the line where her lips meet), the way the face looks
+// (out of the mouth) and, if asked, the head's up: what the aim (Aim.h, A-28) enters. False without a head.
 class Actor;
 class NiPoint3;
-bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward);
+bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward, NiPoint3* up = nullptr);
 
 // Rapport's face authority (fo4-anatomy A-27, FaceAuthority.h): the same hook writes the faces Rapport
 // holds, under the mouth. main.cpp forwards F4SE's own messages here.

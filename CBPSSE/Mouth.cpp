@@ -541,7 +541,7 @@ void InstallMouthHook()
 		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
 }
 
-bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward)
+bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward, NiPoint3* up)
 {
 	if (!actor || !actor->unkF0 || !actor->unkF0->rootNode)
 		return false;
@@ -553,6 +553,8 @@ bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward)
 	NiMatrix43 toWorld = t.rot.Transpose();          // as UpdateMouths places it, below
 	centre = t.pos + toWorld * ((actorUtils::IsActorMale(actor) ? maleMouth : femaleMouth) * t.scale);
 	outward = Normalized(toWorld * facingBone);
+	if (up)
+		*up = Normalized(toWorld * upBone);
 	return true;
 }
 
