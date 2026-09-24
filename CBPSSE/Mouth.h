@@ -23,6 +23,12 @@ void LoadMouthConfig(INIReader& reader);
 void InstallMouthHook();
 void UpdateMouths();
 
+// The mouth [Mouth] places on this actor's HEAD, and the way the face looks (out of the mouth): what the
+// aim (Aim.h, A-28) enters. False without a head.
+class Actor;
+class NiPoint3;
+bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward);
+
 // Rapport's face authority (fo4-anatomy A-27, FaceAuthority.h): the same hook writes the faces Rapport
 // holds, under the mouth. main.cpp forwards F4SE's own messages here.
 void LoadFaceConfig(INIReader& reader);         // ocbp.ini [Face]: authority, probe, test

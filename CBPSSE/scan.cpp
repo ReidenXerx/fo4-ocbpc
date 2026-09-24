@@ -35,6 +35,7 @@
 #include "SimObj.h"
 #include "Bones.h"
 #include "Mouth.h"
+#include "Aim.h"
 #include "Utility.hpp"
 #include "f4se/GameRTTI.h"
 #include "f4se/GameForms.h"
@@ -238,6 +239,8 @@ void UpdateActors() {
         zHigh += 100.0;
 
         //SaveLastColliderPositions();
+
+        UpdateAims();     // fo4-anatomy (A-28): every shaft onto its opening, before the colliders are built from it
 
         otherColliders.clear();
 

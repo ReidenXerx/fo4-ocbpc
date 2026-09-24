@@ -7,6 +7,7 @@
 #include "log.h"
 #include "Bones.h"
 #include "Mouth.h"
+#include "Aim.h"
 #include "SimObj.h"
 #include "Thing.h"
 #include "Utility.hpp"
@@ -319,6 +320,7 @@ bool LoadConfig() {
     LoadMouthConfig(extrasSections.count("Mouth") ? anatomyExtras : configReader);
     LoadFaceConfig(extrasSections.count("Face") ? anatomyExtras : configReader);
     LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
+    LoadAimConfig(extrasSections.count("Aim") ? anatomyExtras : configReader);
 
     return reloadActors;
 }

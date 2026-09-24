@@ -541,6 +541,21 @@ void InstallMouthHook()
 		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
 }
 
+bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward)
+{
+	if (!actor || !actor->unkF0 || !actor->unkF0->rootNode)
+		return false;
+	BSFixedString headName("HEAD");
+	NiAVObject* head = actor->unkF0->rootNode->GetObjectByName(&headName);
+	if (!head)
+		return false;
+	const NiTransform& t = head->m_worldTransform;
+	NiMatrix43 toWorld = t.rot.Transpose();          // as UpdateMouths places it, below
+	centre = t.pos + toWorld * ((actorUtils::IsActorMale(actor) ? maleMouth : femaleMouth) * t.scale);
+	outward = Normalized(toWorld * facingBone);
+	return true;
+}
+
 void UpdateMouths()
 {
 	if (!hooked) {

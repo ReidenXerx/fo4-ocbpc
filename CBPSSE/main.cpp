@@ -14,6 +14,7 @@
 #include "config.h"
 #include "PapyrusOCBP.h"
 #include "Mouth.h"
+#include "Aim.h"
 
 
 bool RegisterFuncs(VirtualMachine* vm);
@@ -56,6 +57,7 @@ void MessageHandler(F4SEMessagingInterface::Message * msg)
         {
             logger.Info("kMessage_PreLoadGame\n");
             ReleaseAllFaces("a save is loading");
+            ResetAims();   // fo4-anatomy (A-28): the new skeletons carry nothing we wrote
         }
         break;
         case F4SEMessagingInterface::kMessage_PostLoad:
@@ -178,6 +180,7 @@ extern "C"
 bool RegisterFuncs(VirtualMachine* vm)
 {
     papyrusOCBP::RegisterFuncs(vm);
+    RegisterAimFuncs(vm);   // fo4-anatomy (A-28): AnatomyAim.SetBusy, from Anatomy:Arousal
     return true;
 }
 

@@ -184,6 +184,8 @@
     <ClInclude Include="Mouth.h" />
     <ClInclude Include="FaceAuthority.h" />
     <ClInclude Include="FaceCompose.h" />
+    <ClInclude Include="Aim.h" />
+    <ClInclude Include="AimSolve.h" />
     <ClInclude Include="Thing.h" />
     <ClInclude Include="Utility.hpp" />
   </ItemGroup>
@@ -219,6 +221,8 @@
     <ClCompile Include="Mouth.cpp" />
     <ClCompile Include="FaceAuthority.cpp" />
     <ClCompile Include="FaceCompose.cpp" />
+    <ClCompile Include="Aim.cpp" />
+    <ClCompile Include="AimSolve.cpp" />
     <ClCompile Include="scan.cpp" />
     <ClCompile Include="Thing.cpp" />
   </ItemGroup>
