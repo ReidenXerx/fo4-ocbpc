@@ -53,6 +53,10 @@ namespace
 	// half rode over her upper lip and into her cheek and nose (the owner's look, 2026-09-24). With its axis
 	// a radius down, its top runs under her upper lip and the contact mouth drops her jaw around the rest.
 	float mouthDrop = 1.3f;
+	// ... and it turns onto her mouth's own axis this far IN FRONT of her lips (A-32): straight from his hips
+	// to her lips, a shaft crossed them at the animation's slant, cutting an oval wider than her mouth opens,
+	// and her mouth's corner clipped it (the owner's look, 2026-09-25). Along the axis it cuts a circle.
+	float mouthLead = 1.5f;
 	std::string anatomyBone = "AnatVulva";        // an actor carries our openings only with our bones
 	const char* kPelvis = "Pelvis_skin";
 	// The shape ([Shape], A-31): every chain's shaft this thin and its head this big, one head size per man
@@ -270,8 +274,11 @@ namespace
 		AimSolve::Target g;
 		g.owner = a->formID;
 		g.kind = AimSolve::kMouth;
-		g.point = AimSolve::Add(ToV3(m), down);
+		V3 lips = AimSolve::Add(ToV3(m), down);
 		g.in = AimSolve::Normalized(ToV3(outward * -1.0f));
+		g.point = AimSolve::Add(lips, AimSolve::Scale(g.in, -mouthLead));   // in front of her lips, on her axis
+		if (mouthLead > 0.0f)
+			g.path.push_back(lips);                     // then through them along it
 		bool male = actorUtils::IsActorMale(a);
 		if (NiAVObject* head = Find(a->unkF0->rootNode, "HEAD")) {
 			for (auto& q : WorldPath(head->m_worldTransform, male ? throatM : throatF))
@@ -400,6 +407,7 @@ void LoadAimConfig(INIReader& reader)
 	throatNeckM = ReadPath(reader, "throatNeckM");
 	mouths = reader.GetBoolean("Aim", "mouths", true);
 	mouthDrop = (float)reader.GetReal("Aim", "mouthDrop", mouthDrop);
+	mouthLead = (std::max)(0.0f, (float)reader.GetReal("Aim", "mouthLead", mouthLead));
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
 	shaftScale = (float)reader.GetReal("Shape", "shaft", 1.0);
 	headLo = (float)reader.GetReal("Shape", "headMin", 1.0);
