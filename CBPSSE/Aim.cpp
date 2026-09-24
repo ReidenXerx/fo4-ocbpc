@@ -39,8 +39,12 @@ namespace
 
 	bool enabled = false;
 	std::vector<std::string> chainNames;          // root first, tip last
+	std::vector<std::string> handNames;           // knuckle bones: a hand there holds a shaft
 	AimSolve::Params params;
-	NiPoint3 vaginaAt, vaginaIn, anusAt, anusIn;  // in Pelvis_skin's frame (physics_config.py writes them)
+	// Her openings, in Pelvis_skin's frame (physics_config.py writes them): entrance, inward axis, the
+	// path inside. The throat, in HEAD's frame, per sex; the entrance is [Mouth]'s mouth.
+	NiPoint3 vaginaAt, vaginaIn, anusAt, anusIn;
+	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM;
 	bool vagina = false, anus = false, mouths = true;
 	std::string anatomyBone = "AnatVulva";        // an actor carries our openings only with our bones
 	const char* kPelvis = "Pelvis_skin";
@@ -54,9 +58,8 @@ namespace
 	struct Held
 	{
 		AimSolve::State state;
-		NiMatrix43 baseRot{};                     // the animation's own local rotation of the root
-		NiMatrix43 wroteRot{};                    // what we wrote over it
-		std::vector<NiPoint3> basePos, wrotePos;  // the children's local offsets, the same way
+		std::vector<NiMatrix43> baseRot, wroteRot;   // per joint but the tip: the animation's, and ours
+		std::vector<NiPoint3> basePos, wrotePos;     // per joint after the root: its offset, the same way
 		bool wrote = false;
 		bool toldKeyed = false;
 		ULONGLONG seenAt = 0;
@@ -103,13 +106,31 @@ namespace
 		return out;
 	}
 
-	bool ReadPoint(INIReader& reader, const char* key, NiPoint3& out)
+	bool ParsePoint(const std::string& text, NiPoint3& out)
 	{
-		auto parts = Split(reader.Get("Aim", key, ""), ',');
+		auto parts = Split(text, ',');
 		if (parts.size() != 3)
 			return false;
 		out = NiPoint3(strtof(parts[0].c_str(), nullptr), strtof(parts[1].c_str(), nullptr), strtof(parts[2].c_str(), nullptr));
 		return true;
+	}
+
+	bool ReadPoint(INIReader& reader, const char* key, NiPoint3& out)
+	{
+		return ParsePoint(reader.Get("Aim", key, ""), out);
+	}
+
+	// x,y,z;x,y,z;... (a malformed point ends the list there)
+	std::vector<NiPoint3> ReadPath(INIReader& reader, const char* key)
+	{
+		std::vector<NiPoint3> out;
+		for (auto& p : Split(reader.Get("Aim", key, ""), ';')) {
+			NiPoint3 q;
+			if (!ParsePoint(p, q))
+				break;
+			out.push_back(q);
+		}
+		return out;
 	}
 
 	float Radians(INIReader& reader, const char* key, float fallbackRadians)
@@ -148,12 +169,6 @@ namespace
 		return r;
 	}
 
-	V3 Apply(const AimSolve::M3& a, const V3& v)
-	{
-		return { a.m[0][0] * v.x + a.m[0][1] * v.y + a.m[0][2] * v.z, a.m[1][0] * v.x + a.m[1][1] * v.y + a.m[1][2] * v.z,
-		         a.m[2][0] * v.x + a.m[2][1] * v.y + a.m[2][2] * v.z };
-	}
-
 	V3 ToV3(const NiPoint3& p) { return { p.x, p.y, p.z }; }
 
 	bool SameRot(const NiMatrix43& a, const NiMatrix43& b)
@@ -189,75 +204,103 @@ namespace
 		return busyAt && now - busyAt < kBusyStaleMs && busy.count(formID) > 0;
 	}
 
-	// Our openings on a woman with our bones: the point and the inward axis from her Pelvis_skin.
+	NiAVObject* Find(NiAVObject* under, const std::string& name)
+	{
+		BSFixedString n(name.c_str());
+		return under ? under->GetObjectByName(&n) : nullptr;
+	}
+
+	// A node's local point in the world.
+	V3 WorldPoint(const NiTransform& t, const NiPoint3& local)
+	{
+		return ToV3(t.pos + t.rot.Transpose() * (local * t.scale));
+	}
+
+	std::vector<V3> WorldPath(const NiTransform& t, const std::vector<NiPoint3>& local)
+	{
+		std::vector<V3> out;
+		for (auto& p : local)
+			out.push_back(WorldPoint(t, p));
+		return out;
+	}
+
+	// Our openings on a woman with our bones: entrance, inward axis and path from her Pelvis_skin.
 	void AddAnatomyTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
 		if ((!vagina && !anus) || actorUtils::IsActorMale(a))
 			return;
-		NiAVObject* root = a->unkF0->rootNode;
-		BSFixedString pelvisName(kPelvis);
-		NiAVObject* pelvis = root->GetObjectByName(&pelvisName);
-		if (!pelvis)
-			return;
-		BSFixedString marker(anatomyBone.c_str());
-		if (!pelvis->GetObjectByName(&marker))
+		NiAVObject* pelvis = Find(a->unkF0->rootNode, kPelvis);
+		if (!pelvis || !Find(pelvis, anatomyBone))
 			return;                                   // not one of ours: no opening to aim at
 		const NiTransform& t = pelvis->m_worldTransform;
 		NiMatrix43 toWorld = t.rot.Transpose();
-		auto add = [&](int kind, const NiPoint3& at, const NiPoint3& in) {
+		auto add = [&](int kind, const NiPoint3& at, const NiPoint3& in, const std::vector<NiPoint3>& path) {
 			AimSolve::Target g;
 			g.owner = a->formID;
 			g.kind = kind;
-			g.point = ToV3(t.pos + toWorld * (at * t.scale));
+			g.point = WorldPoint(t, at);
 			g.in = AimSolve::Normalized(ToV3(toWorld * in));
+			g.path = WorldPath(t, path);
 			g.inScene = inScene;
 			out.push_back(g);
 		};
 		if (vagina)
-			add(AimSolve::kVagina, vaginaAt, vaginaIn);
+			add(AimSolve::kVagina, vaginaAt, vaginaIn, vaginaPath);
 		if (anus)
-			add(AimSolve::kAnus, anusAt, anusIn);
+			add(AimSolve::kAnus, anusAt, anusIn, anusPath);
+	}
+
+	void AddMouthTarget(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
+	{
+		NiPoint3 m, outward;
+		if (!mouths || !MouthOpening(a, m, outward))
+			return;
+		AimSolve::Target g;
+		g.owner = a->formID;
+		g.kind = AimSolve::kMouth;
+		g.point = ToV3(m);
+		g.in = AimSolve::Normalized(ToV3(outward * -1.0f));
+		if (NiAVObject* head = Find(a->unkF0->rootNode, "HEAD"))
+			g.path = WorldPath(head->m_worldTransform, actorUtils::IsActorMale(a) ? throatM : throatF);
+		g.inScene = inScene;
+		out.push_back(g);
 	}
 
 	// The chain's nodes under an actor's skeleton, root first; false unless every one is there.
-	bool FindChain(Actor* a, NiAVObject*& root, std::vector<NiAVObject*>& kids)
+	bool FindChain(Actor* a, std::vector<NiAVObject*>& nodes)
 	{
-		kids.clear();
+		nodes.clear();
 		if (!a || !a->unkF0 || !a->unkF0->rootNode || chainNames.size() < 2)
 			return false;
-		BSFixedString rootName(chainNames.front().c_str());
-		root = a->unkF0->rootNode->GetObjectByName(&rootName);
+		NiAVObject* root = Find(a->unkF0->rootNode, chainNames.front());
 		if (!root || !root->m_parent)
 			return false;
+		nodes.push_back(root);
 		for (size_t k = 1; k < chainNames.size(); k++) {
-			BSFixedString n(chainNames[k].c_str());
-			NiAVObject* node = root->GetObjectByName(&n);   // below the root: a sibling chain is not ours
+			NiAVObject* node = Find(root, chainNames[k]);   // below the root: a sibling chain is not ours
 			if (!node)
 				return false;
-			kids.push_back(node);
+			nodes.push_back(node);
 		}
 		return true;
 	}
 
-	// The FK walks root -> kids[0] -> kids[1] ...: true only if the skeleton hangs them that way.
-	bool Linear(NiAVObject* root, const std::vector<NiAVObject*>& kids)
+	// The pose is walked root -> nodes[1] -> nodes[2] ...: true only if the skeleton hangs them that way.
+	bool Linear(const std::vector<NiAVObject*>& nodes)
 	{
-		NiAVObject* up = root;
-		for (auto* k : kids) {
-			if (k->m_parent != up)
+		for (size_t k = 1; k < nodes.size(); k++)
+			if (nodes[k]->m_parent != nodes[k - 1])
 				return false;
-			up = k;
-		}
 		return true;
 	}
 
-	void PutBack(Held& h, NiAVObject* root, const std::vector<NiAVObject*>& kids)
+	void PutBack(Held& h, const std::vector<NiAVObject*>& nodes)
 	{
-		root->m_localTransform.rot = h.baseRot;
-		for (size_t k = 0; k < kids.size() && k < h.basePos.size(); k++)
-			kids[k]->m_localTransform.pos = h.basePos[k];
-		if (root->m_parent)
-			UpdateWorldFrom(root, root->m_parent->m_worldTransform);
+		for (size_t i = 0; i + 1 < nodes.size() && i < h.baseRot.size(); i++)
+			nodes[i]->m_localTransform.rot = h.baseRot[i];
+		for (size_t k = 1; k < nodes.size() && k - 1 < h.basePos.size(); k++)
+			nodes[k]->m_localTransform.pos = h.basePos[k - 1];
+		UpdateWorldFrom(nodes[0], nodes[0]->m_parent->m_worldTransform);
 		h.wrote = false;
 	}
 
@@ -281,9 +324,12 @@ void LoadAimConfig(INIReader& reader)
 {
 	enabled = reader.GetBoolean("Aim", "enabled", false);
 	chainNames = Split(reader.Get("Aim", "chain", ""), '|');
+	handNames = Split(reader.Get("Aim", "hands", "LArm_Finger31|RArm_Finger31"), '|');
 	params.requireScene = reader.GetBoolean("Aim", "requireScene", true);
 	params.captureAngle = Radians(reader, "captureAngle", params.captureAngle);
 	params.keepAngle = (std::max)(params.captureAngle, Radians(reader, "keepAngle", params.keepAngle));
+	params.captureMiss = (float)reader.GetReal("Aim", "captureMiss", params.captureMiss);
+	params.keepMiss = (std::max)(params.captureMiss, (float)reader.GetReal("Aim", "keepMiss", params.keepMiss));
 	params.entryAngle = Radians(reader, "entryAngle", params.entryAngle);
 	params.reach = (std::max)(0.1f, (float)reader.GetReal("Aim", "reach", params.reach));
 	params.minReach = (float)reader.GetReal("Aim", "minReach", params.minReach);
@@ -291,8 +337,14 @@ void LoadAimConfig(INIReader& reader)
 	params.minInside = (float)reader.GetReal("Aim", "minInside", params.minInside);
 	params.maxStretch = (std::max)(1.0f, (float)reader.GetReal("Aim", "maxStretch", params.maxStretch));
 	params.rate = (std::max)(0.5f, (float)reader.GetReal("Aim", "rate", params.rate));
+	params.handRadius = (float)reader.GetReal("Aim", "handRadius", params.handRadius);
+	params.handHold = (std::max)(0.0f, (float)reader.GetReal("Aim", "handHold", params.handHold));
 	vagina = ReadPoint(reader, "vagina", vaginaAt) && ReadPoint(reader, "vaginaIn", vaginaIn);
 	anus = ReadPoint(reader, "anus", anusAt) && ReadPoint(reader, "anusIn", anusIn);
+	vaginaPath = ReadPath(reader, "vaginaPath");
+	anusPath = ReadPath(reader, "anusPath");
+	throatF = ReadPath(reader, "throatF");
+	throatM = ReadPath(reader, "throatM");
 	mouths = reader.GetBoolean("Aim", "mouths", true);
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
 	if (chainNames.size() < 2)
@@ -304,14 +356,16 @@ void LoadAimConfig(INIReader& reader)
 					"each frame, so the aim cannot show on it\n", n.c_str());
 		}
 	}
-	char key[96];
-	_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|config|%d|%d|%d|%d|%d", (int)enabled, (int)chainNames.size(), (int)vagina,
-		(int)anus, (int)mouths);
-	Note(key, "[aim] %s: chain of %d (%s ... %s), vagina %d, anus %d, mouths %d, scene required %d; capture %.0f, keep %.0f, "
-		"entry %.0f degrees, reach %.2f x, depth %.1f, stretch up to %.2f\n", enabled ? "on" : "off", (int)chainNames.size(),
-		chainNames.empty() ? "-" : chainNames.front().c_str(), chainNames.empty() ? "-" : chainNames.back().c_str(), (int)vagina,
-		(int)anus, (int)mouths, (int)params.requireScene, params.captureAngle * 57.29578f, params.keepAngle * 57.29578f,
-		params.entryAngle * 57.29578f, params.reach, params.depth, params.maxStretch);
+	char key[128];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|config|%d|%d|%d|%d|%d|%d|%d|%d", (int)enabled, (int)chainNames.size(),
+		(int)vagina, (int)anus, (int)mouths, (int)vaginaPath.size(), (int)anusPath.size(), (int)throatF.size());
+	Note(key, "[aim] %s: chain of %d (%s ... %s), vagina %d (path %d), anus %d (path %d), mouths %d (throat %d/%d), "
+		"hands %d, scene required %d; capture %.0f / keep %.0f degrees, miss %.1f / %.1f, entry %.0f, reach %.2f x, "
+		"stretch up to %.2f\n", enabled ? "on" : "off", (int)chainNames.size(), chainNames.empty() ? "-" : chainNames.front().c_str(),
+		chainNames.empty() ? "-" : chainNames.back().c_str(), (int)vagina, (int)vaginaPath.size(), (int)anus, (int)anusPath.size(),
+		(int)mouths, (int)throatF.size(), (int)throatM.size(), (int)handNames.size(), (int)params.requireScene,
+		params.captureAngle * 57.29578f, params.keepAngle * 57.29578f, params.captureMiss, params.keepMiss,
+		params.entryAngle * 57.29578f, params.reach, params.maxStretch);
 }
 
 void ResetAims()
@@ -345,8 +399,9 @@ void UpdateAims()
 		return v;
 	};
 
-	// every opening in reach: ours on the women, and every mouth
+	// every opening in reach (ours on the women, every mouth) and every hand
 	std::vector<AimSolve::Target> targets;
+	std::vector<AimSolve::Hand> hands;
 	if (enabled) {
 		for (auto& e : actorEntries) {
 			Actor* a = e.actor;
@@ -354,27 +409,22 @@ void UpdateAims()
 				continue;
 			bool inScene = inSceneNow(a->formID);
 			AddAnatomyTargets(a, inScene, targets);
-			NiPoint3 m, out;
-			if (mouths && MouthOpening(a, m, out)) {
-				AimSolve::Target g;
-				g.owner = a->formID;
-				g.kind = AimSolve::kMouth;
-				g.point = ToV3(m);
-				g.in = AimSolve::Normalized(ToV3(out * -1.0f));
-				g.inScene = inScene;
-				targets.push_back(g);
-			}
+			AddMouthTarget(a, inScene, targets);
+			if (!inScene && params.requireScene)
+				continue;                             // a hand out of a scene holds nobody's shaft here
+			for (auto& n : handNames)
+				if (NiAVObject* h = Find(a->unkF0->rootNode, n))
+					hands.push_back(AimSolve::Hand{ a->formID, ToV3(h->m_worldTransform.pos) });
 		}
 	}
 
-	// every chain: the animation's pose, the correction on top, written back
+	// every chain: the animation's pose, the corrections on top, written back
 	for (auto& e : actorEntries) {
 		Actor* a = e.actor;
-		NiAVObject* root = nullptr;
-		std::vector<NiAVObject*> kids;
-		if (!FindChain(a, root, kids))
+		std::vector<NiAVObject*> nodes;
+		if (!FindChain(a, nodes))
 			continue;
-		if (!Linear(root, kids)) {
+		if (!Linear(nodes)) {
 			Note("aim|shape|" + std::to_string(a->formID), "[aim] %08X: %s ... %s do not hang one from the next - "
 				"that chain is not aimed\n", a->formID, chainNames.front().c_str(), chainNames.back().c_str());
 			held.erase(a->formID);
@@ -385,83 +435,86 @@ void UpdateAims()
 			continue;
 		Held& h = held[a->formID];
 		h.seenAt = ms;
+		size_t n = nodes.size();
 
 		// the animation's pose: what is there now, unless it is still exactly what we wrote (then the
 		// animation did not key it this frame, and ours must not be taken for the animation's)
-		NiMatrix43 cur = root->m_localTransform.rot;
-		if (h.wrote && SameRot(cur, h.wroteRot)) {
-			if (!h.toldKeyed) {
-				Note("aim|keyed|" + std::to_string(a->formID) + "|0", "[aim] %08X: nothing keys %s between frames - the "
-					"correction rides on the pose the animation last set\n", a->formID, chainNames.front().c_str());
-				h.toldKeyed = true;
+		h.baseRot.resize(n - 1);
+		h.basePos.resize(n - 1);
+		bool keyed = false;
+		for (size_t i = 0; i + 1 < n; i++) {
+			const NiMatrix43& cur = nodes[i]->m_localTransform.rot;
+			if (!(h.wrote && i < h.wroteRot.size() && SameRot(cur, h.wroteRot[i]))) {
+				keyed = keyed || h.wrote;
+				h.baseRot[i] = cur;
 			}
 		}
-		else {
-			if (h.wrote && !h.toldKeyed) {
-				Note("aim|keyed|" + std::to_string(a->formID) + "|1", "[aim] %08X: the animation keys %s every frame - the "
-					"correction is laid on its pose each frame\n", a->formID, chainNames.front().c_str());
-				h.toldKeyed = true;
-			}
-			h.baseRot = cur;
+		for (size_t k = 1; k < n; k++) {
+			const NiPoint3& cur = nodes[k]->m_localTransform.pos;
+			if (!(h.wrote && k - 1 < h.wrotePos.size() && SamePos(cur, h.wrotePos[k - 1])))
+				h.basePos[k - 1] = cur;
 		}
-		h.basePos.resize(kids.size());
-		for (size_t k = 0; k < kids.size(); k++) {
-			const NiPoint3& p = kids[k]->m_localTransform.pos;
-			if (!(h.wrote && k < h.wrotePos.size() && SamePos(p, h.wrotePos[k])))
-				h.basePos[k] = p;
+		if (h.wrote && !h.toldKeyed) {
+			Note("aim|keyed|" + std::to_string(a->formID) + (keyed ? "|1" : "|0"), keyed ?
+				"[aim] %08X: the animation keys %s every frame - the correction is laid on its pose each frame\n" :
+				"[aim] %08X: nothing keys %s between frames - the correction rides on the pose the animation last set\n",
+				a->formID, chainNames.front().c_str());
+			h.toldKeyed = true;
 		}
 
 		if (!enabled) {                               // switched off: put the animation's pose back, once
 			if (h.wrote)
-				PutBack(h, root, kids);
+				PutBack(h, nodes);
 			held.erase(a->formID);
 			continue;
 		}
 
-		// the chain as the animation put it, from the parent's world transform down
-		const NiTransform& parent = root->m_parent->m_worldTransform;
-		AimSolve::M3 P = Actual(parent.rot);
-		AimSolve::M3 Qbase = Actual(h.baseRot);
-		V3 base = AimSolve::Add(ToV3(parent.pos), Apply(P, AimSolve::Scale(ToV3(root->m_localTransform.pos), parent.scale)));
-		AimSolve::M3 Q = Mul(P, Qbase);
-		float s = parent.scale * root->m_localTransform.scale;
-		V3 at = base;
-		float length = 0.0f;
-		for (size_t k = 0; k < kids.size(); k++) {
-			V3 next = AimSolve::Add(at, Apply(Q, AimSolve::Scale(ToV3(h.basePos[k]), s)));
-			length += AimSolve::Length(AimSolve::Sub(next, at));
-			at = next;
-			Q = Mul(Q, Actual(kids[k]->m_localTransform.rot));
-			s *= kids[k]->m_localTransform.scale;
-		}
+		// the chain as the animation put it: locals, and offsets in world units
+		const NiTransform& parent = nodes[0]->m_parent->m_worldTransform;
 		AimSolve::Chain c;
 		c.owner = a->formID;
 		c.inScene = inSceneNow(a->formID);
-		c.base = base;
-		c.tip = at;
-		c.length = length;
-		c.parent = AimSolve::FromMatrix(P);
+		c.parent = AimSolve::FromMatrix(Actual(parent.rot));
+		c.root = WorldPoint(parent, nodes[0]->m_localTransform.pos);
+		c.locals.resize(n);
+		c.offsets.assign(n, V3{});
+		float scale = parent.scale * nodes[0]->m_localTransform.scale;
+		for (size_t i = 0; i < n; i++) {
+			const NiMatrix43& rot = i + 1 < n ? h.baseRot[i] : nodes[i]->m_localTransform.rot;
+			c.locals[i] = AimSolve::FromMatrix(Actual(rot));
+			if (i > 0) {
+				c.offsets[i] = AimSolve::Scale(ToV3(h.basePos[i - 1]), scale);
+				scale *= nodes[i]->m_localTransform.scale;
+			}
+		}
 
-		AimSolve::Result r = AimSolve::Update(h.state, c, targets, params, dt);
+		AimSolve::Result r = AimSolve::Update(h.state, c, targets, hands, params, dt);
+		if (r.held) {
+			Note("aim|held|" + std::to_string(a->formID), "[aim] %08X: a hand holds the shaft - it is not aimed while "
+				"held\n", a->formID);
+		}
 		if (r.newLock) {
 			char key[96];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|lock|%08X|%08X|%d", a->formID, r.targetOwner, r.targetKind);
-			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees off, stretch %.2f\n", a->formID, r.targetOwner,
-				AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.stretch);
+			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
+				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
 		}
 		if (r.active) {
-			root->m_localTransform.rot = Stored(Mul(AimSolve::ToMatrix(r.local), Qbase));
-			h.wrotePos.resize(kids.size());
-			for (size_t k = 0; k < kids.size(); k++) {
-				kids[k]->m_localTransform.pos = h.basePos[k] * r.stretch;
-				h.wrotePos[k] = kids[k]->m_localTransform.pos;
+			h.wroteRot.resize(n - 1);
+			h.wrotePos.resize(n - 1);
+			for (size_t i = 0; i + 1 < n; i++) {
+				nodes[i]->m_localTransform.rot = Stored(Mul(AimSolve::ToMatrix(r.local[i]), Actual(h.baseRot[i])));
+				h.wroteRot[i] = nodes[i]->m_localTransform.rot;
 			}
-			h.wroteRot = root->m_localTransform.rot;
+			for (size_t k = 1; k < n; k++) {
+				nodes[k]->m_localTransform.pos = h.basePos[k - 1] * r.stretch;
+				h.wrotePos[k - 1] = nodes[k]->m_localTransform.pos;
+			}
 			h.wrote = true;
-			UpdateWorldFrom(root, parent);
+			UpdateWorldFrom(nodes[0], parent);
 		}
 		else if (h.wrote) {
-			PutBack(h, root, kids);
+			PutBack(h, nodes);
 		}
 	}
 
@@ -472,10 +525,9 @@ void UpdateAims()
 		}
 		if (it->second.wrote) {
 			Actor* a = DYNAMIC_CAST(LookupFormByID(it->first), TESForm, Actor);
-			NiAVObject* root = nullptr;
-			std::vector<NiAVObject*> kids;
-			if (FindChain(a, root, kids) && Linear(root, kids)) {
-				PutBack(it->second, root, kids);
+			std::vector<NiAVObject*> nodes;
+			if (FindChain(a, nodes) && Linear(nodes)) {
+				PutBack(it->second, nodes);
 				Note("aim|unseen|" + std::to_string(it->first), "[aim] %08X: out of the scan with a correction on - the "
 					"animation's pose put back\n", it->first);
 			}

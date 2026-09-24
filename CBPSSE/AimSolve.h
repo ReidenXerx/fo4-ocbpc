@@ -2,16 +2,18 @@
 // Licensed under the GNU General Public License, version 3 (COPYING), with the additional
 // permission for F4SE stated in README.md.
 //
-// Pure: no engine type, so it is tested outside the game (tests/aim). Aim.cpp gathers the chains and
-// the openings from the running game, calls Update once a frame per chain, and writes the result.
+// Pure: no engine type, so it is tested outside the game (tests/aim). Aim.cpp gathers the chains, the
+// openings and the hands from the running game, calls Update once a frame per chain, and writes the result.
 //
-// A chain is a penis: a root bone the whole shaft hangs from, and its tip. An opening (a target) is a
-// point on someone's body and the direction INTO it. Each frame a chain keeps the opening it is locked
-// on while it stays within keepAngle, or locks on the closest one within captureAngle, and turns the
-// shaft about its root so it runs into that opening. The turn is a correction ON TOP of the animation's
-// pose, in the root's parent's frame (so it rides along when the actor turns), smoothed in and out.
-// Nothing is ever forced: an opening past the angles, behind the shaft, entered from inside or out of
-// reach is left to the animation.
+// A chain is a penis: bones from a root to a tip, each hanging from the last. An opening is a point on
+// someone's body, the direction INTO it, and the path inside (her body's middle, measured; a throat).
+// Each frame a chain keeps the opening it is locked on while it still fits loosely, or locks on the one
+// the animation came closest to entering. Locked, the shaft runs straight from its root to the entrance
+// and then bends bone by bone along the path inside, like a snake into its hole, so a deep or angled
+// thrust stays inside her instead of coming out through her. The chain stretches a little when it falls
+// short. Each bone's turn is a correction ON TOP of the animation's pose, in that bone's parent's frame,
+// smoothed in and out. Nothing is forced: a shaft a hand holds, an opening the animation misses by far,
+// one entered from the side or from inside, or out of reach, is left to the animation.
 #pragma once
 
 #include <cstdint>
@@ -63,32 +65,50 @@ namespace AimSolve
 	{
 		std::uint32_t owner = 0;
 		int kind = kVagina;
-		V3 point;          // the opening's centre, world
-		V3 in;             // unit, pointing INTO the body
+		V3 point;                 // the entrance, world
+		V3 in;                    // unit, pointing INTO the body
+		std::vector<V3> path;     // inside, world, from the entrance on; empty: straight along `in`
 		bool inScene = false;
 	};
 
+	// A hand that may be holding a shaft (a knuckle bone), anyone's.
+	struct Hand
+	{
+		std::uint32_t owner = 0;
+		V3 point;
+	};
+
+	// The chain as the animation posed it. Joint i hangs from joint i-1 at offsets[i] in i-1's frame
+	// (world units: scale already in). World rotation of joint i = parent x locals[0] x ... x locals[i].
 	struct Chain
 	{
 		std::uint32_t owner = 0;
 		bool inScene = false;
-		V3 base;           // the root bone's origin, world: the shaft turns about it
-		V3 tip;            // the last bone's origin, world, as the animation put it
-		float length = 0;  // base to tip along the bones
-		Quat parent;       // the root's parent's world rotation
+		Quat parent;                  // the root's parent's world rotation
+		V3 root;                      // the root joint's world position
+		std::vector<Quat> locals;     // n: each joint's local rotation
+		std::vector<V3> offsets;      // n: offsets[0] unused, offsets[i] = joint i in joint i-1's frame
 	};
+	// World joints and rotations of a chain with these locals and offsets x stretch (1 for the animation's).
+	void Pose(const Chain& c, const std::vector<Quat>& locals, float stretch, std::vector<V3>& joints,
+		std::vector<Quat>& world);
+	float ChainLength(const Chain& c);
 
 	struct Params
 	{
 		float captureAngle = 0.61f;   // radians (35 degrees): the most a new lock may turn the shaft
 		float keepAngle = 0.79f;      // (45): a lock is kept up to here, so it does not flicker at the edge
+		float captureMiss = 5.0f;     // units: the animation's shaft line passes at most this far from the
+		float keepMiss = 8.0f;        //   opening to lock on it (to keep it): a near miss, not another act
 		float entryAngle = 1.31f;     // (75): the shaft must run within this of the opening's inward axis
 		float reach = 1.3f;           // the opening's centre at most this x the chain's length from its root
 		float minReach = 2.0f;        // ... and at least this far (units)
-		float depth = 2.0f;           // aim this far inside the opening, so the shaft follows it in
+		float depth = 2.0f;           // the angle is judged toward a point this far inside
 		float minInside = 3.0f;       // the stretch lets at least this much of the shaft pass the entrance
 		float maxStretch = 1.10f;     // ... up to this x its length
 		float rate = 8.0f;            // 1/s: how fast the correction follows (in and out)
+		float handRadius = 4.0f;      // a knuckle this close to the shaft's outer part: a hand holds it
+		float handHold = 1.0f;        // seconds a held shaft stays unaimed after the hand lets go
 		bool requireScene = true;     // both the chain's owner and the opening's in a scene
 	};
 
@@ -97,31 +117,40 @@ namespace AimSolve
 		bool locked = false;
 		std::uint32_t lockedOwner = 0;
 		int lockedKind = -1;
-		Quat correction;              // in the root's parent's frame, smoothed
+		std::vector<Quat> correction; // per joint (all but the tip), in its parent's frame, smoothed
 		float stretch = 1.0f;         // smoothed
+		float clock = 0.0f;           // seconds this state has run
+		float heldUntil = -1.0f;      // a hand held the shaft: no aim before this
 	};
 
 	struct Result
 	{
-		Quat local;                   // the correction to put on the root's local rotation (parent frame)
-		float stretch = 1.0f;         // the children's offsets x this
+		std::vector<Quat> local;      // per joint but the tip: its local rotation becomes local[i] x locals[i]
+		float stretch = 1.0f;         // the offsets of joints 1.. x this
 		bool active = false;          // anything to write (a lock, or one still fading out)
 		bool locked = false;
 		bool newLock = false;         // locked this frame (a new opening)
+		bool held = false;            // a hand holds the shaft this frame
 		std::uint32_t targetOwner = 0;
 		int targetKind = -1;
-		float angle = 0.0f;           // radians the lock asks for (0 without one)
+		float angle = 0.0f;           // radians the lock asks of the root (0 without one)
+		float miss = 0.0f;            // how far the animation's shaft line missed the entrance
 	};
 
-	// Would this chain enter this opening, and with what turn? keep: judged as a lock already held.
+	// Would this chain enter this opening? keep: judged as a lock already held.
 	struct Fit
 	{
 		bool ok = false;
 		float angle = 0.0f;
-		Quat world;                   // the turn, world frame
+		float miss = 0.0f;
 		float stretch = 1.0f;
 	};
-	Fit Judge(const Chain& c, const Target& t, const Params& p, bool keep);
+	Fit Judge(const Chain& c, const std::vector<V3>& joints, const Target& t, const Params& p, bool keep);
+	bool Held(const Chain& c, const std::vector<V3>& joints, const std::vector<Hand>& hands, const Params& p);
 
-	Result Update(State& s, const Chain& c, const std::vector<Target>& targets, const Params& p, float dt);
+	// The corrections that lay the chain along root -> entrance -> path, joint by joint (no smoothing).
+	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch);
+
+	Result Update(State& s, const Chain& c, const std::vector<Target>& targets, const std::vector<Hand>& hands,
+		const Params& p, float dt);
 }

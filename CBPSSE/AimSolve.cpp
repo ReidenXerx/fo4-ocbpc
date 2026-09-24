@@ -133,22 +133,54 @@ namespace AimSolve
 		}
 	}
 
-	Fit Judge(const Chain& c, const Target& t, const Params& p, bool keep)
+	void Pose(const Chain& c, const std::vector<Quat>& locals, float stretch, std::vector<V3>& joints,
+		std::vector<Quat>& world)
+	{
+		size_t n = c.locals.size();
+		joints.assign(n, V3{});
+		world.assign(n, Quat{});
+		if (!n)
+			return;
+		joints[0] = c.root;
+		world[0] = Mul(c.parent, locals[0]);
+		for (size_t i = 1; i < n; i++) {
+			joints[i] = Add(joints[i - 1], Rotate(world[i - 1], Scale(c.offsets[i], stretch)));
+			world[i] = Mul(world[i - 1], locals[i]);
+		}
+	}
+
+	float ChainLength(const Chain& c)
+	{
+		float l = 0.0f;
+		for (size_t i = 1; i < c.offsets.size(); i++)
+			l += Length(c.offsets[i]);
+		return l;
+	}
+
+	Fit Judge(const Chain& c, const std::vector<V3>& joints, const Target& t, const Params& p, bool keep)
 	{
 		Fit f;
-		if (t.owner == c.owner || c.length <= 0.0f)
+		float length = ChainLength(c);
+		if (t.owner == c.owner || length <= 0.0f || joints.size() < 2)
 			return f;                                // never one's own opening
 		if (p.requireScene && !(c.inScene && t.inScene))
 			return f;
-		V3 shaft = Sub(c.tip, c.base);
+		V3 base = joints.front();
+		V3 shaft = Sub(joints.back(), base);
 		if (Length(shaft) < 1e-4f)
 			return f;
 		V3 u = Normalized(shaft);
-		float entrance = Length(Sub(t.point, c.base));
-		if (entrance < p.minReach || entrance > c.length * p.reach)
+		V3 q = Sub(t.point, base);
+		float entrance = Length(q);
+		if (entrance < p.minReach || entrance > length * p.reach)
+			return f;
+		// how far the animation's shaft line passes from the entrance: a near miss is an entry the
+		// animation meant; a hand job beside her is not
+		float miss = Length(Sub(q, Scale(u, Dot(q, u))));
+		if (miss > (keep ? p.keepMiss : p.captureMiss))
 			return f;
 		V3 aim = Add(t.point, Scale(t.in, p.depth));
-		V3 d = Normalized(Sub(aim, c.base));
+		V3 d = Normalized(Sub(aim, base));
 		// (an opening behind the root needs a turn far past keepAngle: the angle below refuses it)
 		if (Dot(d, t.in) < std::cos(p.entryAngle))
 			return f;                                // from the side, or from inside
@@ -157,21 +189,114 @@ namespace AimSolve
 			return f;
 		f.ok = true;
 		f.angle = angle;
-		f.world = FromTo(u, d);
-		f.stretch = (std::max)(1.0f, (std::min)(p.maxStretch, (entrance + p.minInside) / c.length));
+		f.miss = miss;
+		f.stretch = (std::max)(1.0f, (std::min)(p.maxStretch, (entrance + p.minInside) / length));
 		return f;
 	}
 
-	Result Update(State& s, const Chain& c, const std::vector<Target>& targets, const Params& p, float dt)
+	static float SegmentDistance(const V3& x, const V3& a, const V3& b)
+	{
+		V3 ab = Sub(b, a);
+		float l2 = Dot(ab, ab);
+		float t = l2 > 1e-8f ? Dot(Sub(x, a), ab) / l2 : 0.0f;
+		t = (std::max)(0.0f, (std::min)(1.0f, t));
+		return Length(Sub(x, Add(a, Scale(ab, t))));
+	}
+
+	bool Held(const Chain& c, const std::vector<V3>& joints, const std::vector<Hand>& hands, const Params& p)
+	{
+		// the shaft's outer part, from the first joint past the root to the tip: a hand at its base (a
+		// partner steadying it, his own hand at his groin) does not count
+		for (auto& h : hands)
+			for (size_t i = 1; i + 1 < joints.size(); i++)
+				if (SegmentDistance(h.point, joints[i], joints[i + 1]) <= p.handRadius)
+					return true;
+		(void)c;
+		return false;
+	}
+
+	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch)
+	{
+		size_t n = c.locals.size();
+		std::vector<Quat> out(n ? n - 1 : 0);
+		if (n < 2)
+			return out;
+		// the line to lay the chain on: root, entrance, then the path inside (or straight in)
+		std::vector<V3> line{ c.root, t.point };
+		if (!t.path.empty())
+			line.insert(line.end(), t.path.begin(), t.path.end());
+		else
+			line.push_back(Add(t.point, Scale(t.in, 24.0f)));
+		// Each joint, root first, turned so the next lands ON the line, exactly a bone's length on from it:
+		// the next crossing of the line with a sphere of that radius. (A point that far ALONG the line
+		// would put the joint off it wherever a bone spans a bend: the chord is shorter than the arc.)
+		size_t seg = 1;
+		float from = 0.0f;                           // the current joint's place on line[seg - 1] -> line[seg]
+		Quat parentW = c.parent;
+		V3 pos = c.root;
+		for (size_t i = 0; i + 1 < n; i++) {
+			Quat w = Mul(parentW, c.locals[i]);
+			V3 step = Rotate(w, Scale(c.offsets[i + 1], stretch));
+			float len = Length(step);
+			V3 next;
+			bool found = false;
+			while (seg < line.size() && !found) {
+				V3 a = line[seg - 1], d = Sub(line[seg], a), m = Sub(a, pos);
+				float A = Dot(d, d), B = 2.0f * Dot(m, d), C = Dot(m, m) - len * len;
+				float disc = B * B - 4.0f * A * C;
+				if (A > 1e-8f && disc >= 0.0f) {
+					float t = (-B + std::sqrt(disc)) / (2.0f * A);   // the forward crossing
+					if (t >= from && t <= 1.0f) {
+						next = Add(a, Scale(d, t));
+						from = t;
+						found = true;
+						break;
+					}
+				}
+				seg++;
+				from = 0.0f;
+			}
+			if (!found) {                            // past the line's end: straight on along its last leg
+				V3 last = Normalized(Sub(line.back(), line[line.size() - 2]));
+				next = Add(pos, Scale(last, len));
+				seg = line.size();
+			}
+			Quat turn = FromTo(Normalized(step), Normalized(Sub(next, pos)));
+			out[i] = Mul(Mul(Conj(parentW), turn), parentW);      // in the parent's frame
+			Quat turned = Mul(turn, w);
+			pos = Add(pos, Rotate(turned, Scale(c.offsets[i + 1], stretch)));
+			parentW = turned;
+		}
+		return out;
+	}
+
+	Result Update(State& s, const Chain& c, const std::vector<Target>& targets, const std::vector<Hand>& hands,
+		const Params& p, float dt)
 	{
 		Result r;
+		size_t n = c.locals.size();
+		size_t joints = n ? n - 1 : 0;
+		if (s.correction.size() != joints)
+			s.correction.assign(joints, Quat{});
+		s.clock += (std::max)(0.0f, dt);
+
+		std::vector<V3> pose;
+		std::vector<Quat> world;
+		Pose(c, c.locals, 1.0f, pose, world);
+
+		// a hand on the shaft: it is being held, not put in (and a moment after, so a stroke that leaves
+		// the shaft for a frame does not snap it into her)
+		r.held = Held(c, pose, hands, p);
+		if (r.held)
+			s.heldUntil = s.clock + p.handHold;
+		bool blocked = s.clock < s.heldUntil;
+
 		Fit best;
 		const Target* chosen = nullptr;
-		// a lock held stays while it still fits, loosely
-		if (s.locked) {
+		if (!blocked && s.locked) {                 // a lock held stays while it still fits, loosely
 			for (auto& t : targets) {
 				if (t.owner == s.lockedOwner && t.kind == s.lockedKind) {
-					Fit f = Judge(c, t, p, true);
+					Fit f = Judge(c, pose, t, p, true);
 					if (f.ok) {
 						best = f;
 						chosen = &t;
@@ -180,11 +305,10 @@ namespace AimSolve
 				}
 			}
 		}
-		// otherwise the opening that needs the smallest turn
-		if (!chosen) {
+		if (!blocked && !chosen) {                  // otherwise the one the animation came closest to entering
 			for (auto& t : targets) {
-				Fit f = Judge(c, t, p, false);
-				if (f.ok && (!chosen || f.angle < best.angle)) {
+				Fit f = Judge(c, pose, t, p, false);
+				if (f.ok && (!chosen || f.miss < best.miss)) {
 					best = f;
 					chosen = &t;
 				}
@@ -195,11 +319,14 @@ namespace AimSolve
 		s.lockedOwner = chosen ? chosen->owner : 0;
 		s.lockedKind = chosen ? chosen->kind : -1;
 
-		// the turn wanted, in the parent's frame: world q = P l P^-1, so l = P^-1 q P
-		Quat want = chosen ? Mul(Mul(Conj(c.parent), best.world), c.parent) : Quat{};
+		std::vector<Quat> want = chosen ? Bend(c, *chosen, best.stretch) : std::vector<Quat>(joints, Quat{});
 		float wantStretch = chosen ? best.stretch : 1.0f;
 		float a = dt > 0.0f ? 1.0f - std::exp(-p.rate * dt) : 0.0f;
-		s.correction = Slerp(s.correction, want, a);
+		bool moving = false;
+		for (size_t i = 0; i < joints; i++) {
+			s.correction[i] = Slerp(s.correction[i], want[i], a);
+			moving = moving || Angle(s.correction[i]) >= 1e-4f;
+		}
 		s.stretch += (wantStretch - s.stretch) * a;
 
 		r.local = s.correction;
@@ -208,7 +335,8 @@ namespace AimSolve
 		r.targetOwner = s.lockedOwner;
 		r.targetKind = s.lockedKind;
 		r.angle = chosen ? best.angle : 0.0f;
-		r.active = chosen || Angle(s.correction) >= 1e-4f || std::fabs(s.stretch - 1.0f) >= 1e-4f;
+		r.miss = chosen ? best.miss : 0.0f;
+		r.active = chosen || moving || std::fabs(s.stretch - 1.0f) >= 1e-4f;
 		return r;
 	}
 }
