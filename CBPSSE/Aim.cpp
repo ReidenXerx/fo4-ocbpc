@@ -40,6 +40,7 @@ namespace
 	bool enabled = false;
 	std::vector<std::string> chainNames;          // root first, tip last
 	std::vector<std::string> handNames;           // knuckle bones: a hand there holds a shaft
+	std::vector<std::string> gripSides;           // LArm, RArm: <side>_Finger21..53 make a grip
 	AimSolve::Params params;
 	// Her openings, in Pelvis_skin's frame (physics_config.py writes them): entrance, inward axis, the
 	// path inside. The throat, in HEAD's frame, per sex; the entrance is [Mouth]'s mouth.
@@ -266,6 +267,40 @@ namespace
 		out.push_back(g);
 	}
 
+	// A hand as an opening: the grip is the middle of its four fingers' joints (around a shaft they close
+	// into a ring), along the line of its knuckles, index to little finger. Entered either way (AimSolve).
+	void AddGripTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
+	{
+		for (auto& side : gripSides) {
+			V3 sum{};
+			int found = 0;
+			V3 index{}, little{};
+			for (int f = 2; f <= 5; f++) {
+				for (int j = 1; j <= 3; j++) {
+					NiAVObject* n = Find(a->unkF0->rootNode, side + "_Finger" + std::to_string(f * 10 + j));
+					if (!n)
+						continue;
+					V3 at = ToV3(n->m_worldTransform.pos);
+					sum = AimSolve::Add(sum, at);
+					found++;
+					if (j == 1 && f == 2)
+						index = at;
+					if (j == 1 && f == 5)
+						little = at;
+				}
+			}
+			if (found != 12)
+				continue;
+			AimSolve::Target g;
+			g.owner = a->formID;
+			g.kind = AimSolve::kHand;
+			g.point = AimSolve::Scale(sum, 1.0f / 12.0f);
+			g.in = AimSolve::Normalized(AimSolve::Sub(little, index));
+			g.inScene = inScene;
+			out.push_back(g);
+		}
+	}
+
 	// The chain's nodes under an actor's skeleton, root first; false unless every one is there.
 	bool FindChain(Actor* a, std::vector<NiAVObject*>& nodes)
 	{
@@ -325,6 +360,7 @@ void LoadAimConfig(INIReader& reader)
 	enabled = reader.GetBoolean("Aim", "enabled", false);
 	chainNames = Split(reader.Get("Aim", "chain", ""), '|');
 	handNames = Split(reader.Get("Aim", "hands", "LArm_Finger31|RArm_Finger31"), '|');
+	gripSides = Split(reader.Get("Aim", "grips", "LArm|RArm"), '|');
 	params.requireScene = reader.GetBoolean("Aim", "requireScene", true);
 	params.captureAngle = Radians(reader, "captureAngle", params.captureAngle);
 	params.keepAngle = (std::max)(params.captureAngle, Radians(reader, "keepAngle", params.keepAngle));
@@ -360,10 +396,10 @@ void LoadAimConfig(INIReader& reader)
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|config|%d|%d|%d|%d|%d|%d|%d|%d", (int)enabled, (int)chainNames.size(),
 		(int)vagina, (int)anus, (int)mouths, (int)vaginaPath.size(), (int)anusPath.size(), (int)throatF.size());
 	Note(key, "[aim] %s: chain of %d (%s ... %s), vagina %d (path %d), anus %d (path %d), mouths %d (throat %d/%d), "
-		"hands %d, scene required %d; capture %.0f / keep %.0f degrees, miss %.1f / %.1f, entry %.0f, reach %.2f x, "
+		"knuckles %d, grips %d, scene required %d; capture %.0f / keep %.0f degrees, miss %.1f / %.1f, entry %.0f, reach %.2f x, "
 		"stretch up to %.2f\n", enabled ? "on" : "off", (int)chainNames.size(), chainNames.empty() ? "-" : chainNames.front().c_str(),
 		chainNames.empty() ? "-" : chainNames.back().c_str(), (int)vagina, (int)vaginaPath.size(), (int)anus, (int)anusPath.size(),
-		(int)mouths, (int)throatF.size(), (int)throatM.size(), (int)handNames.size(), (int)params.requireScene,
+		(int)mouths, (int)throatF.size(), (int)throatM.size(), (int)handNames.size(), (int)gripSides.size(), (int)params.requireScene,
 		params.captureAngle * 57.29578f, params.keepAngle * 57.29578f, params.captureMiss, params.keepMiss,
 		params.entryAngle * 57.29578f, params.reach, params.maxStretch);
 }
@@ -412,6 +448,7 @@ void UpdateAims()
 			AddMouthTarget(a, inScene, targets);
 			if (!inScene && params.requireScene)
 				continue;                             // a hand out of a scene holds nobody's shaft here
+			AddGripTargets(a, inScene, targets);
 			for (auto& n : handNames)
 				if (NiAVObject* h = Find(a->unkF0->rootNode, n))
 					hands.push_back(AimSolve::Hand{ a->formID, ToV3(h->m_worldTransform.pos) });

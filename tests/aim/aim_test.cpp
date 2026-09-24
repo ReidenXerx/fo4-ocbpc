@@ -274,6 +274,34 @@ int main()
 		Result r = Settle(s, c, { Opening(2, kVagina, { 0, 12, 1 }, { 0, 1, 0 }) }, p, { Hand{ 2, { 0, 0.5f, 3.5f } } });
 		Expect(!r.held && r.locked, "16: a hand at the root: still aimed");
 	}
+	{   // 18. a gripping hand is the target while it grips: the shaft runs through its grip, not into her
+		Chain c = Shaft();
+		Target her = Opening(2, kVagina, { 0, 12, 1 }, { 0, 1, 0 });
+		Target grip = Opening(2, kHand, { 0.6f, 7, 1.2f }, { 0, -1, 0.1f });   // axis given the other way round
+		std::vector<Hand> knuckle{ Hand{ 2, { 0, 7, 3 } } };
+		State s;
+		Result r = Settle(s, c, { her, grip }, p, knuckle);
+		Expect(r.held && r.locked && r.targetKind == kHand, "18: gripped: locked on the hand, not on her");
+		std::vector<V3> j = Written(c, r);
+		Target o = grip;
+		o.in = Scale(o.in, -1.0f);                                   // entered from the shaft's side
+		std::vector<V3> line{ c.root, o.point, Add(o.point, Scale(o.in, 24.0f)) };
+		float worst = 0;
+		for (auto& x : j)
+			worst = (std::max)(worst, PolyDist(x, line));
+		Expect(worst < 0.01f, "18: the shaft runs through the grip, along it (either way round)");
+		Expect(Near(r.stretch, 1.0f, 1e-4f), "18: a hand never stretches the shaft");
+		Target tipGrip = Opening(2, kHand, { 0.5f, 15, 0.5f }, { 0, 1, 0 });   // near the tip: her own would stretch
+		State s4;
+		r = Settle(s4, c, { tipGrip }, p, { Hand{ 2, { 0, 14, 2.5f } } });
+		Expect(r.locked && Near(r.stretch, 1.0f, 1e-4f), "18: a grip at the tip does not stretch it either");
+		State s2;
+		Expect(!Settle(s2, c, { grip }, p).locked, "18: a hand that does not hold the shaft is no target");
+		State s3;
+		Target own = grip;
+		own.owner = 1;
+		Expect(Settle(s3, c, { own }, p, knuckle).locked, "18: his own hand grips too");
+	}
 	{   // 17. FromTo / matrix round trip
 		V3 a = Normalized({ 1, 2, 3 }), b = Normalized({ -2, 0.5f, 1 });
 		Quat q = FromTo(a, b);

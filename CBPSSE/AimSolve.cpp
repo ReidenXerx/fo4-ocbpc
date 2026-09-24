@@ -129,6 +129,7 @@ namespace AimSolve
 		case kVagina: return "vagina";
 		case kAnus: return "anus";
 		case kMouth: return "mouth";
+		case kHand: return "hand";
 		default: return "?";
 		}
 	}
@@ -161,8 +162,9 @@ namespace AimSolve
 	{
 		Fit f;
 		float length = ChainLength(c);
-		if (t.owner == c.owner || length <= 0.0f || joints.size() < 2)
-			return f;                                // never one's own opening
+		bool hand = t.kind == kHand;
+		if ((t.owner == c.owner && !hand) || length <= 0.0f || joints.size() < 2)
+			return f;                                // never one's own opening (one's own hand, yes)
 		if (p.requireScene && !(c.inScene && t.inScene))
 			return f;
 		V3 base = joints.front();
@@ -190,8 +192,17 @@ namespace AimSolve
 		f.ok = true;
 		f.angle = angle;
 		f.miss = miss;
-		f.stretch = (std::max)(1.0f, (std::min)(p.maxStretch, (entrance + p.minInside) / length));
+		f.stretch = hand ? 1.0f : (std::max)(1.0f, (std::min)(p.maxStretch, (entrance + p.minInside) / length));
 		return f;
+	}
+
+	Target Oriented(const Target& t, const std::vector<V3>& joints)
+	{
+		// a grip has no inside: it is entered from whichever side the shaft comes
+		Target o = t;
+		if (t.kind == kHand && joints.size() >= 2 && Dot(o.in, Sub(joints.back(), joints.front())) < 0.0f)
+			o.in = Scale(o.in, -1.0f);
+		return o;
 	}
 
 	static float SegmentDistance(const V3& x, const V3& a, const V3& b)
@@ -291,26 +302,36 @@ namespace AimSolve
 			s.heldUntil = s.clock + p.handHold;
 		bool blocked = s.clock < s.heldUntil;
 
+		// what may be entered now: while a hand grips, only a hand (the shaft through its grip); just after,
+		// nothing; otherwise anything but a hand
+		auto allowed = [&](const Target& t) { return r.held ? t.kind == kHand : !blocked && t.kind != kHand; };
 		Fit best;
+		Target chosenT;
 		const Target* chosen = nullptr;
-		if (!blocked && s.locked) {                 // a lock held stays while it still fits, loosely
+		if (s.locked) {                             // a lock held stays while it still fits, loosely
 			for (auto& t : targets) {
 				if (t.owner == s.lockedOwner && t.kind == s.lockedKind) {
-					Fit f = Judge(c, pose, t, p, true);
+					Target o = Oriented(t, pose);
+					Fit f = allowed(t) ? Judge(c, pose, o, p, true) : Fit{};
 					if (f.ok) {
 						best = f;
-						chosen = &t;
+						chosenT = o;
+						chosen = &chosenT;
 					}
 					break;
 				}
 			}
 		}
-		if (!blocked && !chosen) {                  // otherwise the one the animation came closest to entering
+		if (!chosen) {                              // otherwise the one the animation came closest to entering
 			for (auto& t : targets) {
-				Fit f = Judge(c, pose, t, p, false);
+				if (!allowed(t))
+					continue;
+				Target o = Oriented(t, pose);
+				Fit f = Judge(c, pose, o, p, false);
 				if (f.ok && (!chosen || f.miss < best.miss)) {
 					best = f;
-					chosen = &t;
+					chosenT = o;
+					chosen = &chosenT;
 				}
 			}
 			r.newLock = chosen != nullptr;

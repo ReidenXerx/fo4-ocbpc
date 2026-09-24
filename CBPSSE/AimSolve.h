@@ -7,13 +7,16 @@
 //
 // A chain is a penis: bones from a root to a tip, each hanging from the last. An opening is a point on
 // someone's body, the direction INTO it, and the path inside (her body's middle, measured; a throat).
-// Each frame a chain keeps the opening it is locked on while it still fits loosely, or locks on the one
-// the animation came closest to entering. Locked, the shaft runs straight from its root to the entrance
-// and then bends bone by bone along the path inside, like a snake into its hole, so a deep or angled
-// thrust stays inside her instead of coming out through her. The chain stretches a little when it falls
-// short. Each bone's turn is a correction ON TOP of the animation's pose, in that bone's parent's frame,
-// smoothed in and out. Nothing is forced: a shaft a hand holds, an opening the animation misses by far,
-// one entered from the side or from inside, or out of reach, is left to the animation.
+// A hand gripping the shaft is an opening too (the centre of its fingers, along its knuckles), and while
+// one grips it is the ONLY one: the shaft runs through the grip instead of into anyone, and for a moment
+// after the hand lets go into no one. Each frame a chain keeps the opening it is locked on while it still
+// fits loosely, or locks on the one the animation came closest to entering. Locked, the shaft runs
+// straight from its root to the entrance and then bends bone by bone along the path inside, like a snake
+// into its hole, so a deep or angled thrust stays inside her instead of coming out through her. The chain
+// stretches a little when it falls short (never for a hand). Each bone's turn is a correction ON TOP of
+// the animation's pose, in that bone's parent's frame, smoothed in and out. Nothing is forced: an opening
+// the animation misses by far, one entered from the side or from inside, or out of reach, is left to the
+// animation.
 #pragma once
 
 #include <cstdint>
@@ -58,6 +61,7 @@ namespace AimSolve
 		kVagina = 0,
 		kAnus = 1,
 		kMouth = 2,
+		kHand = 3,        // a gripping hand: the shaft through its grip, either way along it
 	};
 	const char* KindName(int kind);
 
