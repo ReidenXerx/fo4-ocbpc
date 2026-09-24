@@ -5,6 +5,13 @@
 
 #include "FaceAuthority.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 // Everything this plugin writes over the engine's merged face weights (BSFaceGenAnimationData + 0x18),
 // as pure functions, so the order and the frame-to-frame behaviour run in a test outside the game
 // (tests/face). This is the ONE place where the layers of a face meet; each layer's right is written
@@ -14,8 +21,9 @@
 //      mouth left to the line's lip sync while the actor speaks;
 //   2. the contact mouth (A-20): from whatever the jaw is now, open to what is inside, by `inside`;
 //      only the jaw, the two funnels and the upper lip (2, 21, 22, 44, 46);
-//   3. the face while the mouth is busy (A-26): only RAISES its own ids (never the mouth's nor the
-//      blink: the loader refuses them), by at most its terms, and only as far as `inside`, so it
+//   3. the face while the mouth is busy (A-26): only RAISES its own ids (never Rapport's MOUTH ids
+//      nor the blink: AfterMerge skips them, the loader refuses them), by at most its terms, and only
+//      as far as `inside`, so it
 //      comes and goes with the contact. On a face Rapport holds it rises above Rapport's values: the
 //      owner, 2026-09-24, "if it will work smoothly and won't bite", so Rapport stays the base and
 //      this is the one physical exception, like the mouth. [Face] react=0 takes it off held faces.
@@ -35,6 +43,8 @@ namespace FaceCompose
 	constexpr int kLowerLipFunnel = 22;
 	constexpr int kRightUpperLipUp = 44;
 	constexpr int kUpperLipFunnel = 46;
+	constexpr int kLeftBlink = 18;
+	constexpr int kRightBlink = 41;
 
 	// The contact mouth's share of one face this frame (Mouth.cpp measures it)
 	struct Mouth
@@ -58,6 +68,74 @@ namespace FaceCompose
 
 	// After it: keep the engine's weights, then write ours. held is Rapport's face or null; speaking
 	// is the engine's lip state (a line is playing); reactOverHeld lets layer 3 rise above a held face.
+	// Layer 3 never touches Rapport's MOUTH ids nor the blink, whatever its terms say.
 	void AfterMerge(float* weights, Engine& keep, const FaceAuthority::Face* held, bool speaking,
 		const Mouth& mouth, bool reactOverHeld);
+
+	// What the hook keeps between merges, per face data it writes over, and when it lets go. The key
+	// is the face data's ADDRESS, and a freed face's address can be handed to another actor's face,
+	// so an entry must never outlive the face it was kept for:
+	//   - a face no longer published keeps its entry for the one merge that gives it back (Before);
+	//   - an entry published neither in this list nor the one before is dropped (Published): its
+	//     face had a whole frame to merge and did not, so it is likely gone;
+	//   - on a cell change, faces unload wholesale: everything not in the new list goes (Keep);
+	//   - a published face kept for another actor (its form differs) is not put back.
+	// Not thread-safe by itself: Mouth.cpp calls it under its publish lock.
+	template <typename Extra>
+	class Ledger
+	{
+	public:
+		struct Entry
+		{
+			std::uint32_t formID = 0;
+			Engine engine;
+			Extra extra{};
+		};
+
+		// the engine's weights to put back before this face's merge (none: has is false)
+		Engine Before(const void* face, bool published, std::uint32_t formID)
+		{
+			auto it = entries.find(face);
+			if (it == entries.end())
+				return Engine{};
+			Engine e = it->second.engine;
+			if (!published)
+				entries.erase(it);                  // this merge gives the face back to the engine
+			else if (it->second.formID != formID) {
+				entries.erase(it);                  // another actor's face at a freed address
+				return Engine{};
+			}
+			return e;
+		}
+		void After(const void* face, const Entry& entry) { entries[face] = entry; }
+		void Published(const std::vector<const void*>& now)
+		{
+			std::unordered_set<const void*> next(now.begin(), now.end());
+			for (auto it = entries.begin(); it != entries.end();)
+				it = next.count(it->first) || last.count(it->first) ? std::next(it) : entries.erase(it);
+			last.swap(next);
+		}
+		void Keep(const std::vector<const void*>& now)
+		{
+			std::unordered_set<const void*> next(now.begin(), now.end());
+			for (auto it = entries.begin(); it != entries.end();)
+				it = next.count(it->first) ? std::next(it) : entries.erase(it);
+			last.swap(next);
+		}
+		void Clear()
+		{
+			entries.clear();
+			last.clear();
+		}
+		const Entry* Find(const void* face) const
+		{
+			auto it = entries.find(face);
+			return it == entries.end() ? nullptr : &it->second;
+		}
+		std::size_t Size() const { return entries.size(); }
+
+	private:
+		std::unordered_map<const void*, Entry> entries;
+		std::unordered_set<const void*> last;    // the addresses published last time
+	};
 }

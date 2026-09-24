@@ -79,6 +79,8 @@ namespace
 	//   probe=0      1: log what each line's lip sync moves on a held face (a research aid, off for players)
 	//   test=<hex>   the self-test: this plugin sends itself, through F4SE, the messages Rapport would
 	//                (FaceAuthority::TestFace for that actor), held 20 s and released 10 s, over and over
+	// The hello tells Rapport authority and react as they were at startup; a [Tuning] reload changes
+	// what this plugin does but not what Rapport was told (a tester's path only).
 	bool authority = true;
 	bool react = true;
 	bool probe = false;
@@ -96,12 +98,7 @@ namespace
 	const int kMorphs = 54;
 	const int kExpressionMorphs = 50;           // ids 0-49 are the named expression table
 	const int kLeftUpperEyeLidDown = 18;        // the blink: never ours to hold
-	const int kRightUpperEyeLidDown = 41;
-	const int kJawOpen = 2;
-	const int kLeftUpperLipUp = 21;
-	const int kLowerLipFunnel = 22;
-	const int kRightUpperLipUp = 44;
-	const int kUpperLipFunnel = 46;
+	const int kRightUpperEyeLidDown = 41;       // (the mouth's own ids are FaceCompose's)
 	bool hooked = false;
 
 	struct Override
@@ -114,16 +111,15 @@ namespace
 	};
 	std::mutex publishLock;   // the face update may run on another thread than UpdateActors
 	std::vector<Override> published;
-	// Per face we write over, kept by HookMerge (under publishLock): the engine's own weights from its
-	// last merge (FaceCompose.h: the engine must never read ours back), and for the probe the engine's
-	// lip state and its MFG layer as that merge left them
-	struct Written
+	// Per face we write over (FaceCompose::Ledger, under publishLock): the engine's own weights from its
+	// last merge (the engine must never read ours back), and for the probe the engine's lip state and
+	// its MFG layer as that merge left them
+	struct Probe
 	{
-		FaceCompose::Engine engine;
 		bool speaking = false;
 		float mfg[kMorphs] = {};
 	};
-	std::unordered_map<void*, Written> written;
+	FaceCompose::Ledger<Probe> ledger;
 
 	struct State
 	{
@@ -274,26 +270,22 @@ namespace
 					break;
 				}
 			}
-			auto it = written.find(data);
-			if (it != written.end()) {
-				last = it->second.engine;
-				if (!found)
-					written.erase(it);            // this merge gives the face back to the engine
-			}
+			last = ledger.Before(data, found, found ? o.formID : 0);
 		}
 		FaceCompose::BeforeMerge(w, last);        // the engine reads its own last face back, never ours
 		bool changed = origMerge(data, dt, flag);
 		if (!found)
 			return changed || last.has;           // a face just let go is rebuilt as the engine's
-		Written now;
-		now.speaking = LipPlaying(data);
+		FaceCompose::Ledger<Probe>::Entry now;
+		now.formID = o.formID;
+		now.extra.speaking = LipPlaying(data);
 		if (probe)
-			std::memcpy(now.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(now.mfg));
+			std::memcpy(now.extra.mfg, reinterpret_cast<char*>(data) + kMfg, sizeof(now.extra.mfg));
 		// Rapport's face, then the contact mouth, then A-26 (FaceCompose.h)
-		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.speaking, o.mouth, react);
+		FaceCompose::AfterMerge(w, now.engine, o.held ? &o.rapport : nullptr, now.extra.speaking, o.mouth, react);
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
-			written[data] = now;
+			ledger.After(data, now);
 		}
 		return true;                              // the mesh is rebuilt from what we wrote
 	}
@@ -301,9 +293,18 @@ namespace
 	struct Point { NiPoint3 pos; float r; };
 	struct Chain { Actor* owner; bool prop; std::string name; std::vector<Point> pts; };
 
-	void Publish(std::vector<Override>&& next)
+	// cellChanged: the faces of the cell just left may be gone, so the ledger keeps only this list
+	void Publish(std::vector<Override>&& next, bool cellChanged = false)
 	{
+		std::vector<const void*> faces;
+		faces.reserve(next.size());
+		for (auto& o : next)
+			faces.push_back(o.data);
 		std::lock_guard<std::mutex> guard(publishLock);
+		if (cellChanged)
+			ledger.Keep(faces);
+		else
+			ledger.Published(faces);
 		published.swap(next);
 	}
 
@@ -430,8 +431,8 @@ void LoadMouthConfig(INIReader& reader)
 	faceStroke = (std::max)(1.0f, (float)reader.GetReal("Mouth", "faceStroke", faceStroke));
 	faceRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "faceRate", faceRate));
 	strokeRate = (std::max)(0.5f, (float)reader.GetReal("Mouth", "strokeRate", strokeRate));
-	// face=id:contact:depth:stroke,... ids 0-49 of the expression table; never the mouth's own
-	// morphs (written above) nor the blink
+	// face=id:contact:depth:stroke,... ids 0-49 of the expression table; never a mouth id (Rapport's
+	// MOUTH set: the contact mouth's and a line's lip sync) nor the blink
 	faceTerms.clear();
 	int refused = 0;
 	for (auto& term : Split(reader.Get("Mouth", "face", ""), ',')) {
@@ -442,10 +443,11 @@ void LoadMouthConfig(INIReader& reader)
 		}
 		FaceTerm ft{ atoi(parts[0].c_str()), (float)atof(parts[1].c_str()), (float)atof(parts[2].c_str()),
 			(float)atof(parts[3].c_str()) };
-		bool ours = ft.id == kJawOpen || ft.id == kLeftUpperLipUp || ft.id == kRightUpperLipUp ||
-			ft.id == kLowerLipFunnel || ft.id == kUpperLipFunnel;
+		// the mouth (Rapport's MOUTH set, which a line's lip sync and the contact mouth drive) and the
+		// blink are not the reaction's to raise: FaceCompose skips them too
+		bool mouth = FaceAuthority::IsMouth(ft.id);
 		bool blink = ft.id == kLeftUpperEyeLidDown || ft.id == kRightUpperEyeLidDown;
-		if (ft.id < 0 || ft.id >= kExpressionMorphs || ours || blink || (int)faceTerms.size() >= kMaxFace) {
+		if (ft.id < 0 || ft.id >= kExpressionMorphs || mouth || blink || (int)faceTerms.size() >= kMaxFace) {
 			refused++;
 			continue;
 		}
@@ -454,7 +456,7 @@ void LoadMouthConfig(INIReader& reader)
 	char key[48];
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "mouth|face|%d|%d", (int)faceTerms.size(), refused);
 	Note(key, "[mouth] face while busy: %d term(s)%s\n", (int)faceTerms.size(),
-		refused ? " (some refused: bad form, out of range, the mouth's own or the blink)" : "");
+		refused ? " (some refused: bad form, out of range, a mouth id or the blink)" : "");
 	if (enabled && chainNames.empty() && !useProps)
 		enabled = false;                          // nothing could ever reach a mouth
 }
@@ -766,13 +768,13 @@ void UpdateMouths()
 	}
 	// the probe: each held face's line, as the engine's last merge of it left the lip state and MFG layer
 	if (probe) {
-		std::vector<std::pair<UInt32, Written>> seen;
+		std::vector<std::pair<UInt32, Probe>> seen;
 		{
 			std::lock_guard<std::mutex> guard(publishLock);
 			for (auto& o : next) {
-				auto it = o.held ? written.find(o.data) : written.end();
-				if (it != written.end())
-					seen.emplace_back(o.formID, it->second);
+				auto entry = o.held ? ledger.Find(o.data) : nullptr;
+				if (entry && entry->formID == o.formID)
+					seen.emplace_back(o.formID, entry->extra);
 			}
 		}
 		for (auto& s : seen)
@@ -859,7 +861,7 @@ void ReleaseAllFaces(const char* why)
 		// the faces about to be unloaded: their addresses may be handed to other actors' faces
 		std::lock_guard<std::mutex> guard(publishLock);
 		published.clear();
-		written.clear();
+		ledger.Clear();
 	}
 	std::string key = std::string("face|release|") + why;
 	Note(key, "[face] every held face let go: %s (Rapport sends each again on its next change)\n", why);
@@ -877,7 +879,7 @@ void RefreshHeldFaces()
 		for (auto& h : FaceAuthority::Snapshot())
 			if (void* data = HeldFaceData(h.first))
 				next.push_back(HeldOnly(data, h.first, h.second));
-	Publish(std::move(next));
+	Publish(std::move(next), true);   // and the ledger forgets every face not in this list
 }
 
 void StartFaceAuthorityTest()

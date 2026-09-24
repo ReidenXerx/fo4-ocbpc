@@ -31,8 +31,9 @@ namespace FaceCompose
 			return;                                 // [Face] react=0: Rapport's face alone
 		for (int k = 0; k < m.termCount && k < kMaxTerms; k++) {
 			int id = m.termId[k];
-			if (id >= 0 && id < kMorphs)
-				w[id] = (std::max)(w[id], m.termValue[k] * m.inside);
+			if (id < 0 || id >= kMorphs || FaceAuthority::IsMouth(id) || id == kLeftBlink || id == kRightBlink)
+				continue;                           // layer 3's right: brows, cheeks, nose; never the mouth
+			w[id] = (std::max)(w[id], m.termValue[k] * m.inside);   // nor the blink
 		}
 	}
 }

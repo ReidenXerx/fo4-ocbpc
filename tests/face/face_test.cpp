@@ -103,22 +103,27 @@ struct Engine
 // ---- the hook, as CBPSSE/Mouth.cpp HookMerge calls FaceCompose ------------------------------------
 struct Hook
 {
-	FaceCompose::Engine last;    // Mouth.cpp's written[data].engine
-	bool published = false;      // this face is in Mouth.cpp's published list
+	FaceCompose::Ledger<int> own;               // Mouth.cpp's ledger (shared between hooks when a
+	FaceCompose::Ledger<int>* ledger = &own;    // check needs two faces at one address)
+	const void* address = this;                 // the face data
+	std::uint32_t formID = 1;
+	bool published = false;                     // this face is in Mouth.cpp's published list
 	bool held = false;
 	Face face;
 	FaceCompose::Mouth mouth;
+	bool react = true;                          // [Face] react
 
 	bool Frame(Engine& e, float dt)
 	{
-		FaceCompose::Engine restore = last;
-		if (!published)
-			last.has = false;                    // HookMerge forgets the face as it gives it back
-		FaceCompose::BeforeMerge(e.fin, restore);
+		FaceCompose::Engine last = ledger->Before(address, published, published ? formID : 0);
+		FaceCompose::BeforeMerge(e.fin, last);
 		bool changed = e.Merge(dt);
 		if (!published)
-			return changed || restore.has;
-		FaceCompose::AfterMerge(e.fin, last, held ? &face : nullptr, e.speaking, mouth, true);   // [Face] react=1
+			return changed || last.has;
+		FaceCompose::Ledger<int>::Entry now;
+		now.formID = formID;
+		FaceCompose::AfterMerge(e.fin, now.engine, held ? &face : nullptr, e.speaking, mouth, react);
+		ledger->After(address, now);
 		return true;
 	}
 };
@@ -297,6 +302,72 @@ int main()
 			w[i] = 0.0f;
 		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
 		Check("no held face: A-26 raises the brow to 0.9 x 0.5", Near(w[14], 0.45f));
+		FaceCompose::Mouth wrong;                   // terms a hand-edited ini might carry
+		wrong.inside = 1.0f;
+		wrong.termCount = 3;
+		wrong.termId[0] = 49;                       // the tongue: a MOUTH id, the lip sync's
+		wrong.termId[1] = 17;                       // a smile corner: MOUTH too
+		wrong.termId[2] = 18;                       // the blink
+		wrong.termValue[0] = wrong.termValue[1] = wrong.termValue[2] = 0.9f;
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.2f;
+		FaceCompose::AfterMerge(w, keep, &r, true, wrong, true);
+		Check("the reaction never raises a mouth id nor the blink, whatever its terms say",
+			Near(w[49], 0.2f) && Near(w[17], 0.2f) && Near(w[18], 0.2f));
+	}
+
+	printf("the ledger: what the hook keeps between merges, and when it lets go\n");
+	{
+		FaceCompose::Ledger<int> L;
+		int a = 0, b = 0;
+		const void* P = &a;                         // two face data addresses
+		const void* Q = &b;
+		FaceCompose::Ledger<int>::Entry e;
+		e.formID = 0xA;
+		e.engine.has = true;
+		e.engine.weight[2] = 0.6f;
+		L.After(P, e);
+		L.Published({ P });
+		FaceCompose::Engine back = L.Before(P, true, 0xA);
+		Check("a published face gets its engine weights back", back.has && Near(back.weight[2], 0.6f));
+		Check("the same address published for ANOTHER actor gets nothing (a freed face's address reused)",
+			!L.Before(P, true, 0xB).has && L.Find(P) == nullptr);
+		L.After(P, e);
+		Check("no longer published: the merge that gives it back still gets the weights", L.Before(P, false, 0).has);
+		Check("... and the entry is gone after it", L.Find(P) == nullptr);
+		L.After(P, e);
+		L.Published({ P });
+		L.Published({});
+		Check("a face gone from the list keeps its entry one more publish", L.Find(P) != nullptr);
+		L.Published({});
+		Check("... and is dropped at the next: it had a frame to merge and did not", L.Find(P) == nullptr);
+		L.After(P, e);
+		L.After(Q, e);
+		L.Published({ P, Q });
+		L.Keep({ Q });
+		Check("a cell change keeps only the faces found again, at once", L.Find(P) == nullptr && L.Find(Q) != nullptr);
+		L.Clear();
+		Check("a load clears the ledger", L.Size() == 0);
+	}
+
+	printf("frames: a freed face's address given to another actor, paused, after a cell change\n");
+	{
+		FaceCompose::Ledger<int> shared;
+		Engine faceA, faceB;
+		Hook a, b;
+		a.ledger = b.ledger = &shared;
+		b.address = a.address;                      // the allocator hands A's address to B
+		a.formID = 0xA;
+		b.formID = 0xB;
+		a.published = a.held = true;
+		a.face = RapportFace(0.0f, 0.9f);           // A held with its jaw at 0.9
+		faceA.anim[2] = 0.9f;
+		a.Frame(faceA, dt);
+		shared.Published({ a.address });            // UpdateMouths published A this frame
+		shared.Keep({});                            // the cell change: A is not found again
+		faceB.fin[2] = faceB.anim[2] = 0.2f;        // B's own face, the game paused
+		b.Frame(faceB, 0.0f);
+		Check("B keeps its own jaw (0.2), not A's kept weights", Near(faceB.fin[2], 0.2f));
 	}
 
 	printf("frames: the eyelids while a line plays (the blink machine does not write)\n");
