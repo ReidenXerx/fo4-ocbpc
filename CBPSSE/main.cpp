@@ -1,4 +1,5 @@
-// fo4-ocbpc: modified by fo4-anatomy (ReidenXerx), 2026-09-23: installs the mouth hook.
+// fo4-ocbpc: modified by fo4-anatomy (ReidenXerx), 2026-09-23: installs the mouth hook; 2026-09-24: F4SE's
+// messages carry Rapport's face authority (Mouth.h).
 // The original OpenCBP_FO4 / OCBPC code is under the MIT licence (LICENSE); these changes
 // are under the GNU General Public License, version 3 (COPYING), with the additional
 // permission for F4SE stated in README.md.
@@ -18,7 +19,7 @@
 bool RegisterFuncs(VirtualMachine* vm);
 
 PluginHandle	g_pluginHandle = kPluginHandle_Invalid;
-//F4SEMessagingInterface	* g_messagingInterface = NULL;
+F4SEMessagingInterface	* g_messaging = nullptr;
 
 //F4SEScaleformInterface		* g_scaleform = NULL;
 //F4SESerializationInterface	* g_serialization = NULL;
@@ -48,26 +49,31 @@ void MessageHandler(F4SEMessagingInterface::Message * msg)
         case F4SEMessagingInterface::kMessage_NewGame:
         {
             logger.Info("kMessage_NewGame\n");
+            ReleaseAllFaces("a new game");   // fo4-anatomy: nothing Rapport held survives into another game
         }
         break;
         case F4SEMessagingInterface::kMessage_PreLoadGame:
         {
             logger.Info("kMessage_PreLoadGame\n");
+            ReleaseAllFaces("a save is loading");
         }
         break;
         case F4SEMessagingInterface::kMessage_PostLoad:
         {
             logger.Info("kMessage_PostLoad\n");
+            ListenForFaces(g_messaging, g_pluginHandle);   // fo4-anatomy: every plugin is loaded, Rapport too
         }
         break;
         case F4SEMessagingInterface::kMessage_PostPostLoad:
         {
             logger.Info("kMessage_PostPostLoad\n");
+            SayFaceHello();
         }
         break;
         case F4SEMessagingInterface::kMessage_PostLoadGame:
         {
             logger.Info("kMessage_PostLoadGame\n");
+            StartFaceAuthorityTest();
         }
         break;
         case F4SEMessagingInterface::kMessage_PreSaveGame:
@@ -152,7 +158,10 @@ extern "C"
         logger.Error("Loading Config\n");
         LoadConfig();
         LoadCollisionConfig();
-        //g_messagingInterface->RegisterListener(0, "F4SE", MessageHandler); 
+        // fo4-anatomy: F4SE's own messages (PostLoad, loads) drive Rapport's face authority
+        g_messaging = (F4SEMessagingInterface *)f4se->QueryInterface(kInterface_Messaging);
+        if (!g_messaging || !g_messaging->RegisterListener(g_pluginHandle, "F4SE", MessageHandler))
+            logger.Error("Couldn't listen to F4SE's messages: no face authority\n");
         logger.Error("Hooking Game\n");
         DoHook();
         InstallMouthHook();   // fo4-anatomy: the mouth (ocbp.ini [Mouth]); checks the build first

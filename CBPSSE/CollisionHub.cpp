@@ -15,6 +15,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <io.h>
+#include <mutex>
 #include <set>
 #include <shlobj.h>
 
@@ -80,9 +81,11 @@ static FILE* AnatomyLog()
 }
 
 static std::set<std::string> anatomyLogged;
+static std::mutex anatomyLock;   // Rapport's face messages arrive on a Papyrus thread, the rest on the main one
 
 static void AnatomyNote(const std::string& key, const char* fmt, ...)
 {
+	std::lock_guard<std::mutex> guard(anatomyLock);
 	if (anatomyLogged.size() > 4000 || !anatomyLogged.insert(key).second)
 		return;
 	FILE* log = AnatomyLog();

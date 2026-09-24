@@ -17,7 +17,15 @@
 // on the merge then writes those values OVER the merged weights, so the animation's own mouth
 // (and AAF's, and anyone's) gives way while something is there, and comes back when it is gone.
 #include "INIReader.h"
+#include "f4se/PluginAPI.h"
 
 void LoadMouthConfig(INIReader& reader);
 void InstallMouthHook();
 void UpdateMouths();
+
+// Rapport's face authority (fo4-anatomy A-27, FaceAuthority.h): the same hook writes the faces Rapport
+// holds, under the mouth. main.cpp forwards F4SE's own messages here.
+void ListenForFaces(F4SEMessagingInterface* messaging, PluginHandle self);   // PostLoad: every plugin is loaded
+void SayFaceHello();                            // PostPostLoad: Rapport listens by now
+void ReleaseAllFaces(const char* why);          // PreLoadGame, NewGame
+void StartFaceAuthorityTest();                  // PostLoadGame: [Mouth] authorityTest, if set
