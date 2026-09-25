@@ -95,7 +95,7 @@ namespace FaceAuthority
 	struct Knobs
 	{
 		std::uint32_t enabled = 0x1F;
-		float lipClearance = 0.05f, lipSpeed = 1.0f, shaftScale = 0.85f, headMin = 1.2f, headMax = 1.4f,
+		float lipClearance = 0.05f, lipSpeed = 1.0f, shaftScale = 0.85f, headMin = 1.2f, headMax = 1.25f,
 			reactScale = 1.0f;
 	};
 	static_assert(sizeof(SetMessage) == 232, "the set message is 232 bytes");
