@@ -1,4 +1,6 @@
 // fo4-ocbpc: the lips around what is in her mouth (A-32), tested outside the game. Build and run: tests/lips/run.bat.
+// Licensed under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 // The table is the female head's, as fo4-anatomy tools/lips.py measured it on the game's heads (2026-09-25).
 #include "LipFit.h"
 #include "Glans.h"

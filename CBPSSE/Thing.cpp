@@ -230,6 +230,7 @@ void Thing::Update(Actor *actor) {
 
     auto obj = IsActorValid(actor);
     if (!obj) {
+        lastLocalDiff = NiPoint3(0, 0, 0);     // fo4-anatomy: a bone that did not run this frame pushes no stretch
         return;
     }
 
@@ -335,6 +336,7 @@ void Thing::Update(Actor *actor) {
     }
     if (skeletonFound == false) {
         logger.Error("Couldn't find skeleton for actor %08x\n", actor->formID);
+        lastLocalDiff = NiPoint3(0, 0, 0);     // fo4-anatomy: nor one whose skeleton was not reached
         return;
     }
 

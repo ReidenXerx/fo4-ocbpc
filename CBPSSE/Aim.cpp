@@ -668,20 +668,24 @@ void UpdateAims()
 			}
 			h.wrote = true;
 			UpdateWorldFrom(nodes[0], parent);
-		}
-		if (r.locked && r.targetKind != AimSolve::kHand) {
-			for (const AimSolve::Target& t : targets) {
-				if (t.owner != r.targetOwner || t.kind != r.targetKind)
-					continue;
-				V3 tip = ToV3(nodes.back()->m_worldTransform.pos);
-				float d = AimSolve::Dot(AimSolve::Sub(tip, t.point), t.in);
-				if (t.kind == AimSolve::kMouth)
-					d -= mouthLead;                       // its entrance sits mouthLead in front of her lips
-				d = (std::max)(0.0f, d);
-				depths[a->formID] = (std::max)(depths[a->formID], d);
-				if (t.kind != AimSolve::kMouth)           // a mouth's own depth is the contact mouth's (Mouth.cpp)
-					depths[t.owner] = (std::max)(depths[t.owner], d);
-				break;
+			// the genital depth (A-33), from the tip as just written. It lives INSIDE the write: 5217f05 put
+			// it between the write and its else, which then hung off this if - so PutBack undid the write the
+			// same frame unless the shaft was locked in a vagina, anus or mouth: the shape showed only there,
+			// every release snapped instead of fading, and a grip never bent the shaft (release review)
+			if (r.locked && r.targetKind != AimSolve::kHand) {
+				for (const AimSolve::Target& t : targets) {
+					if (t.owner != r.targetOwner || t.kind != r.targetKind)
+						continue;
+					V3 tip = ToV3(nodes.back()->m_worldTransform.pos);
+					float d = AimSolve::Dot(AimSolve::Sub(tip, t.point), t.in);
+					if (t.kind == AimSolve::kMouth)
+						d -= mouthLead;                   // its entrance sits mouthLead in front of her lips
+					d = (std::max)(0.0f, d);
+					depths[a->formID] = (std::max)(depths[a->formID], d);
+					if (t.kind != AimSolve::kMouth)       // a mouth's own depth is the contact mouth's (Mouth.cpp)
+						depths[t.owner] = (std::max)(depths[t.owner], d);
+					break;
+				}
 			}
 		}
 		else if (h.wrote) {

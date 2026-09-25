@@ -173,8 +173,10 @@ namespace AimSolve
 		}
 		V3 base = joints.front();
 		V3 shaft = Sub(joints.back(), base);
-		if (Length(shaft) < 1e-4f)
+		if (Length(shaft) < 1e-4f) {
+			f.why = "the chain's root and tip coincide";
 			return f;
+		}
 		V3 u = Normalized(shaft);
 		V3 q = Sub(t.point, base);
 		float entrance = Length(q);

@@ -38,6 +38,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <windows.h>
+
 namespace
 {
 	// ---- ocbp.ini [Mouth]; fo4-anatomy's tools/physics_config.py writes it, tools/mouth.py measures it
@@ -603,7 +605,7 @@ void LoadFaceConfig(INIReader& reader)
 		Note("face|test|refused", "[face] [Face] test=%s is not a form id (hex): no self-test\n", test.c_str());
 }
 
-void InstallMouthHook()
+static void InstallMouthHookUnguarded()
 {
 	if (hooked)
 		return;
@@ -648,6 +650,47 @@ void InstallMouthHook()
 		reaches ? "on" : "OFF, the hooked call does not reach it", enabled ? "on" : "off", (int)chainNames.size(),
 		(int)useProps, femaleGap, maleGap, (int)authority, (int)react, (int)probe,
 		(int)(std::memcmp(code, kMergePrologue, sizeof(kMergePrologue)) == 0));
+}
+
+// The mouth's install reads the game's code before it patches it, the way the eye hook's does, and runs
+// under the same kind of guard (release review, 2026-09-26): an unguarded fault here would unload this
+// plugin with the eye hook already pointing into it, and the game would die at the next eye update with
+// no crash log - the failure 7ff0bde fixed on the eye path. Here a fault leaves the mouth off and says so.
+static DWORD mouthFaultCode = 0;
+static void* mouthFaultAt = nullptr;
+
+static int MouthInstallFilter(EXCEPTION_POINTERS* e)
+{
+	mouthFaultCode = e->ExceptionRecord->ExceptionCode;
+	mouthFaultAt = e->ExceptionRecord->ExceptionAddress;
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static bool InstallMouthGuarded()
+{
+	__try {
+		InstallMouthHookUnguarded();
+		return true;
+	}
+	__except (MouthInstallFilter(GetExceptionInformation())) {
+		return false;
+	}
+}
+
+void InstallMouthHook()
+{
+	if (InstallMouthGuarded())
+		return;
+	enabled = false;                            // the mouth stays off; a call already patched runs the merge as it is
+	authority = false;
+	HMODULE self = nullptr;
+	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		reinterpret_cast<LPCSTR>(&MouthInstallFilter), &self);
+	uintptr_t at = reinterpret_cast<uintptr_t>(mouthFaultAt), mine = reinterpret_cast<uintptr_t>(self),
+		game = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+	Note("mouth|fault", "[mouth] FAULT while installing: code %08lX at %p (cbp.dll+%llX, Fallout4.exe+%llX); the mouth "
+		"and Rapport's faces are off, the game goes on\n", (unsigned long)mouthFaultCode, mouthFaultAt,
+		(unsigned long long)(at - mine), (unsigned long long)(at - game));
 }
 
 bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward, NiPoint3* up)

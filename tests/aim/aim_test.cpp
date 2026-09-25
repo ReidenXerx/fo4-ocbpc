@@ -1,4 +1,6 @@
 // fo4-ocbpc: the penis finds its opening (A-28), tested outside the game. Build and run: tests/aim/run.bat.
+// Licensed under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 // Each case states what it proves; the process exits 1 if any expectation fails.
 #include "AimSolve.h"
 

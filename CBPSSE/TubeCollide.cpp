@@ -88,8 +88,8 @@ void LoadTubeConfig(INIReader& reader)
 	}
 	if (!Glans::Valid(glansProfile) || glansNode.empty())
 		glansProfile.clear();
-	if (chainNames.empty())
-		enabled = false;
+	if (chainNames.empty() && !propsToo)
+		enabled = false;                        // toys alone may still want their tube (release review)
 	Note("tube|config|" + std::to_string((int)enabled) + "|" + std::to_string(chainNames.size()),
 		"[tube] %s: %d chain(s), skin %.2f, glans %s (%d step(s)); their bones' own balls %s\n",
 		enabled ? "on" : "off", (int)chainNames.size(), skin, glansNode.empty() ? "-" : glansNode.c_str(),

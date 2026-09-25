@@ -2,6 +2,8 @@
 // tests/tube/run.bat. The chain is the one the fork sees at run time: BodyTalk4's Penis_01..05 along the
 // axis at 0.2, 3.28, 6.16, 9.17, 11.84 (fo4-anatomy glans_profile.py), the shaft x0.85 (collider 2.0 -> 1.7),
 // the head x1.25 (1.8 -> 2.25), shaped by the glans profile (Glans.h) and less the tube's skin (0.2).
+// Licensed under the GNU General Public License, version 3 (COPYING), with the additional
+// permission for F4SE stated in README.md.
 #include "Glans.h"
 #include "Tube.h"
 
