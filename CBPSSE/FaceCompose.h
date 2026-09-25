@@ -64,6 +64,8 @@ namespace FaceCompose
 		int termCount = 0;                          // A-26: raise termId toward termValue x inside
 		int termId[kMaxTerms] = {};
 		float termValue[kMaxTerms] = {};
+		float lidMax = 1.0f;                        // a glance (RFAG): the upper lids (18/41) at most this
+		                                            // far down, last of all, over the blink too
 	};
 
 	// The engine's own weights from the last merge we wrote over

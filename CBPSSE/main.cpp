@@ -15,6 +15,7 @@
 #include "PapyrusOCBP.h"
 #include "Mouth.h"
 #include "Aim.h"
+#include "Eyes.h"
 
 
 bool RegisterFuncs(VirtualMachine* vm);
@@ -166,6 +167,7 @@ extern "C"
         logger.Error("Hooking Game\n");
         DoHook();
         InstallMouthHook();   // fo4-anatomy: the mouth (ocbp.ini [Mouth]); checks the build first
+        InstallEyeHook();     // fo4-anatomy: glances (ocbp.ini [Eyes]); checks the build first
         // fo4-anatomy: F4SE's own messages (PostLoad, loads) drive Rapport's face authority. Last, after
         // the hooks: F4SE unloads a plugin whose Load faults, and a listener registered before the fault
         // would be called in a DLL that is gone.

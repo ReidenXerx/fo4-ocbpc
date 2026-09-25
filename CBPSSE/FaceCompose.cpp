@@ -43,15 +43,20 @@ namespace FaceCompose
 			w[kLeftUpperLipUp] += (m.lift - w[kLeftUpperLipUp]) * m.inside;
 			w[kRightUpperLipUp] += (m.lift - w[kRightUpperLipUp]) * m.inside;
 		}
-		if (held && !reactOverHeld)
-			return;                                 // [Face] react=0: Rapport's face alone
-		for (int k = 0; k < m.termCount && k < kMaxTerms; k++) {
+		// [Face] react=0: Rapport's face alone, no layer 3
+		for (int k = 0; !(held && !reactOverHeld) && k < m.termCount && k < kMaxTerms; k++) {
 			int id = m.termId[k];
 			if (id < 0 || id >= kMorphs || FaceAuthority::IsMouth(id) || id == kLeftBlink || id == kRightBlink)
 				continue;                           // layer 3's right: brows, cheeks, nose; never the mouth
 			if (held && ((held->deepMask >> id) & 1u))
 				continue;                           // a deep face authors this id: one author, not two
 			w[id] = (std::max)(w[id], m.termValue[k] * m.inside);   // nor the blink
+		}
+		// layer 4, a glance: eyes that look into his are open, whatever the face and the blink say
+		if (m.lidMax < 1.0f) {
+			float cap = m.lidMax < 0.0f ? 0.0f : m.lidMax;
+			w[kLeftBlink] = (std::min)(w[kLeftBlink], cap);
+			w[kRightBlink] = (std::min)(w[kRightBlink], cap);
 		}
 	}
 }

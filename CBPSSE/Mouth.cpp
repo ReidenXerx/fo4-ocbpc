@@ -20,6 +20,7 @@
 #include "FaceCompose.h"
 #include "LipFit.h"
 #include "Glans.h"
+#include "Eyes.h"
 #include "Aim.h"
 
 #include <windows.h>
@@ -348,7 +349,9 @@ namespace
 	// leave Rapport's values as they are
 	Override HeldOnly(void* data, UInt32 formID, const FaceAuthority::Face& face)
 	{
-		return Override{ data, formID, {}, true, face };
+		Override o{ data, formID, {}, true, face };
+		o.mouth.lidMax = EyeLidMax(formID);
+		return o;
 	}
 
 	// A held actor's face data, found by its form: for the actors OCBPC's scan does not reach (another
@@ -907,8 +910,10 @@ void UpdateMouths()
 		}
 		auto h = heldAt.find(a->formID);
 		const FaceAuthority::Face* rapport = h != heldAt.end() ? &held[h->second].second : nullptr;
-		if (st.inside > 0.001f || st.floor > 0.001f || rapport) {
+		const float lidMax = EyeLidMax(a->formID);
+		if (st.inside > 0.001f || st.floor > 0.001f || rapport || lidMax < 1.0f) {
 			Override o{ data, a->formID, {}, false, {} };
+			o.mouth.lidMax = lidMax;
 			o.mouth.inside = st.inside;
 			// A-29: the same depth as A-26, or a shaft's in her vagina or anus, or his own in any opening
 			o.mouth.deep = deepOn ? (std::max)(st.inside * Clamp(st.depth / faceDepth, 0.0f, 1.0f),
@@ -975,6 +980,7 @@ void UpdateMouths()
 	for (auto& s : speech)
 		if (s.second.on && s.second.seen != frameCount)
 			EndSpeech(s.first, s.second);
+	UpdateEyeProbe(actorEntries, dt);              // [Eyes] probe / test (dev)
 	// forget whoever left: a stale entry would steer a face that is not theirs any more
 	for (auto it = states.begin(); it != states.end();)
 		it = it->second.frame == frameCount ? std::next(it) : states.erase(it);
@@ -1021,6 +1027,16 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 			(int)((k.enabled & FaceAuthority::kKnobDeep) != 0), k.lipClearance, k.lipSpeed, k.shaftScale, k.headMin,
 			k.headMax, k.reactScale);
 	}
+	else if (d.command == FaceAuthority::Command::Glance) {
+		FaceAuthority::SetGlance(d.formID, d.glance, EyeClockMs());
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|glance|%s|%08X|%08X", who, d.formID, d.glance.target);
+		if (d.glance.target)
+			Note(key, "[face] %s: %08X looks into %08X's eyes for %u ms, lids %.2f open%s\n", who, d.formID,
+				d.glance.target, d.glance.durationMs, d.glance.lidsOpen, EyesTurn() ? "" : " (Rapport was not told glances work: [Eyes] glances=0, or no eye hook"
+				")");
+		else
+			Note(key, "[face] %s: %08X stops looking\n", who, d.formID);
+	}
 	else if (d.command == FaceAuthority::Command::Clear) {
 		FaceAuthority::Clear(d.formID);
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|clear|%s|%08X", who, d.formID);
@@ -1061,7 +1077,8 @@ void SayFaceHello()
 	}
 	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatureSetClear |
 		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
-		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth };
+		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
+		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) };
 	bool heard = messaging->Dispatch(selfHandle, FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
 		: "[face] hello not heard: Rapport is not loaded, or is not listening to \"OCBPC plugin\"\n");

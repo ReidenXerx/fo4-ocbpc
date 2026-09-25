@@ -187,6 +187,9 @@
     <ClInclude Include="Aim.h" />
     <ClInclude Include="AimSolve.h" />
     <ClInclude Include="LipFit.h" />
+    <ClInclude Include="Eyes.h" />
+    <ClInclude Include="Glance.h" />
+    <ClInclude Include="Glans.h" />
     <ClInclude Include="Thing.h" />
     <ClInclude Include="Utility.hpp" />
   </ItemGroup>
@@ -225,6 +228,7 @@
     <ClCompile Include="Aim.cpp" />
     <ClCompile Include="AimSolve.cpp" />
     <ClCompile Include="LipFit.cpp" />
+    <ClCompile Include="Eyes.cpp" />
     <ClCompile Include="scan.cpp" />
     <ClCompile Include="Thing.cpp" />
   </ItemGroup>

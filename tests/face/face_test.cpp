@@ -11,6 +11,7 @@
 // Run: tests\face\run.bat   (MSVC Build Tools 2022)
 #include "FaceAuthority.h"
 #include "FaceCompose.h"
+#include "Glance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -615,6 +616,99 @@ int main()
 		SetKnobs(Decode(kKnobs, &km, sizeof(km)).knobs);
 		Check("and the last one sent is the one read back", CurrentKnobs(got) && got.enabled == 0x15u &&
 			Near(got.reactScale, 0.5f));
+	}
+
+	printf("glances (RFAG)\n");
+	{
+		GlanceMessage gm{ 1, 0x14, 0x2F0B, 1500, 0.9f, 0 };
+		Decoded d = Decode(kGlance, &gm, sizeof(gm));
+		Check("a glance is read: looker, target, time, lids", d.command == Command::Glance && d.formID == 0x14 &&
+			d.glance.target == 0x2F0B && d.glance.durationMs == 1500 && Near(d.glance.lidsOpen, 0.9f));
+		Check("a short glance is refused", Decode(kGlance, &gm, 20).command == Command::None);
+		GlanceMessage bad = gm;
+		bad.version = 0;
+		Check("a glance of version 0 is refused", Decode(kGlance, &bad, sizeof(bad)).command == Command::None);
+		bad = gm;
+		bad.looker = 0;
+		Check("a glance by form 0 is refused", Decode(kGlance, &bad, sizeof(bad)).command == Command::None);
+		bad = gm;
+		bad.lidsOpen = std::numeric_limits<float>::quiet_NaN();
+		Check("a glance whose lids are not a number is refused", Decode(kGlance, &bad, sizeof(bad)).command == Command::None);
+		bad = gm;
+		bad.target = bad.looker;
+		Check("a glance into one's own eyes is refused", Decode(kGlance, &bad, sizeof(bad)).command == Command::None);
+		bad = gm;
+		bad.durationMs = 600000;
+		bad.lidsOpen = 7.0f;
+		d = Decode(kGlance, &bad, sizeof(bad));
+		Check("a wild glance is clamped: 10 s at most, lids fully open at most",
+			d.glance.durationMs == 10000 && Near(d.glance.lidsOpen, 1.0f));
+		bad.durationMs = 5;
+		Check("and 100 ms at least", Decode(kGlance, &bad, sizeof(bad)).glance.durationMs == 100);
+		bad = gm;
+		bad.target = 0;
+		d = Decode(kGlance, &bad, sizeof(bad));
+		Check("target 0 is a stop, not a refusal", d.command == Command::Glance && d.glance.target == 0);
+
+		SetGlance(0x14, Decode(kGlance, &gm, sizeof(gm)).glance, 1000);
+		auto g = Glances(1000);
+		Check("a glance runs from when it is set", g.size() == 1 && g[0].looker == 0x14 && g[0].glance.target == 0x2F0B);
+		Check("and still runs just before its time is up", Glances(2499).size() == 1);
+		Check("and is gone once it is", Glances(2500).empty() && Glances(1000).empty());
+		SetGlance(0x14, Decode(kGlance, &gm, sizeof(gm)).glance, 3000);
+		SetGlance(0x14, d.glance, 3100);                  // target 0
+		Check("a stop ends it at once", Glances(3100).empty());
+		SetGlance(0x14, Decode(kGlance, &gm, sizeof(gm)).glance, 4000);
+		SetGlance(0x2F0B, Decode(kGlance, &gm, sizeof(gm)).glance, 4000);
+		Clear(0x14);
+		Check("letting go of a FACE does not stop a glance", Glances(4000).size() == 2);
+		Clear(0);
+		Check("a load (clear everyone) stops every glance", Glances(4000).empty());
+
+		// layer 4: the lids open for a glance, over the face, the blink and react=0
+		float w[kMorphs] = {};
+		w[18] = 0.9f;
+		w[41] = 0.2f;
+		FaceCompose::Engine keep;
+		Face r = RapportFace(0.0f, 0.35f);
+		r.owned |= (1ull << 18) | (1ull << 41);
+		r.value[18] = r.value[41] = 1.0f;   // Rapport holds her eyes shut
+		FaceCompose::Mouth m;
+		m.lidMax = 0.1f;
+		FaceCompose::AfterMerge(w, keep, &r, false, m, false);
+		Check("a glance opens eyes a held face keeps shut, with react=0 too (lids at most 0.1)",
+			Near(w[18], 0.1f) && Near(w[41], 0.1f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		w[18] = 0.05f;
+		m.lidMax = 0.1f;
+		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
+		Check("a lid already more open than the cap stays as it is", Near(w[18], 0.05f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		w[18] = 0.7f;
+		m.lidMax = 1.0f;
+		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
+		Check("no glance: the lids are the face's", Near(w[18], 0.7f));
+
+		// where the eyes go (Glance.h): the engine's own numbers
+		GlanceMath::Params p;
+		GlanceMath::UV uv;
+		Check("straight ahead: the eyes centred", GlanceMath::Want(0.0f, 0.0f, 1.0f, p, uv) && Near(uv.x, 0.0f) && Near(uv.y, 0.0f));
+		Check("30 degrees aside: 0.25 x sin 30", GlanceMath::Want(0.5f, 0.0f, 0.866f, p, uv) && Near(uv.x, 0.125f));
+		p.signX = -1.0f;
+		Check("signX turns it the other way", GlanceMath::Want(0.5f, 0.0f, 0.866f, p, uv) && Near(uv.x, -0.125f));
+		p.signX = 1.0f;
+		Check("far aside: held at the edge the engine keeps (0.15)", GlanceMath::Want(0.9f, 0.0f, 0.44f, p, uv) && Near(uv.x, 0.15f));
+		Check("far up / down: held inside -0.075 .. 0.065",
+			GlanceMath::Want(0.0f, 0.6f, 0.8f, p, uv) && Near(uv.y, 0.065f) &&
+			GlanceMath::Want(0.0f, -0.6f, 0.8f, p, uv) && Near(uv.y, -0.075f));
+		Check("behind her: out of reach, no glance", !GlanceMath::Want(0.3f, 0.0f, -0.95f, p, uv));
+		GlanceMath::UV from, to;
+		to.x = 0.1f;
+		GlanceMath::UV mid = GlanceMath::Step(from, to, p, 0.02f);
+		Check("the eye moves at the engine's 2.0 a second (0.04 in 20 ms)", Near(mid.x, 0.04f) && Near(mid.y, 0.0f));
+		Check("and lands exactly when it is close", Near(GlanceMath::Step(mid, to, p, 0.1f).x, 0.1f));
 	}
 
 	printf("store\n");

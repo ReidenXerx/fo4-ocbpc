@@ -16,6 +16,7 @@ namespace FaceAuthority
 		std::unordered_map<std::uint32_t, Face> held;
 		Knobs current;                                  // RFAK, once heard (a load keeps them: they are settings)
 		bool knobsHeard = false;
+		std::unordered_map<std::uint32_t, Running> glances;   // RFAG, by looker
 
 		// The mouth handed back to the engine while an actor speaks: Rapport's own MOUTH set (fo4-rapport
 		// faces.json "mouth"). Measured 2026-09-24 by [Face] probe on 14 lines: the ids lip sync moved,
@@ -38,10 +39,40 @@ namespace FaceAuthority
 	Decoded Decode(std::uint32_t type, const void* data, std::uint32_t length)
 	{
 		Decoded d;
-		if (type != kSet && type != kClear && type != kDeep && type != kKnobs)
+		if (type != kSet && type != kClear && type != kDeep && type != kKnobs && type != kGlance)
 			return d;                                   // not ours to read
 		if (!data) {
 			d.refused = "no data";
+			return d;
+		}
+		if (type == kGlance) {
+			if (length < sizeof(GlanceMessage)) {
+				d.refused = "a glance shorter than 24 bytes";
+				return d;
+			}
+			GlanceMessage m;
+			std::memcpy(&m, data, sizeof(m));
+			if (m.version < 1) {
+				d.refused = "a glance of version 0";
+				return d;
+			}
+			if (m.looker == 0) {
+				d.refused = "a glance by form 0";
+				return d;
+			}
+			if (!std::isfinite(m.lidsOpen)) {
+				d.refused = "a glance whose lids are not a number";
+				return d;
+			}
+			if (m.target == m.looker) {
+				d.refused = "a glance into one's own eyes";
+				return d;
+			}
+			d.command = Command::Glance;
+			d.formID = m.looker;
+			d.glance.target = m.target;
+			d.glance.durationMs = m.durationMs < 100 ? 100 : (m.durationMs > 10000 ? 10000 : m.durationMs);
+			d.glance.lidsOpen = m.lidsOpen < 0.0f ? 0.0f : (m.lidsOpen > 1.0f ? 1.0f : m.lidsOpen);
 			return d;
 		}
 		if (type == kKnobs) {
@@ -184,8 +215,10 @@ namespace FaceAuthority
 	void Clear(std::uint32_t formID)
 	{
 		std::lock_guard<std::mutex> guard(lock);
-		if (formID == 0)
+		if (formID == 0) {
 			held.clear();
+			glances.clear();                            // a load: nobody is looking at anybody any more
+		}
 		else
 			held.erase(formID);
 	}
@@ -219,5 +252,30 @@ namespace FaceAuthority
 		std::lock_guard<std::mutex> guard(lock);
 		out = current;
 		return knobsHeard;
+	}
+
+	void SetGlance(std::uint32_t looker, const Glance& glance, std::uint64_t nowMs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		if (glance.target == 0) {
+			glances.erase(looker);
+			return;
+		}
+		glances[looker] = Running{ looker, glance, nowMs };
+	}
+
+	std::vector<Running> Glances(std::uint64_t nowMs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		std::vector<Running> out;
+		for (auto it = glances.begin(); it != glances.end();) {
+			if (nowMs >= it->second.startMs + it->second.glance.durationMs) {
+				it = glances.erase(it);             // done
+				continue;
+			}
+			out.push_back(it->second);
+			++it;
+		}
+		return out;
 	}
 }
