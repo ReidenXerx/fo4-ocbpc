@@ -1,0 +1,73 @@
+=== STICKY: How the Anatomy Engine works inside ===
+[b]How the Anatomy Engine works inside, part 1: collision and bones[/b]
+
+For players and modders who want the mechanism rather than the feature list. The source is public: [url=https://github.com/ReidenXerx/fo4-ocbpc]github.com/ReidenXerx/fo4-ocbpc[/url]. Every number below is read from that code or from Anatomy's shipped config.
+
+[b]1. Each collider pushes once per frame[/b]
+OCBPC sorts colliders into a spatial grid of 25-unit cells. A collider goes into [i]every[/i] cell it touches, and a physics bone checks every cell [i]it[/i] touches. So a collider sitting on a cell edge was found twice and pushed the bone twice; one frame later it moved off the edge and the extra push vanished. That showed as a pop near cell edges. Each pass now keeps a list of the colliders it has already applied ([font=Courier New]seenColliders[/font] in Thing.cpp) and applies each one once. This holds for every OCBPC config, not only Anatomy's.
+
+[b]2. A penis as one tube[/b]
+OCBPC collides sphere against sphere and [i]adds[/i] every overlapping pair's push. A penis is five spheres on its bones, about 3 units apart, with nothing between them. A lip sliding along it rode up and down over each sphere. Measured on the real BodyTalk4 mesh, the surface it rested on swung from 0.13 inside the flesh to 0.69 off it.
+The tube ([font=Courier New]Tube.h[/font]) replaces that sum with one push:
+[list]
+[*]For each segment between two bones, find the point on the segment nearest the pushed sphere, clamped to the segment's ends.
+[*]The tube's radius there is blended linearly between the two bones' radii (collider radius minus a 0.2 skin).
+[*]The overlap is [font=Courier New]r_tube + r_sphere - distance[/font]. Only the deepest overlap over all segments counts, pushed straight out along the line to the sphere's centre.
+[*]The last segment carries the glans's measured profile (5 steps along the tip, in units of its radius) instead of a plain sphere.
+[/list]
+Measured result: thrust wobble at the anus 0.69 -> 0.21 units, at the vagina 0.26 -> 0.13. Rules: a penis never pushes its own owner. A held toy becomes a tube too, pushing only the bones listed in [font=Courier New][Props] targets[/font] (built, not yet seen in game).
+
+[b]3. Bones added at run time[/b]
+Fallout 4 skeletons have no genital bones, so contact had nothing to move. For every skinned mesh that names a [font=Courier New][Bones][/font] entry ([font=Courier New]name=parent,x,y,z[/font]), the engine:
+[list]
+[*]finds the actor's real [font=Courier New]Pelvis_skin[/font] in that mesh's own skin instance;
+[*]creates any missing node under it, at the offset from the entry;
+[*]points the skin's bone and world-transform entries at the new nodes.
+[/list]
+A skeleton that already has the bones is left alone. Skins are cached by their bone array and count, so the steady-state cost is one comparison per skin. Anatomy ships 15 entries: 9 bones that contact pushes, and 6 [font=Courier New]_Stretch[/font] children that open wider under a bigger push (knee, gain and a 1.5 cap per opening; the large-object case is built, not yet seen in game).
+
+[b]4. Config layering[/b]
+Your own [font=Courier New]Data\F4SE\Plugins\ocbp.ini[/font] is read first, then [font=Courier New]Data\F4SE\Plugins\Anatomy\ocbp.ini[/font]. The engine's own sections ([font=Courier New][Props] [Mouth] [Face] [Bones] [Aim] [Eyes] [Tube][/font]) come from Anatomy's file when it has them. The collision files are [i]appended[/i]: a node listed in both keeps its spheres and gains Anatomy's. Nothing of your physics mod is overwritten.
+
+=== STICKY: How the Anatomy Engine works inside (part 2) ===
+[b]How the Anatomy Engine works inside, part 2: hooks, faces, aim, lips[/b]
+
+[b]5. Hooks that read the game first[/b]
+The engine patches exactly two places in Fallout4.exe 1.10.163, both only after checking the bytes it expects:
+[list]
+[*][b]The face merge[/b] (+0x6689D0). Its first bytes must match a stored prologue, and its one caller (+0x6860FA) must be a [font=Courier New]CALL rel32[/font] that lands on it. Only then is that call repointed, through F4SE's branch trampoline. The patch is read back: the call must now reach a [font=Courier New]jmp [rip][/font] stub holding the engine's address. The merge's own code is never modified.
+[*][b]The eye update[/b] (+0x9C0410), called from two sites (+0xD38B13, +0xD39681), is checked and repointed the same way.
+[/list]
+Both installs run under a structured-exception guard. A fault turns that one feature off and writes where it happened to [font=Courier New]anatomy_ocbpc.log[/font]; the game keeps running. On any other game build the checks fail and the feature stays off. Steam and GOG 1.10.163 are byte-identical at these addresses.
+
+[b]6. Faces written after the merge[/b]
+The game merges a face as [font=Courier New]max(expression override, animation)[/font]. An override can open a jaw, but it can never close one the animation opened; upper eyelids are forced again after the merge. The engine runs just after that merge and composes, in order:
+[list]
+[*]Rapport's held face, on the morphs it owns;
+[*]the deep face, blended in by depth (full at 6 units);
+[*]a face for the glance;
+[*]the contact mouth and the lip fit;
+[*]the reaction (brows, cheeks, nose), only on morphs nobody owns.
+[/list]
+A blink always wins, and while the game plays a spoken line the mouth is handed back to its lip sync. Faces ease over 250 ms. Rapport's messages are F4SE messages ([font=Courier New]RFAS RFAC RFAD RFAK RFAG RFAX[/font], and the engine's [font=Courier New]RFAH[/font] hello with one feature bit per capability). Rapport's live tuning knobs ([font=Courier New]RFAK[/font]) and depth from vaginal or anal contact are built, not yet seen in game.
+
+[b]7. The aim[/b]
+Only between actors AAF marks busy ([font=Courier New]AnatomyAim.SetBusy[/font], fed by Anatomy's script). Each frame the chain [font=Courier New]Penis_00..05[/font] turns about [font=Courier New]Penis_00[/font] toward the nearest opening:
+[list]
+[*]a new lock may turn up to 35 deg; a held lock up to 45 deg;
+[*]entry is allowed within 75 deg of the opening's inward axis;
+[*]the animation's own shaft line must pass within 5 units of the entrance to lock, and within 8 to keep it;
+[*]the opening must be within 1.3 x the chain's length;
+[*]a short shaft stretches up to 10%.
+[/list]
+Past the entrance the shaft bends through measured path points (in the pelvis bone's frame; the throat path in the head's and the neck's frames). Mouths enter 1.3 below the lip line, straightened 1.5 in front of the lips. A gripping hand is its own target: the grip centre is the average axis of each curled finger's three-joint circle.
+
+[b]8. The lip solver[/b]
+Heads have no mouth bones; the mouth is expression morphs. Anatomy measured how 15 mouth morphs move the inner lip edge at 7 points across the mouth, plus the corners. Every frame the engine solves for the 15 weights:
+[list]
+[*]cyclic coordinate descent, a clamped Newton step per morph, starting from last frame's weights;
+[*]an edge inside the section costs 30x a gap; the lips rest 0.05 off the surface;
+[*]where nothing crosses, the lips are pulled back to closed; every weight costs a little, so the fewest morphs win;
+[*]the corners hug the section's sides.
+[/list]
+The lips then follow at 60 per second opening, 50 closing.
