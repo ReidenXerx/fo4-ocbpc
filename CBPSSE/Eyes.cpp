@@ -293,6 +293,10 @@ void LoadEyeConfig(INIReader& reader)
 	glancesOn = reader.GetBoolean("Eyes", "glances", false);
 	params.signUp = reader.GetReal("Eyes", "signUp", -1.0) < 0.0 ? -1.0f : 1.0f;
 	params.signSide = reader.GetReal("Eyes", "signSide", -1.0) < 0.0 ? -1.0f : 1.0f;
+	// the vertical edge (the owner, 2026-09-26: "when up and bottom we can try push gaze more"): past the
+	// engine's own 0.16 is ours to choose; 0.25 at most
+	params.xMax = (float)reader.GetReal("Eyes", "uMax", params.xMax);
+	params.xMax = params.xMax < 0.05f ? 0.05f : (params.xMax > 0.25f ? 0.25f : params.xMax);
 	eyeRise = (float)reader.GetReal("Eyes", "eyeRise", eyeRise);
 	eyeBack = (float)reader.GetReal("Eyes", "eyeBack", eyeBack);
 	probe = reader.GetBoolean("Eyes", "probe", false);
