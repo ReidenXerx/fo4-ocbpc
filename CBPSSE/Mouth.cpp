@@ -74,6 +74,10 @@ namespace
 	// moves each, per sex ([Mouth] lipCorner<F|M>=rimL,rimR,moveL,moveR); moves 0 = no corners
 	const int kLeftLipCornerOut = 8, kRightLipCornerOut = 31;
 	float lipRim[2][2] = {}, lipCornerMove[2][2] = {};
+	// The lips follow the section quickly BOTH ways ([Mouth] lipOpenRate / lipCloseRate, 1/s). At the jaw's
+	// closeRate (6) they opened for the head and had not closed back onto the shaft before the next stroke:
+	// "like the same big width as head" (the owner's look, 2026-09-25).
+	float lipOpenRate = 30.0f, lipCloseRate = 25.0f;
 
 	// The rest of the face while the mouth is busy (the owner, 2026-09-24: "expressions on the face
 	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
@@ -498,6 +502,8 @@ void LoadMouthConfig(INIReader& reader)
 			}
 		}
 		lipParams.clearance = (float)reader.GetReal("Mouth", "lipClearance", lipParams.clearance);
+		lipOpenRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipOpenRate", lipOpenRate));
+		lipCloseRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipCloseRate", lipCloseRate));
 		Note("mouth|lips|" + std::to_string(lipTable[0].count) + "|" + std::to_string(lipTable[1].count),
 			lipTable[0].count || lipTable[1].count ? "[mouth] lips fitted round what is inside: %d morphs (women), %d (men)\n"
 			: "[mouth] no lip table ([Mouth] lip*): the jaw opens by femaleGap/maleGap as before (%d/%d)\n",
@@ -818,7 +824,7 @@ void UpdateMouths()
 				float fit[LipFit::kMaxMorphs] = {};
 				LipFit::Fit(lt, want, lipParams, st.lip, fit);
 				for (int m = 0; m < lt.count; m++)
-					st.lip[m] = Toward(st.lip[m], fit[m], fit[m] > st.lip[m] ? openRate : closeRate, dt);
+					st.lip[m] = Toward(st.lip[m], fit[m], fit[m] > st.lip[m] ? lipOpenRate : lipCloseRate, dt);
 				int sx = male ? 1 : 0;
 				if (lipCornerMove[sx][0] > 0.0f || lipCornerMove[sx][1] > 0.0f) {
 					float lo = 1e9f, hi = -1e9f;               // what is inside, across the mouth (head units)
@@ -829,7 +835,7 @@ void UpdateMouths()
 					float want2[2] = {};
 					LipFit::Corners(lo, hi, lipRim[sx], lipCornerMove[sx], lipParams.clearance, want2[0], want2[1]);
 					for (int k = 0; k < 2; k++)
-						st.corner[k] = Toward(st.corner[k], want2[k], want2[k] > st.corner[k] ? openRate : closeRate, dt);
+						st.corner[k] = Toward(st.corner[k], want2[k], want2[k] > st.corner[k] ? lipOpenRate : lipCloseRate, dt);
 				}
 				char lk[96];
 				_snprintf_s(lk, sizeof(lk), _TRUNCATE, "mouth|lips|%08X", a->formID);
