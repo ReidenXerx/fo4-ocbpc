@@ -47,6 +47,7 @@ namespace
 	std::vector<UInt32> sweepers;               // the scan's, read by the eye update
 	int sweepPose = -1;                          // -1: centred
 	float eyeRise = 4.8f, eyeBack = 0.8f;
+	float rollMax = 0.24f;                      // [Eyes] rollMax: how far up the eyes roll (kGlanceRoll)
 	GlanceMath::Params params;
 	const float kLidRate = 10.0f;               // 1/s: the lids open for a glance and give the face back
 	const float kProbeEvery = 0.5f;             // s between probe lines per actor
@@ -196,7 +197,11 @@ namespace
 			Actor* b = ActorOf(r.glance.target);
 			float side = 0.0f, up = 0.0f, ahead = 0.0f;
 			GlanceMath::UV want;
-			bool reach = a && b && Toward(a, b, side, up, ahead) && GlanceMath::Want(side, up, ahead, params, want);
+			const bool roll = (r.glance.flags & FaceAuthority::kGlanceRoll) != 0;
+			bool reach = roll ? a != nullptr
+				: a && b && Toward(a, b, side, up, ahead) && GlanceMath::Want(side, up, ahead, params, want);
+			if (roll)
+				want = GlanceMath::Roll(params, rollMax);
 			BSShaderProperty* property = reach && enabled && hooked ? EyeProperty(a) : nullptr;
 			if (property && property->shaderMaterial) {
 				GlanceMath::UV cur;
@@ -297,6 +302,8 @@ void LoadEyeConfig(INIReader& reader)
 	// engine's own 0.16 is ours to choose; 0.25 at most
 	params.xMax = (float)reader.GetReal("Eyes", "uMax", params.xMax);
 	params.xMax = params.xMax < 0.05f ? 0.05f : (params.xMax > 0.25f ? 0.25f : params.xMax);
+	rollMax = (float)reader.GetReal("Eyes", "rollMax", rollMax);
+	rollMax = rollMax < 0.05f ? 0.05f : (rollMax > 0.3f ? 0.3f : rollMax);
 	eyeRise = (float)reader.GetReal("Eyes", "eyeRise", eyeRise);
 	eyeBack = (float)reader.GetReal("Eyes", "eyeBack", eyeBack);
 	probe = reader.GetBoolean("Eyes", "probe", false);

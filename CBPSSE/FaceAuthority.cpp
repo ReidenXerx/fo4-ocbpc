@@ -17,6 +17,13 @@ namespace FaceAuthority
 		Knobs current;                                  // RFAK, once heard (a load keeps them: they are settings)
 		bool knobsHeard = false;
 		std::unordered_map<std::uint32_t, Running> glances;   // RFAG, by looker
+		struct Pending
+		{
+			std::uint64_t mask = 0;
+			float value[kMorphs] = {};
+			std::uint64_t atMs = 0;
+		};
+		std::unordered_map<std::uint32_t, Pending> glanceFaces;   // RFAX waiting for its RFAG, by looker
 
 		// The mouth handed back to the engine while an actor speaks: Rapport's own MOUTH set (fo4-rapport
 		// faces.json "mouth"). Measured 2026-09-24 by [Face] probe on 14 lines: the ids lip sync moved,
@@ -39,10 +46,43 @@ namespace FaceAuthority
 	Decoded Decode(std::uint32_t type, const void* data, std::uint32_t length)
 	{
 		Decoded d;
-		if (type != kSet && type != kClear && type != kDeep && type != kKnobs && type != kGlance)
+		if (type != kSet && type != kClear && type != kDeep && type != kKnobs && type != kGlance && type != kGlanceFace)
 			return d;                                   // not ours to read
 		if (!data) {
 			d.refused = "no data";
+			return d;
+		}
+		if (type == kGlanceFace) {
+			if (length < sizeof(SetMessage)) {
+				d.refused = "a glance face shorter than 232 bytes";
+				return d;
+			}
+			SetMessage m;
+			std::memcpy(&m, data, sizeof(m));
+			if (m.version < 1) {
+				d.refused = "a glance face of version 0";
+				return d;
+			}
+			if (m.formID == 0) {
+				d.refused = "a glance face for form 0";
+				return d;
+			}
+			for (int i = 0; i < kMorphs; i++)
+				if (!std::isfinite(m.value[i])) {
+					d.refused = "a glance face with a value that is not a number";
+					return d;
+				}
+			// the blink lids are the glance's lids layer's
+			std::uint64_t mask = m.owned & ((1ull << kMorphs) - 1) & ~((1ull << 18) | (1ull << 41));
+			if (!mask) {
+				d.refused = "a glance face that holds nothing";
+				return d;
+			}
+			d.command = Command::GlanceFace;
+			d.formID = m.formID;
+			d.face.owned = mask;
+			for (int i = 0; i < kMorphs; i++)
+				d.face.value[i] = m.value[i] < 0.0f ? 0.0f : (m.value[i] > 1.0f ? 1.0f : m.value[i]);
 			return d;
 		}
 		if (type == kGlance) {
@@ -64,7 +104,8 @@ namespace FaceAuthority
 				d.refused = "a glance whose lids are not a number";
 				return d;
 			}
-			if (m.target == m.looker) {
+			const std::uint32_t flags = m.flags & kGlanceRoll;
+			if (m.target == m.looker && !(flags & kGlanceRoll)) {
 				d.refused = "a glance into one's own eyes";
 				return d;
 			}
@@ -73,6 +114,7 @@ namespace FaceAuthority
 			d.glance.target = m.target;
 			d.glance.durationMs = m.durationMs < 100 ? 100 : (m.durationMs > 10000 ? 10000 : m.durationMs);
 			d.glance.lidsOpen = m.lidsOpen < 0.0f ? 0.0f : (m.lidsOpen > 1.0f ? 1.0f : m.lidsOpen);
+			d.glance.flags = flags;
 			return d;
 		}
 		if (type == kKnobs) {
@@ -209,7 +251,37 @@ namespace FaceAuthority
 	void Set(std::uint32_t formID, const Face& face)
 	{
 		std::lock_guard<std::mutex> guard(lock);
-		held[formID] = face;
+		Face f = face;
+		f.easeMask = 0;
+		held[formID] = f;
+	}
+
+	void Shown(const Face& face, std::uint64_t nowMs, float* out)
+	{
+		float t = nowMs > face.easeStartMs ? (float)(nowMs - face.easeStartMs) / (float)kEaseMs : 0.0f;
+		t = t > 1.0f ? 1.0f : t;
+		for (int i = 0; i < kMorphs; i++) {
+			out[i] = face.value[i];
+			if ((face.easeMask >> i) & 1u)
+				out[i] = face.from[i] + (face.value[i] - face.from[i]) * t;
+		}
+	}
+
+	void Set(std::uint32_t formID, const Face& face, std::uint64_t nowMs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		Face f = face;
+		f.easeMask = 0;
+		auto it = held.find(formID);
+		if (it != held.end()) {
+			float shown[kMorphs];
+			Shown(it->second, nowMs, shown);
+			f.easeMask = it->second.owned & f.owned & ((1ull << kMorphs) - 1);
+			f.easeStartMs = nowMs;
+			for (int i = 0; i < kMorphs; i++)
+				f.from[i] = shown[i];
+		}
+		held[formID] = f;
 	}
 
 	void Clear(std::uint32_t formID)
@@ -218,6 +290,7 @@ namespace FaceAuthority
 		if (formID == 0) {
 			held.clear();
 			glances.clear();                            // a load: nobody is looking at anybody any more
+			glanceFaces.clear();
 		}
 		else
 			held.erase(formID);
@@ -240,6 +313,19 @@ namespace FaceAuthority
 		return std::vector<std::pair<std::uint32_t, Face>>(held.begin(), held.end());
 	}
 
+	std::vector<std::pair<std::uint32_t, Face>> Snapshot(std::uint64_t nowMs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		std::vector<std::pair<std::uint32_t, Face>> out(held.begin(), held.end());
+		for (auto& h : out) {
+			float shown[kMorphs];
+			Shown(h.second, nowMs, shown);
+			std::memcpy(h.second.value, shown, sizeof(shown));
+			h.second.easeMask = 0;
+		}
+		return out;
+	}
+
 	void SetKnobs(const Knobs& knobs)
 	{
 		std::lock_guard<std::mutex> guard(lock);
@@ -257,11 +343,49 @@ namespace FaceAuthority
 	void SetGlance(std::uint32_t looker, const Glance& glance, std::uint64_t nowMs)
 	{
 		std::lock_guard<std::mutex> guard(lock);
+		auto pending = glanceFaces.find(looker);
 		if (glance.target == 0) {
 			glances.erase(looker);
+			if (pending != glanceFaces.end())
+				glanceFaces.erase(pending);
 			return;
 		}
-		glances[looker] = Running{ looker, glance, nowMs };
+		Running r;
+		r.looker = looker;
+		r.glance = glance;
+		r.startMs = nowMs;
+		if (pending != glanceFaces.end()) {
+			if (nowMs >= pending->second.atMs && nowMs - pending->second.atMs <= kGlanceFaceWaitMs) {
+				r.faceMask = pending->second.mask;
+				std::memcpy(r.face, pending->second.value, sizeof(r.face));
+			}
+			glanceFaces.erase(pending);                 // an RFAX is for the next glance only
+		}
+		glances[looker] = r;
+	}
+
+	void SetGlanceFace(std::uint32_t looker, std::uint64_t mask, const float* values, std::uint64_t nowMs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		Pending p;
+		p.mask = mask;
+		std::memcpy(p.value, values, sizeof(p.value));
+		p.atMs = nowMs;
+		glanceFaces[looker] = p;
+	}
+
+	float GlanceFaceWeight(std::uint64_t nowMs, std::uint64_t startMs, std::uint32_t durationMs)
+	{
+		if (nowMs < startMs || nowMs >= startMs + durationMs || durationMs == 0)
+			return 0.0f;
+		float in = 150.0f, out = 250.0f;
+		if (durationMs < 400) {
+			in = 150.0f * durationMs / 400.0f;
+			out = 250.0f * durationMs / 400.0f;
+		}
+		float a = (float)(nowMs - startMs) / in, b = (float)(startMs + durationMs - nowMs) / out;
+		float e = (a < 1.0f ? a : 1.0f) * (b < 1.0f ? b : 1.0f);
+		return e < 0.0f ? 0.0f : (e > 1.0f ? 1.0f : e);
 	}
 
 	std::vector<Running> Glances(std::uint64_t nowMs)

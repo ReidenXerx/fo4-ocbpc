@@ -43,6 +43,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kDeep = 0x52464144;     // 'RFAD'
 	constexpr std::uint32_t kKnobs = 0x5246414B;    // 'RFAK': the fork's knobs from Rapport's MCM ("Bodies & faces")
 	constexpr std::uint32_t kGlance = 0x52464147;   // 'RFAG': one actor looks into another's eyes for a while
+	constexpr std::uint32_t kGlanceFace = 0x52464158;   // 'RFAX': the face that glance wears (sent just before it)
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -56,6 +57,9 @@ namespace FaceAuthority
 	// bit 4 (16): glances (RFAG) turn the eyes. Set only once the owner has seen it work (Eyes.h, [Eyes] glances)
 	constexpr std::uint32_t kFeatureGlances = 1u << 4;
 	constexpr std::uint32_t kFeatureKnobs = 1u << 5;         // RFAK is applied (the MCM's page does something)
+	constexpr std::uint32_t kFeatureGlanceFace = 1u << 7;    // RFAX: a glance may wear a face (eased in and out)
+	constexpr std::uint32_t kFeatureEasedFaces = 1u << 8;    // an RFAS for an actor already held eases (250 ms)
+	constexpr std::uint32_t kFeatureEyeRoll = 1u << 9;       // RFAG flags bit 0: the eyes roll up (no target)
 	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
 	                                                         // in her vagina or anus, and for him by his own
 	                                                         // depth in any opening (needs [Aim] on)
@@ -113,11 +117,16 @@ namespace FaceAuthority
 		std::uint32_t flags;
 	};
 	static_assert(sizeof(GlanceMessage) == 24, "the glance message is 24 bytes");
+	// flags bit 0 (the owner, 2026-09-26: "rolling eyes ... its very sexy and humans do it often during sex"):
+	// the eyes roll UP, as far as [Eyes] rollMax, whatever the target; the sender names the looker itself as
+	// the target (a plain glance into one's own eyes is refused). The lids are the face's, as lidsOpen says.
+	constexpr std::uint32_t kGlanceRoll = 1u << 0;
 	struct Glance
 	{
 		std::uint32_t target = 0;
 		std::uint32_t durationMs = 0;       // clamped 100 .. 10000
 		float lidsOpen = 0.0f;              // clamped 0 .. 1
+		std::uint32_t flags = 0;            // known bits only (kGlanceRoll)
 	};
 	static_assert(sizeof(SetMessage) == 232, "the set message is 232 bytes");
 	static_assert(offsetof(SetMessage, owned) == 8, "owned sits at offset 8");
@@ -129,9 +138,16 @@ namespace FaceAuthority
 		float value[kMorphs] = {};
 		std::uint64_t deepMask = 0;                 // A-29: the ids that blend toward deep[] with depth
 		float deep[kMorphs] = {};
+		// Eased faces (hello bit 8, agreed with Rapport 2026-09-26): an RFAS for an actor already held eases
+		// the ids both faces own from what was SHOWN (from[]) to value[] over kEaseMs from easeStartMs;
+		// newly owned ids snap, ids let go return to the engine at once
+		std::uint64_t easeMask = 0;
+		std::uint64_t easeStartMs = 0;
+		float from[kMorphs] = {};
 	};
+	constexpr std::uint32_t kEaseMs = 250;
 
-	enum class Command { None, Set, Clear, Deep, Knobs, Glance };
+	enum class Command { None, Set, Clear, Deep, Knobs, Glance, GlanceFace };
 	struct Decoded
 	{
 		Command command = Command::None;
@@ -164,12 +180,18 @@ namespace FaceAuthority
 	// the jaw at 0, so it stays shut even over an animation that opens it.
 	SetMessage TestFace(std::uint32_t formID);
 
-	// The held faces (thread-safe: Rapport dispatches on its thread, the merge runs on another)
+	// The held faces (thread-safe: Rapport dispatches on its thread, the merge runs on another). With nowMs,
+	// an actor already held eases to the new face (bit 8); without it, or for a fresh hold, it snaps.
 	void Set(std::uint32_t formID, const Face& face);
+	void Set(std::uint32_t formID, const Face& face, std::uint64_t nowMs);
+	// What a held face shows at nowMs (its eases applied), per morph
+	void Shown(const Face& face, std::uint64_t nowMs, float* out);
 	void Clear(std::uint32_t formID);              // 0 = everyone
 	// A-29: the deep face of a face already held (false: none is held for that form, and nothing is kept)
 	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values);
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot();
+	// ...with each face's value[] as shown at nowMs (the eases applied, and done with)
+	std::vector<std::pair<std::uint32_t, Face>> Snapshot(std::uint64_t nowMs);
 	// RFAK: the last knobs Rapport sent (thread-safe). False until one arrives, and then the ini's values
 	// stand. A knob only ever switches OFF what the ini turned on: the ini's off is a config that failed.
 	void SetKnobs(const Knobs& knobs);
@@ -181,7 +203,15 @@ namespace FaceAuthority
 		std::uint32_t looker = 0;
 		Glance glance;
 		std::uint64_t startMs = 0;
+		std::uint64_t faceMask = 0;                 // RFAX: the glance's face (0: none)
+		float face[kMorphs] = {};
 	};
 	void SetGlance(std::uint32_t looker, const Glance& glance, std::uint64_t nowMs);
 	std::vector<Running> Glances(std::uint64_t nowMs);
+	// RFAX (bit 7): the face the looker's NEXT glance wears, if that RFAG comes within kGlanceFaceWaitMs
+	constexpr std::uint32_t kGlanceFaceWaitMs = 2000;
+	void SetGlanceFace(std::uint32_t looker, std::uint64_t mask, const float* values, std::uint64_t nowMs);
+	// How much of a glance's face shows at nowMs: in over 150 ms from its start, out over its last 250 ms
+	// (a glance under 400 ms scales both down in proportion); 0 outside it
+	float GlanceFaceWeight(std::uint64_t nowMs, std::uint64_t startMs, std::uint32_t durationMs);
 }

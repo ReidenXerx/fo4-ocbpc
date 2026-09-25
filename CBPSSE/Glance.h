@@ -50,6 +50,20 @@ namespace GlanceMath
 		return true;
 	}
 
+	// The eyes rolled up (RFAG kGlanceRoll): straight up, as far as rollMax, on the axes' own up
+	inline UV Roll(const Params& p, float rollMax)
+	{
+		const bool map = p.a != 0.0f || p.b != 0.0f || p.c != 0.0f || p.d != 0.0f;
+		float upU = map ? p.a : p.signUp, upV = map ? p.c : 0.0f;   // where "up" goes on the texture
+		float len = std::sqrt(upU * upU + upV * upV);
+		UV out;
+		if (len > 1e-6f) {
+			out.x = rollMax * upU / len;
+			out.y = rollMax * upV / len;
+		}
+		return out;
+	}
+
 	// from where the eye is toward where it is wanted, at most speed x dt of the way
 	inline UV Step(UV cur, UV want, const Params& p, float dt)
 	{

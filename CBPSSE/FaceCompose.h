@@ -64,6 +64,9 @@ namespace FaceCompose
 		int termCount = 0;                          // A-26: raise termId toward termValue x inside
 		int termId[kMaxTerms] = {};
 		float termValue[kMaxTerms] = {};
+		std::uint64_t glanceMask = 0;               // a glance's face (RFAX), eased by glanceWeight, after the
+		float glanceFace[kMorphs] = {};             // held face and its deep blend, before the contact mouth
+		float glanceWeight = 0.0f;
 		float lidMax = 1.0f;                        // a glance (RFAG): the upper lids (18/41) at most this
 		                                            // far down, last of all, over the blink too
 	};

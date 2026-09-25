@@ -722,8 +722,22 @@ void UpdateMouths()
 
 	// the faces Rapport holds: matched to the actors scanned below, and looked up by form for the rest
 	std::vector<std::pair<std::uint32_t, FaceAuthority::Face>> held;
+	const std::uint64_t clockMs = EyeClockMs();
 	if (authority)
-		held = FaceAuthority::Snapshot();
+		held = FaceAuthority::Snapshot(clockMs);     // eased faces as they show now (bit 8)
+	// the glances wearing a face (RFAX, bit 7), by looker
+	std::unordered_map<UInt32, FaceAuthority::Running> glanceFaces;
+	for (auto& g : FaceAuthority::Glances(clockMs))
+		if (g.faceMask)
+			glanceFaces[g.looker] = g;
+	auto wearGlance = [&](Override& o) {
+		auto g = glanceFaces.find(o.formID);
+		if (g == glanceFaces.end())
+			return;
+		o.mouth.glanceMask = g->second.faceMask;
+		std::memcpy(o.mouth.glanceFace, g->second.face, sizeof(o.mouth.glanceFace));
+		o.mouth.glanceWeight = FaceAuthority::GlanceFaceWeight(clockMs, g->second.startMs, g->second.glance.durationMs);
+	};
 	std::unordered_map<UInt32, size_t> heldAt;
 	std::vector<bool> heldDone(held.size(), false);
 	for (size_t i = 0; i < held.size(); i++)
@@ -927,9 +941,10 @@ void UpdateMouths()
 		auto h = heldAt.find(a->formID);
 		const FaceAuthority::Face* rapport = h != heldAt.end() ? &held[h->second].second : nullptr;
 		const float lidMax = EyeLidMax(a->formID);
-		if (st.inside > 0.001f || st.floor > 0.001f || rapport || lidMax < 1.0f) {
+		if (st.inside > 0.001f || st.floor > 0.001f || rapport || lidMax < 1.0f || glanceFaces.count(a->formID)) {
 			Override o{ data, a->formID, {}, false, {} };
 			o.mouth.lidMax = lidMax;
+			wearGlance(o);
 			o.mouth.inside = st.inside;
 			// A-29: the same depth as A-26, or a shaft's in her vagina or anus, or his own in any opening
 			o.mouth.deep = deepOn ? (std::max)(st.inside * Clamp(st.depth / faceDepth, 0.0f, 1.0f),
@@ -972,6 +987,7 @@ void UpdateMouths()
 			continue;
 		}
 		next.push_back(HeldOnly(data, formID, held[i].second));
+		wearGlance(next.back());
 		Applied(formID, "looked up by form");
 		if (probe)
 			listened.emplace_back(formID, data);
@@ -1016,8 +1032,13 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 		Note(key, "[face] %s: refused %s\n", who, d.refused);
 		return;
 	}
-	if (d.command == FaceAuthority::Command::Set) {
-		FaceAuthority::Set(d.formID, d.face);
+	if (d.command == FaceAuthority::Command::GlanceFace) {
+		FaceAuthority::SetGlanceFace(d.formID, d.face.owned, d.face.value, EyeClockMs());
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|glanceface|%s|%08X", who, d.formID);
+		Note(key, "[face] %s: %08X's next glance wears a face of %d morph(s)\n", who, d.formID, OwnedCount(d.face));
+	}
+	else if (d.command == FaceAuthority::Command::Set) {
+		FaceAuthority::Set(d.formID, d.face, EyeClockMs());   // eased if already held (bit 8)
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|set|%s|%08X", who, d.formID);
 		Note(key, "[face] %s holds %08X's face: %d morph(s)%s\n", who, d.formID, OwnedCount(d.face),
 			hooked && authority ? "" : " (but [Face] authority is off or the merge is not hooked: nothing will show)");
@@ -1094,6 +1115,7 @@ void SayFaceHello()
 	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatureSetClear |
 		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
 		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
+		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
 		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) };
 	bool heard = messaging->Dispatch(selfHandle, FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
@@ -1123,7 +1145,7 @@ void RefreshHeldFaces()
 		return;
 	std::vector<Override> next;
 	if (authority)
-		for (auto& h : FaceAuthority::Snapshot())
+		for (auto& h : FaceAuthority::Snapshot(EyeClockMs()))
 			if (void* data = HeldFaceData(h.first))
 				next.push_back(HeldOnly(data, h.first, h.second));
 	Publish(std::move(next), true);   // and the ledger forgets every face not in this list

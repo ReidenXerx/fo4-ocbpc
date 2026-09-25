@@ -24,6 +24,23 @@ namespace FaceCompose
 			if (held->deepMask)
 				FaceAuthority::BlendDeep(w, keep.weight, *held, m.deep);   // 1b: the deep face, by depth
 		}
+		// 1c, a glance's face (RFAX): toward it by the glance's ease. Its MOUTH ids only as far as no contact
+		// mouth has the mouth, and never over a line's lip sync; the lids are the glance's lids layer's
+		if (m.glanceWeight > 0.0f && m.glanceMask) {
+			bool quiet = speaking || (held && ((held->owned >> FaceAuthority::kSpeakingBit) & 1u));
+			for (int id = 0; id < kMorphs; id++) {
+				if (!((m.glanceMask >> id) & 1u) || id == kLeftBlink || id == kRightBlink)
+					continue;
+				float wt = m.glanceWeight > 1.0f ? 1.0f : m.glanceWeight;
+				if (FaceAuthority::IsMouth(id)) {
+					if (quiet)
+						continue;
+					wt *= 1.0f - (m.inside < 0.0f ? 0.0f : (m.inside > 1.0f ? 1.0f : m.inside));
+				}
+				float v = m.glanceFace[id] < 0.0f ? 0.0f : (m.glanceFace[id] > 1.0f ? 1.0f : m.glanceFace[id]);
+				w[id] += (v - w[id]) * wt;
+			}
+		}
 		if (m.lipCount > 0) {                       // A-32: the fitted lips, each by inside
 			for (int k = 0; k < m.lipCount && k < kMaxTerms; k++) {
 				int id = m.lipId[k];

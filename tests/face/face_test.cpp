@@ -731,6 +731,137 @@ int main()
 		Check("and lands exactly when it is close", Near(GlanceMath::Step(mid, to, p, 0.1f).x, 0.1f));
 	}
 
+	printf("eye rolls (RFAG flag 0)\n");
+	{
+		GlanceMessage roll{ 1, 0x2F0B, 0x2F0B, 1500, 0.0f, kGlanceRoll | 0x80u };
+		Decoded d = Decode(kGlance, &roll, sizeof(roll));
+		Check("a roll may name the looker as its target", d.command == Command::Glance && d.glance.target == 0x2F0B);
+		Check("and keeps only the known flags", d.glance.flags == kGlanceRoll);
+		GlanceMessage self{ 1, 0x2F0B, 0x2F0B, 1500, 0.0f, 0 };
+		Check("a plain glance into one's own eyes is still refused",
+			Decode(kGlance, &self, sizeof(self)).command == Command::None);
+		GlanceMath::Params p;
+		p.a = -1.4f;                                    // the owner's sweep: u- is up
+		p.d = -1.0f;
+		GlanceMath::UV r = GlanceMath::Roll(p, 0.24f);
+		Check("the eyes roll up the axes' own up (u -0.24 when u- is up)", Near(r.x, -0.24f) && Near(r.y, 0.0f));
+		p.a = 1.4f;
+		Check("and the other way when the map's up is +", Near(GlanceMath::Roll(p, 0.24f).x, 0.24f));
+		GlanceMath::Params s;                           // no map: the signs
+		s.signUp = -1.0f;
+		Check("without a map, by signUp", Near(GlanceMath::Roll(s, 0.2f).x, -0.2f));
+	}
+
+	printf("glance faces (RFAX) and eased held faces\n");
+	{
+		SetMessage gx = MakeSet(0x2F0B, (1ull << 14) | (1ull << 37) | (1ull << 17) | (1ull << 18) | (1ull << 2));
+		gx.value[14] = gx.value[37] = 0.9f;               // brows up
+		gx.value[17] = 0.6f;                              // a smile (a MOUTH id)
+		gx.value[18] = 1.0f;                              // a lid: the lids layer's, dropped
+		gx.value[2] = 0.3f;                               // the jaw (a MOUTH id)
+		Decoded d = Decode(kGlanceFace, &gx, sizeof(gx));
+		Check("a glance face is read, the blink lid dropped from it", d.command == Command::GlanceFace &&
+			d.formID == 0x2F0B && !((d.face.owned >> 18) & 1u) && ((d.face.owned >> 14) & 1u));
+		Check("a short glance face is refused", Decode(kGlanceFace, &gx, 200).command == Command::None);
+		SetMessage bad = gx;
+		bad.formID = 0;
+		Check("a glance face for form 0 is refused", Decode(kGlanceFace, &bad, sizeof(bad)).command == Command::None);
+		bad = gx;
+		bad.owned = (1ull << 18) | (1ull << 41);
+		Check("a glance face of only the lids holds nothing: refused", Decode(kGlanceFace, &bad, sizeof(bad)).command == Command::None);
+		bad = gx;
+		bad.value[3] = std::numeric_limits<float>::quiet_NaN();
+		Check("a glance face with a NaN is refused", Decode(kGlanceFace, &bad, sizeof(bad)).command == Command::None);
+
+		Glance g;
+		g.target = 0x14;
+		g.durationMs = 2000;
+		g.lidsOpen = 1.0f;
+		SetGlanceFace(0x2F0B, d.face.owned, d.face.value, 10000);
+		SetGlance(0x2F0B, g, 11500);                      // within 2 s
+		auto run = Glances(11500);
+		Check("the RFAX just before an RFAG is that glance's face", run.size() == 1 && run[0].faceMask == d.face.owned &&
+			Near(run[0].face[14], 0.9f));
+		SetGlance(0x2F0B, g, 12000);                      // the next glance, no RFAX
+		run = Glances(12000);
+		Check("the next glance without an RFAX has no face (it was for one glance)", run.size() == 1 && run[0].faceMask == 0);
+		SetGlanceFace(0x2F0B, d.face.owned, d.face.value, 20000);
+		SetGlance(0x2F0B, g, 22500);                      // 2.5 s later
+		Check("an RFAX older than 2 s is not worn", Glances(22500)[0].faceMask == 0);
+		SetGlanceFace(0x2F0B, d.face.owned, d.face.value, 30000);
+		Glance stop;
+		SetGlance(0x2F0B, stop, 30100);                   // target 0
+		SetGlance(0x2F0B, g, 30200);
+		Check("a stop drops a waiting glance face", Glances(30200)[0].faceMask == 0);
+		Clear(0);
+
+		Check("the glance face eases in over 150 ms", Near(GlanceFaceWeight(1000, 1000, 2000), 0.0f) &&
+			Near(GlanceFaceWeight(1075, 1000, 2000), 0.5f) && Near(GlanceFaceWeight(1500, 1000, 2000), 1.0f));
+		Check("and out over its last 250 ms", Near(GlanceFaceWeight(2875, 1000, 2000), 0.5f) &&
+			Near(GlanceFaceWeight(3000, 1000, 2000), 0.0f) && Near(GlanceFaceWeight(3100, 1000, 2000), 0.0f));
+		Check("a glance under 400 ms scales both down (200 ms: in 75, out 125)",
+			Near(GlanceFaceWeight(1000 + 75, 1000, 200), 1.0f * (std::min)(1.0f, 125.0f / 125.0f)) &&
+			GlanceFaceWeight(1000 + 37, 1000, 200) < 0.55f && GlanceFaceWeight(1000 + 37, 1000, 200) > 0.45f);
+
+		// the layer: after the held face and its deep blend, before the contact mouth; mouth ids by 1 - inside
+		float w[kMorphs] = {};
+		FaceCompose::Engine keep;
+		Face r = RapportFace(0.0f, 0.2f);                // held: brows 0, jaw 0.2
+		FaceCompose::Mouth m;
+		m.glanceMask = d.face.owned;
+		std::memcpy(m.glanceFace, d.face.value, sizeof(m.glanceFace));
+		m.glanceWeight = 0.5f;
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("half way into the glance, a brow is half way from the held face to the glance's",
+			Near(w[14], 0.45f));
+		Check("with no contact mouth, a MOUTH id (the smile) eases too", Near(w[17], 0.3f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		m.inside = 1.0f;                                 // something in her mouth
+		m.jaw = 0.8f;
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("with a contact mouth the glance face leaves the mouth alone (the smile stays the held face's)",
+			Near(w[17], 0.0f) && Near(w[2], 0.8f));
+		Check("and still turns the brows", Near(w[14], 0.45f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		m.inside = 0.0f;
+		FaceCompose::AfterMerge(w, keep, &r, true, m, true);   // a line playing
+		Check("a line's lip sync is never overridden by a glance face", Near(w[17], 0.0f));
+		m.lidMax = 0.0f;
+		w[18] = 1.0f;
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("the lids layer stays on top", Near(w[18], 0.0f));
+
+		// eased held faces (bit 8)
+		Face a = RapportFace(0.0f, 0.2f);
+		a.value[14] = 0.2f;
+		Set(0x77, a, 5000);
+		Face b = a;
+		b.value[14] = 0.8f;
+		b.owned |= 1ull << 50;                           // a newly owned id (outside 0-49, like a later one)
+		b.value[50] = 0.6f;
+		Set(0x77, b, 6000);
+		auto shown = [&](std::uint64_t t, int id) {
+			for (auto& h : Snapshot(t))
+				if (h.first == 0x77)
+					return h.second.value[id];
+			return -1.0f;
+		};
+		Check("a held face re-set eases: at once still the old", Near(shown(6000, 14), 0.2f));
+		Check("half way at 125 ms", Near(shown(6125, 14), 0.5f));
+		Check("there at 250 ms", Near(shown(6250, 14), 0.8f));
+		Check("a newly owned id snaps", Near(shown(6000, 50), 0.6f));
+		Face c = b;
+		c.value[14] = 0.0f;
+		Set(0x77, c, 6125);                               // mid-ease: from what shows (0.5)
+		Check("a re-set mid-ease starts from what shows", Near(shown(6125, 14), 0.5f) && Near(shown(6250, 14), 0.25f));
+		Clear(0x77);
+		Set(0x77, b, 7000);
+		Check("a fresh hold (after a clear) snaps", Near(shown(7000, 14), 0.8f));
+		Clear(0);
+	}
+
 	printf("store\n");
 	{
 		Face held = RapportFace(0.3f, 0.3f);
