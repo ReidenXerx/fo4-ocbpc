@@ -166,8 +166,10 @@ extern "C"
         LoadCollisionConfig();
         logger.Error("Hooking Game\n");
         DoHook();
+        // fo4-anatomy: glances first (ocbp.ini [Eyes]), under a guard: were anything to fault after a call is
+        // patched, F4SE would unload this plugin and leave the engine calling into a DLL that is gone
+        InstallEyeHook();
         InstallMouthHook();   // fo4-anatomy: the mouth (ocbp.ini [Mouth]); checks the build first
-        InstallEyeHook();     // fo4-anatomy: glances (ocbp.ini [Eyes]); checks the build first
         // fo4-anatomy: F4SE's own messages (PostLoad, loads) drive Rapport's face authority. Last, after
         // the hooks: F4SE unloads a plugin whose Load faults, and a listener registered before the fault
         // would be called in a DLL that is gone.

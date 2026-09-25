@@ -54,6 +54,12 @@ namespace
 	typedef void (*EyeFn)(float dt);
 	EyeFn origEyes = nullptr;
 	bool hooked = false;
+	// The first glance build faulted inside this plugin's Load (2026-09-25, f4se.log: "disabled, fatal
+	// error occurred while loading plugin"), after the mouth's call was patched: the game died at the first
+	// face. The install now runs under a guard that names the step it was on, and runs before the mouth's.
+	const char* volatile installStep = "not started";
+	DWORD faultCode = 0;
+	void* faultAt = nullptr;
 
 	struct Look
 	{
@@ -250,13 +256,15 @@ void LoadEyeConfig(INIReader& reader)
 		eyeRise, eyeBack, (int)probe, (int)test);
 }
 
-void InstallEyeHook()
+static void InstallEyeHookUnguarded()
 {
 	if (hooked || !enabled)
 		return;
 	// never patch a build we have not read: the eye update's prologue and both calls to it
+	installStep = "reading the eye update's first bytes";
 	bool prologue = std::memcmp(reinterpret_cast<const void*>(eyeFn.GetUIntPtr()), kEyePrologue, sizeof(kEyePrologue)) == 0;
 	bool calls = true;
+	installStep = "reading its two calls";
 	for (auto& c : eyeCalls) {
 		const unsigned char* p = reinterpret_cast<const unsigned char*>(c.GetUIntPtr());
 		calls = calls && p[0] == 0xE8 && c.GetUIntPtr() + 5 + *reinterpret_cast<const int32_t*>(p + 1) == eyeFn.GetUIntPtr();
@@ -266,6 +274,7 @@ void InstallEyeHook()
 			"no glance turns an eye\n", (int)prologue, (int)calls);
 		return;
 	}
+	installStep = "making the branch trampoline";
 	if (!g_branchTrampoline.Create(1024 * 64)) {   // a no-op when the mouth made it already
 		Note("eyes|hook", "[eyes] no room for a branch trampoline near the game: no glance turns an eye\n");
 		return;
@@ -273,18 +282,54 @@ void InstallEyeHook()
 	origEyes = reinterpret_cast<EyeFn>(eyeFn.GetUIntPtr());
 	bool reaches = true;
 	for (auto& c : eyeCalls) {
+		installStep = &c == &eyeCalls[0] ? "patching the first call" : "patching the second call";
 		if (!g_branchTrampoline.Write5Call(c.GetUIntPtr(), reinterpret_cast<uintptr_t>(&HookEyes))) {
 			reaches = false;
 			continue;
 		}
+		installStep = "reading a patched call back";
 		const unsigned char* p = reinterpret_cast<const unsigned char*>(c.GetUIntPtr());
 		const unsigned char* s = reinterpret_cast<const unsigned char*>(c.GetUIntPtr() + 5 + *reinterpret_cast<const int32_t*>(p + 1));
 		reaches = reaches && p[0] == 0xE8 && s[0] == 0xFF && s[1] == 0x25 && *reinterpret_cast<const uint32_t*>(s + 2) == 0 &&
 			*reinterpret_cast<const uintptr_t*>(s + 6) == reinterpret_cast<uintptr_t>(&HookEyes);
 	}
 	hooked = reaches;
+	installStep = "logging";
 	Note("eyes|on", reaches ? "[eyes] the eye update's two calls hooked (its code untouched): glances turn eyes\n"
 		: "[eyes] the eye update's calls are NOT both ours: glances may turn eyes only some frames\n");
+}
+
+static int InstallFilter(EXCEPTION_POINTERS* e)
+{
+	faultCode = e->ExceptionRecord->ExceptionCode;
+	faultAt = e->ExceptionRecord->ExceptionAddress;
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static bool InstallGuarded()
+{
+	__try {
+		InstallEyeHookUnguarded();
+		return true;
+	}
+	__except (InstallFilter(GetExceptionInformation())) {
+		return false;
+	}
+}
+
+void InstallEyeHook()
+{
+	if (InstallGuarded())
+		return;
+	enabled = false;                            // no eye is turned; a call already patched runs the engine's
+	HMODULE self = nullptr;
+	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		reinterpret_cast<LPCSTR>(&InstallFilter), &self);
+	uintptr_t at = reinterpret_cast<uintptr_t>(faultAt), mine = reinterpret_cast<uintptr_t>(self),
+		game = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+	Note("eyes|fault", "[eyes] FAULT while %s: code %08lX at %p (cbp.dll+%llX, Fallout4.exe+%llX); glances are off, the "
+		"game goes on\n", installStep, (unsigned long)faultCode, faultAt, (unsigned long long)(at - mine),
+		(unsigned long long)(at - game));
 }
 
 bool EyesTurn()
