@@ -750,6 +750,24 @@ int main()
 		GlanceMath::Params s;                           // no map: the signs
 		s.signUp = -1.0f;
 		Check("without a map, by signUp", Near(GlanceMath::Roll(s, 0.2f).x, -0.2f));
+
+		// the photo's map (2026-09-26): u sideways (u+ her right), v up and down (v+ up)
+		GlanceMath::Params ph;
+		ph.a = 0.0f;
+		ph.b = 1.0f;
+		ph.c = 1.4f;
+		ph.d = 0.0f;
+		ph.xMax = 0.16f;
+		ph.yMin = -0.09f;
+		ph.yMax = 0.08f;
+		GlanceMath::UV w;
+		Check("his eyes above hers (a blowjob): v to its top, u barely moves",
+			GlanceMath::Want(-0.10f, 0.92f, 0.38f, ph, w) && Near(w.y, 0.08f) && Near(w.x, -0.025f));
+		Check("a man at her right: u+, clamped at 0.16",
+			GlanceMath::Want(0.9f, 0.0f, 0.44f, ph, w) && Near(w.x, 0.16f) && Near(w.y, 0.0f));
+		Check("below her: v down to vMin", GlanceMath::Want(0.0f, -0.8f, 0.6f, ph, w) && Near(w.y, -0.09f));
+		GlanceMath::UV rl = GlanceMath::Roll(ph, 0.12f);
+		Check("a roll goes up v, not sideways", Near(rl.x, 0.0f) && Near(rl.y, 0.12f));
 	}
 
 	printf("glance faces (RFAX) and eased held faces\n");

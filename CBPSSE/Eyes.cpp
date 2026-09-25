@@ -308,6 +308,11 @@ void LoadEyeConfig(INIReader& reader)
 	// engine's own 0.16 is ours to choose; 0.25 at most
 	params.xMax = (float)reader.GetReal("Eyes", "uMax", params.xMax);
 	params.xMax = params.xMax < 0.05f ? 0.05f : (params.xMax > 0.25f ? 0.25f : params.xMax);
+	// v's edges: the up-and-down reach (the owner: "push gaze more up and more bottom")
+	params.yMin = (float)reader.GetReal("Eyes", "vMin", params.yMin);
+	params.yMin = params.yMin < -0.15f ? -0.15f : (params.yMin > -0.03f ? -0.03f : params.yMin);
+	params.yMax = (float)reader.GetReal("Eyes", "vMax", params.yMax);
+	params.yMax = params.yMax < 0.03f ? 0.03f : (params.yMax > 0.15f ? 0.15f : params.yMax);
 	rollMax = (float)reader.GetReal("Eyes", "rollMax", rollMax);
 	rollMax = rollMax < 0.05f ? 0.05f : (rollMax > 0.3f ? 0.3f : rollMax);
 	eyeRise = (float)reader.GetReal("Eyes", "eyeRise", eyeRise);
@@ -331,8 +336,8 @@ void LoadEyeConfig(INIReader& reader)
 		"%.1f back from the mouth, probe %d, test %d\n", (int)enabled, (int)glancesOn, (int)params.signUp, (int)params.signSide,
 		eyeRise, eyeBack, (int)probe, test);
 	if (params.a != 0.0f || params.b != 0.0f || params.c != 0.0f || params.d != 0.0f)
-		Note("eyes|axes", "[eyes] axes: u = 0.25 (%+.2f up %+.2f side), v = 0.25 (%+.2f up %+.2f side)\n", params.a, params.b,
-			params.c, params.d);
+		Note("eyes|axes", "[eyes] axes: u = 0.25 (%+.2f up %+.2f side) to +-%.3f, v = 0.25 (%+.2f up %+.2f side) from %.3f to "
+			"%.3f, rolls to %.3f\n", params.a, params.b, params.xMax, params.c, params.d, params.yMin, params.yMax, rollMax);
 	if (test == 3)
 		Note("eyes|lookme", "[eyes] look at me: every actor near the player looks into the player's eyes 4 s (ours), then "
 			"4 s is the engine's own look, over and over\n");

@@ -14,6 +14,12 @@
 // ("his head on perfect 12 h then her gaze is somewhere 8-10 h"), and the probe showed the engine itself
 // turning v, not u, toward a player beside the NPC (side +0.44 .. +0.9 -> v -0.066 .. -0.075, u ~0).
 // So: u = -0.25 x up, v = -0.25 x side ([Eyes] signUp / signSide). Free of F4SE: tests/face runs it.
+//
+// And that was wrong, which a photo settled (2026-09-26, Photo228): u -0.18 with v +0.03 put her irises far
+// to HER LEFT at the height they rest at. So u IS sideways (u- her left) and v is up and down; the engine's
+// "vertical part" is in the head bone's own frame, not the head's. The owner's words read in the screen's
+// frame agree with it all along: "13-15 h" for u -0.15, "only in her left" (screen left) for u +0.18. The
+// map lives in [Eyes] axes, so the defaults here stay as the first reading was.
 #include <cmath>
 
 namespace GlanceMath
@@ -21,8 +27,8 @@ namespace GlanceMath
 	struct Params
 	{
 		float gain = 0.25f;          // UV per unit of the direction's up / sideways part (the engine's)
-		float xMax = 0.15f;          // u (vertical): inside the engine's own give-up edges (|u| 0.16,
-		float yMin = -0.075f, yMax = 0.065f;   // v (sideways): -0.08 .. 0.07)
+		float xMax = 0.15f;          // u: inside the engine's own give-up edges (|u| 0.16,
+		float yMin = -0.075f, yMax = 0.065f;   // v: -0.08 .. 0.07), [Eyes] uMax, vMin, vMax
 		float signUp = -1.0f, signSide = -1.0f;   // the engine's: u = -0.25 up, v = -0.25 side
 		// ...or a whole map, when the eye's texture turns the eye at a slant ([Eyes] axes=a,b,c,d):
 		// u = gain (a up + b side), v = gain (c up + d side). Unset (all 0): the signs above.
@@ -37,7 +43,7 @@ namespace GlanceMath
 	};
 
 	// side, up, ahead: the unit direction from her eyes to his, in her head's frame. False: out of reach.
-	// out.x is the material's u (vertical), out.y its v (sideways).
+	// out.x is the material's u, out.y its v ([Eyes] axes says which way each turns the eye).
 	inline bool Want(float side, float up, float ahead, const Params& p, UV& out)
 	{
 		if (!(ahead >= p.minAhead))
