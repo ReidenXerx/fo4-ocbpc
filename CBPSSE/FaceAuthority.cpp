@@ -14,6 +14,8 @@ namespace FaceAuthority
 	{
 		std::mutex lock;
 		std::unordered_map<std::uint32_t, Face> held;
+		Knobs current;                                  // RFAK, once heard (a load keeps them: they are settings)
+		bool knobsHeard = false;
 
 		// The mouth handed back to the engine while an actor speaks: Rapport's own MOUTH set (fo4-rapport
 		// faces.json "mouth"). Measured 2026-09-24 by [Face] probe on 14 lines: the ids lip sync moved,
@@ -36,10 +38,38 @@ namespace FaceAuthority
 	Decoded Decode(std::uint32_t type, const void* data, std::uint32_t length)
 	{
 		Decoded d;
-		if (type != kSet && type != kClear && type != kDeep)
+		if (type != kSet && type != kClear && type != kDeep && type != kKnobs)
 			return d;                                   // not ours to read
 		if (!data) {
 			d.refused = "no data";
+			return d;
+		}
+		if (type == kKnobs) {
+			if (length < sizeof(KnobsMessage)) {
+				d.refused = "knobs shorter than 32 bytes";
+				return d;
+			}
+			KnobsMessage m;
+			std::memcpy(&m, data, sizeof(m));
+			if (m.version < 1) {
+				d.refused = "knobs of version 0";
+				return d;
+			}
+			const float v[6] = { m.lipClearance, m.lipSpeed, m.shaftScale, m.headMin, m.headMax, m.reactScale };
+			for (float x : v)
+				if (!std::isfinite(x)) {
+					d.refused = "knobs with a value that is not a number";
+					return d;
+				}
+			auto clamp = [](float x, float lo, float hi) { return x < lo ? lo : (x > hi ? hi : x); };
+			d.command = Command::Knobs;
+			d.knobs.enabled = m.enabled & 0x1F;
+			d.knobs.lipClearance = clamp(m.lipClearance, 0.0f, 0.5f);
+			d.knobs.lipSpeed = clamp(m.lipSpeed, 0.1f, 5.0f);
+			d.knobs.shaftScale = clamp(m.shaftScale, 0.5f, 1.5f);   // a typo must not deform him
+			d.knobs.headMin = clamp(m.headMin, 0.5f, 2.0f);
+			d.knobs.headMax = clamp(m.headMax, d.knobs.headMin, 2.0f);
+			d.knobs.reactScale = clamp(m.reactScale, 0.0f, 3.0f);
 			return d;
 		}
 		if (type == kSet || type == kDeep) {
@@ -175,5 +205,19 @@ namespace FaceAuthority
 	{
 		std::lock_guard<std::mutex> guard(lock);
 		return std::vector<std::pair<std::uint32_t, Face>>(held.begin(), held.end());
+	}
+
+	void SetKnobs(const Knobs& knobs)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		current = knobs;
+		knobsHeard = true;
+	}
+
+	bool CurrentKnobs(Knobs& out)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		out = current;
+		return knobsHeard;
 	}
 }

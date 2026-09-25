@@ -21,3 +21,7 @@ void UpdateAims();                         // scan.cpp: each frame, before the c
 void ResetAims();                          // a save is loading: nothing we wrote is on the new skeletons
 bool RegisterAimFuncs(VirtualMachine* vm);
 bool AimSeesScene(unsigned int formID);    // in an AAF scene, per Anatomy:Arousal's last report (the probe)
+// How deep a locked shaft is this frame, in units past the entrance (0: none): for her, a shaft in her
+// vagina or anus (a mouth's is the contact mouth's own); for him, his own in whatever he is locked on
+// (a mouth measured from her lips). For the deep face (A-29), both actors. UpdateAims fills it.
+float AimDepth(unsigned int formID);

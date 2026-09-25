@@ -149,6 +149,7 @@ namespace
 		float sinceContact = 1e9f;
 		unsigned frame = 0;
 		float depth = 0.0f, lastDepth = -1.0f, stroke = 0.0f;
+		float gdepth = 0.0f;                    // a shaft's depth in her vagina/anus, or his own anywhere (Aim)
 		float face[kMaxFace] = {};
 		float lip[LipFit::kMaxMorphs] = {};     // A-32: the fitted lips as they show (eased toward the fit)
 	};
@@ -666,6 +667,19 @@ void UpdateMouths()
 		}
 	}
 
+	// Rapport's MCM (RFAK): each knob only switches off or retunes what the ini set up; none heard, the ini's
+	FaceAuthority::Knobs knobs;
+	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
+	auto knobOn = [&](std::uint32_t bit) { return !knobsHeard || (knobs.enabled & bit) != 0; };
+	const bool lipFitOn = knobOn(FaceAuthority::kKnobLipFit);
+	const bool reactionOn = knobOn(FaceAuthority::kKnobReaction);
+	const bool deepOn = knobOn(FaceAuthority::kKnobDeep);
+	const float reactGain = knobsHeard ? knobs.reactScale : 1.0f;
+	const float lipGain = knobsHeard ? knobs.lipSpeed : 1.0f;
+	LipFit::Params lipNow = lipParams;
+	if (knobsHeard)
+		lipNow.clearance = knobs.lipClearance;
+
 	// the faces Rapport holds: matched to the actors scanned below, and looked up by form for the rest
 	std::vector<std::pair<std::uint32_t, FaceAuthority::Face>> held;
 	if (authority)
@@ -804,7 +818,7 @@ void UpdateMouths()
 			st.lift = Toward(st.lift, liftT, liftT > st.lift ? openRate : closeRate, dt);
 			st.sinceContact = 0.0f;
 			const LipFit::Table& lt = lipTable[male ? 1 : 0];
-			if (lt.count > 0) {
+			if (lt.count > 0 && lipFitOn) {
 				// A-32: what crosses her lips, in the head's own units (the table's), across the mouth; the
 				// head's +x is S = F x U. Several crossings (two fingers): the lips go round all of them.
 				LipFit::Want want;
@@ -829,9 +843,9 @@ void UpdateMouths()
 					}
 				}
 				float fit[LipFit::kMaxMorphs] = {};
-				LipFit::Fit(lt, want, lipParams, st.lip, fit);
+				LipFit::Fit(lt, want, lipNow, st.lip, fit);
 				for (int m = 0; m < lt.count; m++)
-					st.lip[m] = Toward(st.lip[m], fit[m], fit[m] > st.lip[m] ? lipOpenRate : lipCloseRate, dt);
+					st.lip[m] = Toward(st.lip[m], fit[m], (fit[m] > st.lip[m] ? lipOpenRate : lipCloseRate) * lipGain, dt);
 				char lk[96];
 				_snprintf_s(lk, sizeof(lk), _TRUNCATE, "mouth|lips|%08X", a->formID);
 				Note(lk, "[mouth] %08X: lips round it: jaw %.2f, funnels %.2f/%.2f, upper lip up %.2f/%.2f down %.2f/%.2f, "
@@ -856,11 +870,13 @@ void UpdateMouths()
 			st.stroke = Toward(st.stroke, std::fabs(depthNow - st.lastDepth) / dt, strokeRate, dt);
 		st.lastDepth = depthNow;
 		st.depth = Toward(st.depth, depthNow, faceRate, dt);
+		st.gdepth = Toward(st.gdepth, AimDepth(a->formID), faceRate, dt);
 		int terms = (std::min)((int)faceTerms.size(), kMaxFace);
 		for (int k = 0; k < terms; k++) {
 			const FaceTerm& ft = faceTerms[k];
 			float target = ft.atContact + ft.atDepth * Clamp(st.depth / faceDepth, 0.0f, 1.0f)
 				+ ft.atStroke * Clamp(st.stroke / faceStroke, 0.0f, 1.0f);
+			target = reactionOn ? target * reactGain : 0.0f;
 			st.face[k] = Toward(st.face[k], Clamp(target, 0.0f, 1.0f), faceRate, dt);
 		}
 		auto h = heldAt.find(a->formID);
@@ -868,13 +884,15 @@ void UpdateMouths()
 		if (st.inside > 0.001f || st.floor > 0.001f || rapport) {
 			Override o{ data, a->formID, {}, false, {} };
 			o.mouth.inside = st.inside;
-			o.mouth.deep = st.inside * Clamp(st.depth / faceDepth, 0.0f, 1.0f);   // A-29: the same depth as A-26
+			// A-29: the same depth as A-26, or a shaft's in her vagina or anus, or his own in any opening
+			o.mouth.deep = deepOn ? (std::max)(st.inside * Clamp(st.depth / faceDepth, 0.0f, 1.0f),
+				Clamp(st.gdepth / faceDepth, 0.0f, 1.0f)) : 0.0f;
 			o.mouth.jaw = st.jaw;
 			o.mouth.floor = st.floor;
 			o.mouth.funnel = st.funnel;
 			o.mouth.lift = st.lift;
 			const LipFit::Table& lt = lipTable[actorUtils::IsActorMale(a) ? 1 : 0];
-			o.mouth.lipCount = (std::min)(lt.count, FaceCompose::kMaxTerms);   // A-32: they replace jaw/funnel/lift
+			o.mouth.lipCount = lipFitOn ? (std::min)(lt.count, FaceCompose::kMaxTerms) : 0;   // A-32: they replace jaw/funnel/lift
 			for (int k = 0; k < o.mouth.lipCount; k++) {
 				o.mouth.lipId[k] = lt.id[k];
 				o.mouth.lipValue[k] = st.lip[k];
@@ -965,6 +983,18 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 		Note(key, kept ? "[face] %s: %08X's deep face, %d morph(s), blends in with oral depth\n"
 			: "[face] %s: a deep face for %08X, who is not held: dropped\n", who, d.formID, n);
 	}
+	else if (d.command == FaceAuthority::Command::Knobs) {
+		FaceAuthority::SetKnobs(d.knobs);
+		const FaceAuthority::Knobs& k = d.knobs;
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|knobs|%s|%X|%.3f|%.2f|%.2f|%.2f|%.2f|%.2f", who, k.enabled,
+			k.lipClearance, k.lipSpeed, k.shaftScale, k.headMin, k.headMax, k.reactScale);
+		Note(key, "[face] %s's knobs: aim %d, shape %d, lip fit %d, reaction %d, deep %d; lip clearance %.3f, lip "
+			"speed x%.2f, shaft x%.2f, head x%.2f .. %.2f, reaction x%.2f\n", who,
+			(int)((k.enabled & FaceAuthority::kKnobAim) != 0), (int)((k.enabled & FaceAuthority::kKnobShape) != 0),
+			(int)((k.enabled & FaceAuthority::kKnobLipFit) != 0), (int)((k.enabled & FaceAuthority::kKnobReaction) != 0),
+			(int)((k.enabled & FaceAuthority::kKnobDeep) != 0), k.lipClearance, k.lipSpeed, k.shaftScale, k.headMin,
+			k.headMax, k.reactScale);
+	}
 	else if (d.command == FaceAuthority::Command::Clear) {
 		FaceAuthority::Clear(d.formID);
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|clear|%s|%08X", who, d.formID);
@@ -1005,7 +1035,7 @@ void SayFaceHello()
 	}
 	FaceAuthority::HelloMessage hello{ FaceAuthority::kVersion, FaceAuthority::kFeatureSetClear |
 		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
-		FaceAuthority::kFeatureDepthBlend };
+		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth };
 	bool heard = messaging->Dispatch(selfHandle, FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
 		: "[face] hello not heard: Rapport is not loaded, or is not listening to \"OCBPC plugin\"\n");

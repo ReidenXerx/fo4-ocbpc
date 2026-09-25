@@ -41,6 +41,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kClear = 0x52464143;    // 'RFAC'
 	constexpr std::uint32_t kHello = 0x52464148;    // 'RFAH'
 	constexpr std::uint32_t kDeep = 0x52464144;     // 'RFAD'
+	constexpr std::uint32_t kKnobs = 0x5246414B;    // 'RFAK': the fork's knobs from Rapport's MCM ("Bodies & faces")
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -51,6 +52,11 @@ namespace FaceAuthority
 	                                                         // RAISE brows, cheeks and nose above a held face
 	constexpr std::uint32_t kFeatureDepthBlend = 1u << 3;    // a held face blends toward its Deep face by the
 	                                                         // depth of oral contact (A-29)
+	// bit 4 (16) is kept for glances (RFAG): set only once this build can turn the eyes
+	constexpr std::uint32_t kFeatureKnobs = 1u << 5;         // RFAK is applied (the MCM's page does something)
+	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
+	                                                         // in her vagina or anus, and for him by his own
+	                                                         // depth in any opening (needs [Aim] on)
 	constexpr int kMorphs = 54;
 	constexpr int kSpeakingBit = 63;
 
@@ -71,6 +77,27 @@ namespace FaceAuthority
 		std::uint32_t version;
 		std::uint32_t features;
 	};
+	// RFAK (agreed with Rapport, 2026-09-25): sent after the hello and on every change of its MCM page. Fields
+	// only ever append after version. Until one arrives the ini's values stand.
+	struct KnobsMessage
+	{
+		std::uint32_t version;
+		std::uint32_t enabled;       // bits: 0 aim, 1 shape, 2 lip fit, 3 face reaction (A-26), 4 deep blend (A-29)
+		float lipClearance;          // the lips' clearance off what is inside
+		float lipSpeed;              // x the lips' open and close rates
+		float shaftScale;            // A-31: the shaft's scale
+		float headMin, headMax;      // A-31: each man's head scale, in this range
+		float reactScale;            // x the A-26 face terms
+	};
+	static_assert(sizeof(KnobsMessage) == 32, "the knobs message is 32 bytes");
+	constexpr std::uint32_t kKnobAim = 1u << 0, kKnobShape = 1u << 1, kKnobLipFit = 1u << 2,
+		kKnobReaction = 1u << 3, kKnobDeep = 1u << 4;
+	struct Knobs
+	{
+		std::uint32_t enabled = 0x1F;
+		float lipClearance = 0.05f, lipSpeed = 1.0f, shaftScale = 0.85f, headMin = 1.2f, headMax = 1.4f,
+			reactScale = 1.0f;
+	};
 	static_assert(sizeof(SetMessage) == 232, "the set message is 232 bytes");
 	static_assert(offsetof(SetMessage, owned) == 8, "owned sits at offset 8");
 	static_assert(offsetof(SetMessage, value) == 16, "the values start at offset 16");
@@ -83,12 +110,13 @@ namespace FaceAuthority
 		float deep[kMorphs] = {};
 	};
 
-	enum class Command { None, Set, Clear, Deep };
+	enum class Command { None, Set, Clear, Deep, Knobs };
 	struct Decoded
 	{
 		Command command = Command::None;
 		std::uint32_t formID = 0;
 		Face face;
+		Knobs knobs;                                // Command::Knobs: clamped to sane ranges
 		const char* refused = nullptr;              // why a message was not taken, for the log
 	};
 
@@ -120,4 +148,8 @@ namespace FaceAuthority
 	// A-29: the deep face of a face already held (false: none is held for that form, and nothing is kept)
 	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values);
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot();
+	// RFAK: the last knobs Rapport sent (thread-safe). False until one arrives, and then the ini's values
+	// stand. A knob only ever switches OFF what the ini turned on: the ini's off is a config that failed.
+	void SetKnobs(const Knobs& knobs);
+	bool CurrentKnobs(Knobs& out);
 }

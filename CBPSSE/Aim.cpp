@@ -7,6 +7,7 @@
 #include "ActorUtils.h"
 #include "AimSolve.h"
 #include "CollisionHub.h"
+#include "FaceAuthority.h"
 #include "Mouth.h"
 #include "SimObj.h"
 
@@ -65,6 +66,7 @@ namespace
 
 	// AAF's busy actors, from Anatomy:Arousal's tick (AnatomyAim.SetBusy); old news counts as none
 	std::mutex busyLock;
+	std::unordered_map<UInt32, float> depths;      // AimDepth: this frame's (the scan thread's own, like UpdateMouths)
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -440,6 +442,7 @@ void LoadAimConfig(INIReader& reader)
 void ResetAims()
 {
 	held.clear();
+	depths.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -447,7 +450,15 @@ void ResetAims()
 
 void UpdateAims()
 {
-	if (!enabled && held.empty())
+	depths.clear();
+	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
+	FaceAuthority::Knobs knobs;
+	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
+	const bool aimOn = enabled && (!knobsHeard || (knobs.enabled & FaceAuthority::kKnobAim));
+	const bool shapeNow = shapeOn && (!knobsHeard || (knobs.enabled & FaceAuthority::kKnobShape));
+	const float shaftNow = knobsHeard ? knobs.shaftScale : shaftScale;
+	const float headLoNow = knobsHeard ? knobs.headMin : headLo, headHiNow = knobsHeard ? knobs.headMax : headHi;
+	if (!aimOn && !shapeNow && held.empty())
 		return;
 	LARGE_INTEGER now, freq;
 	QueryPerformanceCounter(&now);
@@ -471,7 +482,7 @@ void UpdateAims()
 	// every opening in reach (ours on the women, every mouth) and every hand
 	std::vector<AimSolve::Target> targets;
 	std::vector<AimSolve::Hand> hands;
-	if (enabled) {
+	if (aimOn) {
 		for (auto& e : actorEntries) {
 			Actor* a = e.actor;
 			if (!a || !a->unkF0 || !a->unkF0->rootNode)
@@ -501,7 +512,7 @@ void UpdateAims()
 			continue;
 		}
 		auto found = held.find(a->formID);
-		if (!enabled && !shapeOn && found == held.end())
+		if (!aimOn && !shapeNow && found == held.end())
 			continue;
 		Held& h = held[a->formID];
 		h.seenAt = ms;
@@ -538,7 +549,7 @@ void UpdateAims()
 			h.toldKeyed = true;
 		}
 
-		if (!enabled && !shapeOn) {                   // switched off: put the animation's pose back, once
+		if (!aimOn && !shapeNow) {                    // switched off: put the animation's pose back, once
 			if (h.wrote)
 				PutBack(h, nodes);
 			held.erase(a->formID);
@@ -568,7 +579,7 @@ void UpdateAims()
 		std::uint32_t wasOwner = h.state.lockedOwner;
 		int wasKind = h.state.lockedKind;
 		AimSolve::Result r;
-		if (enabled)
+		if (aimOn)
 			r = AimSolve::Update(h.state, c, targets, hands, params, dt);
 		if (r.released) {
 			char key[128];
@@ -585,11 +596,11 @@ void UpdateAims()
 			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
 				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
 		}
-		if (r.active || shapeOn) {
+		if (r.active || shapeNow) {
 			// the aim's turns (or the animation's own), its stretch, and the shape on top
 			std::vector<float> scaleMul, offsetMul;
-			if (shapeOn)
-				AimSolve::ShapeFactors(n, shaftScale, AimSolve::HeadFor(a->formID, headLo, headHi), scaleMul, offsetMul);
+			if (shapeNow)
+				AimSolve::ShapeFactors(n, shaftNow, AimSolve::HeadFor(a->formID, headLoNow, headHiNow), scaleMul, offsetMul);
 			else
 				AimSolve::ShapeFactors(n, 1.0f, 1.0f, scaleMul, offsetMul);
 			float stretch = r.active ? r.stretch : 1.0f;
@@ -612,6 +623,21 @@ void UpdateAims()
 			h.wrote = true;
 			UpdateWorldFrom(nodes[0], parent);
 		}
+		if (r.locked && r.targetKind != AimSolve::kHand) {
+			for (const AimSolve::Target& t : targets) {
+				if (t.owner != r.targetOwner || t.kind != r.targetKind)
+					continue;
+				V3 tip = ToV3(nodes.back()->m_worldTransform.pos);
+				float d = AimSolve::Dot(AimSolve::Sub(tip, t.point), t.in);
+				if (t.kind == AimSolve::kMouth)
+					d -= mouthLead;                       // its entrance sits mouthLead in front of her lips
+				d = (std::max)(0.0f, d);
+				depths[a->formID] = (std::max)(depths[a->formID], d);
+				if (t.kind != AimSolve::kMouth)           // a mouth's own depth is the contact mouth's (Mouth.cpp)
+					depths[t.owner] = (std::max)(depths[t.owner], d);
+				break;
+			}
+		}
 		else if (h.wrote) {
 			PutBack(h, nodes);
 		}
@@ -633,6 +659,12 @@ void UpdateAims()
 		}
 		it = held.erase(it);                           // unloaded: its next skeleton is a fresh one
 	}
+}
+
+float AimDepth(unsigned int formID)
+{
+	auto it = depths.find(formID);
+	return it != depths.end() ? it->second : 0.0f;
 }
 
 bool AimSeesScene(unsigned int formID)

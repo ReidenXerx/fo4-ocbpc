@@ -588,6 +588,35 @@ int main()
 		Check("and a corner that needs nothing keeps the smile it had (31 stays 0.3)", Near(c[31], 0.3f));
 	}
 
+	printf("the knobs (RFAK, Rapport's MCM)\n");
+	{
+		KnobsMessage km{ 1, 0x15u, 0.08f, 1.5f, 0.9f, 1.25f, 1.35f, 0.5f };   // aim, lip fit, deep on
+		Decoded d = Decode(kKnobs, &km, sizeof(km));
+		Check("knobs are read", d.command == Command::Knobs && d.knobs.enabled == 0x15u &&
+			Near(d.knobs.lipClearance, 0.08f) && Near(d.knobs.lipSpeed, 1.5f) && Near(d.knobs.shaftScale, 0.9f) &&
+			Near(d.knobs.headMin, 1.25f) && Near(d.knobs.headMax, 1.35f) && Near(d.knobs.reactScale, 0.5f));
+		Check("a short knobs message is refused", Decode(kKnobs, &km, 28).command == Command::None);
+		KnobsMessage bad = km;
+		bad.version = 0;
+		Check("knobs of version 0 are refused", Decode(kKnobs, &bad, sizeof(bad)).command == Command::None);
+		bad = km;
+		bad.lipSpeed = std::numeric_limits<float>::quiet_NaN();
+		Check("knobs with a NaN are refused", Decode(kKnobs, &bad, sizeof(bad)).command == Command::None);
+		bad = km;
+		bad.shaftScale = 40.0f;                     // a typo
+		bad.headMin = 1.8f;
+		bad.headMax = 1.2f;
+		bad.enabled = 0xFFFFFFFFu;
+		d = Decode(kKnobs, &bad, sizeof(bad));
+		Check("a wild knob is clamped: the shaft to 1.5, head max up to min, unknown bits dropped",
+			Near(d.knobs.shaftScale, 1.5f) && Near(d.knobs.headMax, 1.8f) && d.knobs.enabled == 0x1Fu);
+		Knobs got;
+		Check("no knobs are heard before one arrives (the ini's values stand)", !CurrentKnobs(got));
+		SetKnobs(Decode(kKnobs, &km, sizeof(km)).knobs);
+		Check("and the last one sent is the one read back", CurrentKnobs(got) && got.enabled == 0x15u &&
+			Near(got.reactScale, 0.5f));
+	}
+
 	printf("store\n");
 	{
 		Face held = RapportFace(0.3f, 0.3f);
