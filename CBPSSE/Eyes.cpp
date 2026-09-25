@@ -494,7 +494,10 @@ void UpdateEyeProbe(const std::vector<ActorEntry>& actors, float dt)
 			if (ours && reach) {
 				FaceAuthority::Glance g;
 				g.target = player->formID;
-				g.durationMs = 1500;
+				// ends with OUR phase, so the engine's 4 s are the engine's own (a 1.5 s glance renewed each
+				// second wrote the first 1.5 s of them, and the log named our uv as the engine's)
+				float left = kLookPhase - std::fmod(testClock, 2.0f * kLookPhase);
+				g.durationMs = (std::uint32_t)((std::min)(1.5f, (std::max)(0.1f, left)) * 1000.0f);
 				g.lidsOpen = 1.0f;
 				FaceAuthority::SetGlance(a->formID, g, EyeClockMs());
 			}
