@@ -594,19 +594,30 @@ void UpdateAims()
 				float aside = AimSolve::Length(AimSolve::Sub(rel, AimSolve::Scale(t.in, AimSolve::Dot(rel, t.in))));
 				if (AimSolve::Length(rel) > 40.0f)
 					continue;
-				std::uint64_t pairKey = ((std::uint64_t)a->formID << 32) | t.owner;
-				auto& seen = probed[pairKey];
-				if (seen.second >= 120 || (seen.first && ms - seen.first < 1000))
-					continue;
-				seen.first = ms;
-				int line = seen.second++;
+				// every 2 s per pair, and whenever the verdict changes; no per-pair cap (the first probe's 120 went
+				// on a kneeling blowjob and the owner's lying one never showed), 3000 lines in all
 				AimSolve::Fit f = AimSolve::Judge(c, joints, t, params, h.state.locked && h.state.lockedOwner == t.owner &&
 					h.state.lockedKind == AimSolve::kMouth);
+				std::uint64_t pairKey = ((std::uint64_t)a->formID << 32) | t.owner;
+				auto& seen = probed[pairKey];
+				static const char* lastWhy = nullptr;
+				static int total = 0;
+				const char* why = f.ok ? "would lock" : f.why;
+				bool changed = why != lastWhy;
+				if (total >= 3000 || (!changed && seen.first && ms - seen.first < 2000))
+					continue;
+				lastWhy = why;
+				seen.first = ms;
+				int line = seen.second++;
+				total++;
+				float length = AimSolve::ChainLength(c);
+				float entrance = AimSolve::Length(AimSolve::Sub(t.point, joints.front()));
 				char key[64];
 				_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|probe|%08X|%08X|%d", a->formID, t.owner, line);
-				Note(key, "[aim] probe %08X -> %08X's mouth: %s (miss %.1f, turn %.0f deg); the tip %.1f %s her lips, %.1f off "
-					"her mouth's axis; locked %d\n", a->formID, t.owner, f.ok ? "would lock" : f.why, f.miss,
-					f.angle * 57.29578f, std::fabs(depth), depth >= 0.0f ? "past" : "short of", aside,
+				Note(key, "[aim] probe %08X -> %08X's mouth: %s (miss %.1f, turn %.0f deg, entrance %.1f = %.2f x the shaft "
+					"%.1f, reach %.2f); the tip %.1f %s her lips, %.1f off her mouth's axis; locked %d\n", a->formID, t.owner,
+					why, f.miss, f.angle * 57.29578f, entrance, length > 0.0f ? entrance / length : 0.0f, length, params.reach,
+					std::fabs(depth), depth >= 0.0f ? "past" : "short of", aside,
 					(int)(h.state.locked && h.state.lockedOwner == t.owner));
 			}
 		}
