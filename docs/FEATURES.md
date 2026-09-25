@@ -21,8 +21,7 @@ switched on by Anatomy's `F4SE\Plugins\Anatomy\ocbp.ini` (or the same keys in yo
   now pushed once.
 - **A penis collides as one continuous tube** [Anatomy config, `[Tube]`]. OCBPC collides ball
   against ball and adds every overlapping pair's push; a penis is five balls about 3 units apart with
-  gaps between them, so the flesh rode in and out along a thrust and the opening parted before the
-  tip arrived. The tube's radius runs smoothly from bone to bone, with a measured glans profile.
+  gaps between them, so the flesh rode in and out along a thrust. The tube's radius runs smoothly from bone to bone, with a measured glans profile.
   Measured on BodyTalk4: thrust wobble at the anus 0.69 -> 0.21, vagina 0.26 -> 0.13.
 - **Toys collide as one tube too** [Anatomy config, `[Tube] props=1`]. A lip against a toy rested
   4.96-5.05 from its axis where its surface is 3.10; as a tube it rests exactly on the surface (3.100).
