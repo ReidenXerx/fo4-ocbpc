@@ -68,7 +68,7 @@ namespace
 	// edges at lipXs across the mouth, in the head's units ([Mouth] lipXs, lip<F|M><id>, tools/lips.py).
 	// With a table, the fit replaces jaw/funnel/lift: the old gap (femaleGap) was the outer lips' distance,
 	// and at the inner edge Jaw Open 1.0 opens 1.91, so the jaw opened a third too little (the clipping).
-	const int kLipIds[] = { 2, 22, 46, 21, 44, 11, 34, 20, 43, 12, 35, 8, 31 };
+	const int kLipIds[] = { 2, 22, 46, 21, 44, 11, 34, 20, 43, 12, 35, 8, 31, 7, 30 };   // 7/30: Lip Corner In, the hug's
 	float lipXs[LipFit::kSamples] = { -1.2f, -0.8f, -0.4f, 0.0f, 0.4f, 0.8f, 1.2f };
 	LipFit::Table lipTable[2];       // 0 female, 1 male; count 0 = none (the old jaw/funnel/lift)
 	LipFit::Params lipParams;
@@ -483,9 +483,10 @@ void LoadMouthConfig(INIReader& reader)
 		for (int s = 0; s < 2; s++) {
 			LipFit::Table t;
 			bool ok = xsOk;
+			bool corners = true;                             // every row with its corners' moves: the hug
 			for (int id : kLipIds) {
 				auto halves = Split(reader.Get("Mouth", std::string("lip") + sexes[s] + std::to_string(id), ""), ';');
-				if (halves.size() != 3) {                     // upper; lower; left,right
+				if (halves.size() != 3 && halves.size() != 4) {   // upper; lower; left,right[; corner left,right]
 					ok = false;
 					break;
 				}
@@ -502,6 +503,18 @@ void LoadMouthConfig(INIReader& reader)
 				}
 				t.left[m] = (float)std::atof(ends[0].c_str());
 				t.right[m] = (float)std::atof(ends[1].c_str());
+				auto cs = halves.size() == 4 ? Split(halves[3], ',') : std::vector<std::string>();
+				if (cs.size() == 2) {
+					t.cornerL[m] = (float)std::atof(cs[0].c_str());
+					t.cornerR[m] = (float)std::atof(cs[1].c_str());
+				}
+				else
+					corners = false;
+			}
+			auto corner = Split(reader.Get("Mouth", std::string("lipCorner") + sexes[s], ""), ',');
+			if (ok && corners && corner.size() == 2) {
+				t.restCornerL = (float)std::atof(corner[0].c_str());
+				t.restCornerR = (float)std::atof(corner[1].c_str());
 			}
 			auto rim = Split(reader.Get("Mouth", std::string("lipRim") + sexes[s], ""), ',');
 			if (ok && rim.size() == 2) {
@@ -511,6 +524,7 @@ void LoadMouthConfig(INIReader& reader)
 			lipTable[s] = ok ? t : LipFit::Table{};
 		}
 		lipParams.clearance = (float)reader.GetReal("Mouth", "lipClearance", lipParams.clearance);
+		lipParams.hug = (std::max)(0.0f, (float)reader.GetReal("Mouth", "lipHug", lipParams.hug));
 		lipOpenRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipOpenRate", lipOpenRate));
 		lipCloseRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipCloseRate", lipCloseRate));
 		Note("mouth|lips|" + std::to_string(lipTable[0].count) + "|" + std::to_string(lipTable[1].count),
@@ -878,8 +892,9 @@ void UpdateMouths()
 				char lk[96];
 				_snprintf_s(lk, sizeof(lk), _TRUNCATE, "mouth|lips|%08X", a->formID);
 				Note(lk, "[mouth] %08X: lips round it: jaw %.2f, funnels %.2f/%.2f, upper lip up %.2f/%.2f down %.2f/%.2f, "
-					"lower lip down %.2f/%.2f up %.2f/%.2f, corners out %.2f/%.2f\n", a->formID, fit[0], fit[1], fit[2], fit[3], fit[4],
-					fit[7], fit[8], fit[5], fit[6], fit[9], fit[10], fit[11], fit[12]);
+					"lower lip down %.2f/%.2f up %.2f/%.2f, corners out %.2f/%.2f in %.2f/%.2f (hug %s)\n", a->formID, fit[0], fit[1],
+					fit[2], fit[3], fit[4], fit[7], fit[8], fit[5], fit[6], fit[9], fit[10], fit[11], fit[12], fit[13], fit[14],
+					lt.restCornerL < 0.0f ? "on" : "off: no corners in the table");
 			}
 			char pair[96];
 			_snprintf_s(pair, sizeof(pair), _TRUNCATE, "mouth|%08X|%08X|%s", a->formID,

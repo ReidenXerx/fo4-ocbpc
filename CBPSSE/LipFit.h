@@ -29,6 +29,12 @@ namespace LipFit
 		// how far each morph moves them at 1.0 (Jaw Open widens, the funnels narrow, Corner Out opens)
 		float restLeft = 0.0f, restRight = 0.0f;
 		float left[kMaxMorphs] = {}, right[kMaxMorphs] = {};
+		// THE CORNERS (the owner, 2026-09-26: "the corner of mouth still kinda static"): the rim's ends are its
+		// extremes, not where the lips meet. That vertex: Jaw Open takes it IN (0.26 / 0.18 on the female
+		// head) while the opening's widest point goes out, and Lip Corner In (7 / 30) takes it in 0.32 / 0.38,
+		// which the extremes never showed. Rest positions (both 0 = not measured: no hug) and each morph's move.
+		float restCornerL = 0.0f, restCornerR = 0.0f;
+		float cornerL[kMaxMorphs] = {}, cornerR[kMaxMorphs] = {};
 	};
 
 	// What crosses her lips, at each sample: its top and bottom relative to the resting lip line (head
@@ -48,6 +54,9 @@ namespace LipFit
 		float inside = 30.0f;         // the cost of an edge inside the surface, over a gap's 1
 		float closed = 0.3f;          // the pull back to closed where nothing crosses
 		float prefer = 0.02f;         // the cost of any weight: the fewest morphs that fit
+		float hug = 2.0f;             // where the lips meet is drawn to the section's sides (plus clearance),
+		                              // either way, at this over a gap's 1: in on a thin shaft as the lips close
+		                              // on top and below, out with the head where it widens
 		int steps = 200;              // sweeps at most (it stops once nothing moves)
 	};
 
@@ -59,4 +68,7 @@ namespace LipFit
 
 	// The corners these weights give (the rim's left and right end).
 	void Ends(const Table& t, const float* w, float& left, float& right);
+
+	// Where the lips meet, left and right, with these weights (the hug's corners).
+	void Corners(const Table& t, const float* w, float& left, float& right);
 }

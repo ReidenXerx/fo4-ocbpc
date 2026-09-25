@@ -90,6 +90,42 @@ static void Judge(const Table& t, const Want& want, const float* w, float& worst
 	}
 }
 
+// The same head with where its lips meet (tools/lips.py, 2026-09-26): each morph's move of the two corner
+// vertices, and Lip Corner In (7 / 30), which only the corners show. Female() stays as it was measured for
+// A-32 so its cases keep testing the fit without the hug.
+static Table FemaleWithCorners()
+{
+	Table t = Female();
+	struct Row { int id; float u[kSamples]; float l[kSamples]; float dl, dr; };
+	static const Row in[] = {
+		{ 7, { -0.06f, -0.08f, -0.05f, -0.01f, -0.01f, 0.03f, 0.03f }, { -0.09f, -0.09f, -0.04f, 0.04f, -0.06f, 0.03f, 0.03f }, 0.0f, 0.0f },   // its extremes: only the bulge
+		{ 30, { 0.03f, 0.03f, -0.01f, -0.01f, -0.05f, -0.07f, -0.02f }, { 0.05f, 0.03f, -0.06f, 0.04f, -0.04f, -0.09f, -0.12f }, 0.0f, 0.0f },
+	};
+	for (const Row& r : in) {
+		int m = t.count++;
+		t.id[m] = r.id;
+		t.left[m] = r.dl;
+		t.right[m] = r.dr;
+		for (int k = 0; k < kSamples; k++) {
+			t.up[m][k] = r.u[k];
+			t.lo[m][k] = r.l[k];
+		}
+	}
+	struct Corner { int id; float l, r; };
+	static const Corner corners[] = { { 2, 0.263f, -0.177f }, { 22, 0.084f, -0.084f }, { 46, 0.083f, -0.069f },
+		{ 21, 0.04f, 0.0f }, { 44, 0.0f, -0.04f }, { 8, -0.40f, -0.063f }, { 31, 0.004f, 0.337f },
+		{ 7, 0.323f, -0.057f }, { 30, -0.007f, -0.380f } };
+	for (const Corner& c : corners)
+		for (int m = 0; m < t.count; m++)
+			if (t.id[m] == c.id) {
+				t.cornerL[m] = c.l;
+				t.cornerR[m] = c.r;
+			}
+	t.restCornerL = -1.60f;
+	t.restCornerR = 1.585f;
+	return t;
+}
+
 static float Weight(const Table& t, const float* w, int id)
 {
 	for (int m = 0; m < t.count; m++)
@@ -270,6 +306,55 @@ int main()
 		for (int m = 0; m < t.count; m++)
 			worst = (std::max)(worst, std::fabs(a[m] - b[m]));
 		Expect(worst < 1e-4f, "14: inside the rim, the fit is the same with or without the corners");
+	}
+	{   // 16. the hug (the owner, 2026-09-26: "the corner of mouth still kinda static"): the corners close in on
+		// a shaft narrower than the mouth, follow it out where it widens, and never into it
+		const Table c = FemaleWithCorners();
+		float cl, cr, el, er;
+		Want thin = Round(0.0f, -1.0f, 1.1f, 1.1f);     // a thin shaft, where the aim puts it
+		Params off = p;
+		off.hug = 0.0f;
+		Fit(c, thin, off, nullptr, w);
+		Corners(c, w, cl, cr);
+		float staticL = cl, staticR = cr;
+		Fit(c, thin, p, nullptr, w);
+		Corners(c, w, cl, cr);
+		std::printf("16: a thin shaft (-1.10 .. 1.10): corners %.3f .. %.3f with the hug, %.3f .. %.3f without; corner in "
+			"%.2f/%.2f\n", cl, cr, staticL, staticR, Weight(c, w, 7), Weight(c, w, 30));
+		const float tL = thin.lo - p.clearance, tR = thin.hi + p.clearance;
+		Expect(std::fabs(cl - tL) < std::fabs(staticL - tL) - 0.03f && std::fabs(cr - tR) < std::fabs(staticR - tR) - 0.03f,
+			"16: the corners come nearer the thin shaft's sides than without the hug");
+		Expect(std::fabs(cl - tL) < 0.1f && std::fabs(cr - tR) < 0.1f, "16: to within 0.1 of them");
+		Expect(Weight(c, w, 7) + Weight(c, w, 30) > 0.1f, "16: with Lip Corner In, the knob that takes them in");
+		Judge(c, thin, w, in, gap);
+		Expect(in < 0.06f, "16: and the lips still clear it top and bottom");
+		Want head = Round(0.0f, -1.0f, 2.1f, 1.6f);     // the head passing
+		Fit(c, head, off, nullptr, w);
+		float headL0, headR0;
+		Corners(c, w, headL0, headR0);
+		float in0, gap0;
+		Judge(c, head, w, in0, gap0);
+		Fit(c, head, p, nullptr, w);
+		Corners(c, w, cl, cr);
+		Ends(c, w, el, er);
+		std::printf("16: the head (-2.10 .. 2.10): corners %.3f .. %.3f with the hug, %.3f .. %.3f without, rim ends "
+			"%.3f .. %.3f; corner in %.2f/%.2f\n", cl, cr, headL0, headR0, el, er, Weight(c, w, 7), Weight(c, w, 30));
+		Expect(cl < headL0 - 0.03f && cr > headR0 + 0.03f, "16: the head takes the corners out with it");
+		Judge(c, head, w, in, gap);
+		std::printf("16: the head, lips: inside %.3f with the hug, %.3f without\n", in, in0);
+		// A head this size is more than the lips can clear (0.48 inside without the hug): the fit takes any
+		// morph that helps them, Corner In's small lower-lip drop too. The hug may cost them a little there.
+		Expect(in < in0 + 0.06f, "16: the hug costs the lips at most 0.06 of clearance (it does not fight the jaw)");
+		Want side = Round(0.6f, -1.0f, 1.1f, 1.1f);     // off to her right
+		Fit(c, side, off, nullptr, w);
+		float sideL0, sideR0;
+		Corners(c, w, sideL0, sideR0);
+		Fit(c, side, p, nullptr, w);
+		Corners(c, w, cl, cr);
+		std::printf("16: off to one side (-0.50 .. 1.70): corners %.3f .. %.3f with the hug, %.3f .. %.3f without\n",
+			cl, cr, sideL0, sideR0);
+		Expect(cl > sideL0 + 0.05f, "16: off to one side, the far corner closes in");
+		Expect(cr > sideR0 + 0.02f, "16: and the near one goes out toward it");
 	}
 	{   // 15. the glans (Glans.h): the crown is where the mesh has it, behind the tip bone, at its full width
 		struct V {
