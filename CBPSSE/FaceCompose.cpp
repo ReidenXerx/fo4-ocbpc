@@ -32,6 +32,10 @@ namespace FaceCompose
 				if (!((m.glanceMask >> id) & 1u) || id == kLeftBlink || id == kRightBlink)
 					continue;
 				float wt = m.glanceWeight > 1.0f ? 1.0f : m.glanceWeight;
+				// an id the deep face authors stays the deep face's as far as the contact is deep (the owner,
+				// 2026-09-26: "deep brows reactions disappeared during blowjob" - a 4-7 s glance wore them away)
+				if (held && ((held->deepMask >> id) & 1u))
+					wt *= 1.0f - (m.deep < 0.0f ? 0.0f : (m.deep > 1.0f ? 1.0f : m.deep));
 				if (FaceAuthority::IsMouth(id)) {
 					if (quiet)
 						continue;

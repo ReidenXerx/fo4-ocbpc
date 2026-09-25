@@ -39,7 +39,13 @@ namespace
 	bool enabled = true;
 	bool glancesOn = false;
 	bool probe = false;
-	int test = 0;                               // 1: glance at the nearest actor; 2: the sweep
+	int test = 0;                               // 1: glance at the nearest actor; 2: the sweep; 3: look at me
+	// look at me (test=3): every actor near the player looks into the player's eyes 4 s, then 4 s the engine's
+	// own eyes, over and over, and the log names both uv beside where the player is. Where the two agree the
+	// map is the engine's; where the eyes miss him in OUR 4 s, the owner names where they go instead
+	const float kLookPhase = 4.0f;
+	std::unordered_map<UInt32, int> lookLines;
+	const int kLookLines = 150;                 // per actor
 	// the sweep (test=2): every actor in reach, eyes to four fixed offsets in turn, 3 s each and 1 s centred
 	// between, lids open, so the owner can name where each one points (the eyes' own axes, measured by eye)
 	const float kSweep[4][2] = { { -0.12f, 0.0f }, { 0.0f, -0.06f }, { 0.12f, 0.0f }, { 0.0f, 0.06f } };
@@ -327,6 +333,9 @@ void LoadEyeConfig(INIReader& reader)
 	if (params.a != 0.0f || params.b != 0.0f || params.c != 0.0f || params.d != 0.0f)
 		Note("eyes|axes", "[eyes] axes: u = 0.25 (%+.2f up %+.2f side), v = 0.25 (%+.2f up %+.2f side)\n", params.a, params.b,
 			params.c, params.d);
+	if (test == 3)
+		Note("eyes|lookme", "[eyes] look at me: every actor near the player looks into the player's eyes 4 s (ours), then "
+			"4 s is the engine's own look, over and over\n");
 	if (test == 2)
 		Note("eyes|sweep", "[eyes] the sweep: every actor near the player turns its eyes to 1: u -0.12, 2: v -0.06, 3: u +0.12, "
 			"4: v +0.06 - in that order, 3 s each, centred 1 s between, lids open, over and over\n");
@@ -434,6 +443,12 @@ void UpdateEyeProbe(const std::vector<ActorEntry>& actors, float dt)
 	bool fire = test == 1 && testClock >= 4.0f;
 	if (fire)
 		testClock = 0.0f;
+	static float lookTick = 0.0f;
+	lookTick += dt;
+	bool ours = std::fmod(testClock, 2.0f * kLookPhase) < kLookPhase;
+	bool look = test == 3 && lookTick >= 1.0f;
+	if (look)
+		lookTick = 0.0f;
 	if (test == 2) {
 		float t = std::fmod(testClock, 16.0f);
 		int pose = (int)(t / 4.0f);
@@ -466,6 +481,30 @@ void UpdateEyeProbe(const std::vector<ActorEntry>& actors, float dt)
 				_snprintf_s(key, sizeof(key), _TRUNCATE, "eyes|probe|%08X|%d", a->formID, w.lines++);
 				Note(key, "[eyes] probe %08X: engine uv (%.4f, %.4f); the player's eyes at side %.3f, up %.3f, ahead %.3f\n",
 					a->formID, u, v, side, up, ahead);
+			}
+		}
+		if (look && player) {
+			float side, up, ahead;
+			GlanceMath::UV want, cur;
+			BSShaderProperty* property = EyeProperty(a);
+			bool sees = Toward(a, player, side, up, ahead);
+			bool reach = sees && GlanceMath::Want(side, up, ahead, params, want);
+			if (property && property->shaderMaterial)
+				property->shaderMaterial->GetOffsetUV(&cur.x, &cur.y);
+			if (ours && reach) {
+				FaceAuthority::Glance g;
+				g.target = player->formID;
+				g.durationMs = 1500;
+				g.lidsOpen = 1.0f;
+				FaceAuthority::SetGlance(a->formID, g, EyeClockMs());
+			}
+			int& n = lookLines[a->formID];
+			if (sees && n < kLookLines) {
+				char key[64];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "eyes|look|%08X|%d", a->formID, n++);
+				Note(key, "[eyes] look %08X, %s: eyes at uv (%.3f, %.3f); the player at side %.2f, up %.2f, ahead %.2f; "
+					"ours %s (%.3f, %.3f)\n", a->formID, ours ? "OURS" : "the engine's", cur.x, cur.y, side, up, ahead,
+					reach ? "wants" : "would not look (behind her)", want.x, want.y);
 			}
 		}
 		if (fire) {                            // the nearest other actor, within 150

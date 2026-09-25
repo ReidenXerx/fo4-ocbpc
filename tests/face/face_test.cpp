@@ -832,6 +832,27 @@ int main()
 		w[18] = 1.0f;
 		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
 		Check("the lids layer stays on top", Near(w[18], 0.0f));
+		// a deep face's id stays the deep face's by depth (the owner, 2026-09-26: "deep brows reactions
+		// disappeared during blowjob")
+		m.lidMax = 1.0f;
+		Face deep = r;
+		deep.deepMask = 1ull << 14;
+		deep.deep[14] = 0.6f;
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		m.deep = 1.0f;
+		FaceCompose::AfterMerge(w, keep, &deep, false, m, true);
+		Check("all the way deep, a glance face leaves the deep brow alone", Near(w[14], 0.6f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		m.deep = 0.5f;
+		FaceCompose::AfterMerge(w, keep, &deep, false, m, true);
+		Check("half deep, it turns the brow half as far as it would (0.3 toward 0.9 by 0.25)", Near(w[14], 0.45f));
+		for (int i = 0; i < kMorphs; i++)
+			w[i] = 0.0f;
+		m.deep = 0.0f;
+		FaceCompose::AfterMerge(w, keep, &deep, false, m, true);
+		Check("not deep at all, the glance face has it", Near(w[14], 0.45f));
 
 		// eased held faces (bit 8)
 		Face a = RapportFace(0.0f, 0.2f);
