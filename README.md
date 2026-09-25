@@ -1,37 +1,72 @@
 # fo4-ocbpc
 
-OCBPC (OpenCBP physics with collisions, for Fallout 4) as extended by **fo4-anatomy**. This is the
-source of the `cbp.dll` that ships with *Anatomy - CBBE Genitals, Physics and Arousal*.
+OCBPC (OpenCBP physics with collisions, for Fallout 4), extended for
+[Anatomy](https://github.com/ReidenXerx/fo4-anatomy) and Rapport. This is the source of the
+`cbp.dll` released as its own mod, a drop-in replacement for OCBPC's: your `ocbp.ini` and
+`OCBPCollisionConfig.txt` keep working unchanged.
 
 It is a fork of [ericncream/OpenCBP_FO4](https://github.com/ericncream/OpenCBP_FO4) at commit
 `abc0192` (2020-04-13), the code behind the OCBPC 0.3 release. That in turn derives from OpenCBP
 by JS.
 
-Game: Fallout 4 1.10.163 (Steam and GOG) with F4SE 0.6.23. The mouth reads the engine code it
-hooks before touching it, and stays off on any other build.
+Game: Fallout 4 1.10.163 (Steam and GOG) with F4SE 0.6.23. Every hook reads the engine code it
+patches first, and stays off, logged, on any other build.
 
-## What fo4-anatomy adds
+## What it adds
 
-- **Stretch groups.** A bone can follow the spread of a group of collider contacts, so an opening
-  widens for something bigger instead of letting it clip through.
-- **Prop colliders** (`[Props]`): whatever an animation hangs on a hand node (a toy, a bat)
-  collides along its length. `targets=` limits which bones a prop may push. fo4-anatomy lists its
-  genital and anus bones, so a mug held at the chest pushes nothing.
-- **Run-time bones** (`[Bones]`): named nodes are added under each skeleton's `Pelvis_skin` when a
-  body is skinned to them. No skeleton file has to be patched or shipped.
-- **fo4-anatomy's own config files**: `Data\F4SE\Plugins\Anatomy\ocbp.ini` and
-  `OCBPCollisionConfig.txt` are read after the player's own. Sections come per file, and collision
-  spheres of a node both list are appended. Nothing of the player's physics mod is overwritten.
-- **The contact-driven mouth** (`[Mouth]`): while a penis is at a woman's lips, Jaw Open, the lip
-  funnels and Upper Lip Up are written over the face's merged expression weights. The merge's one
-  call is repointed through F4SE's branch trampoline; the merge's own code is never modified.
-- **A discovery log**, `Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log`, with the last four
-  runs kept as `.1` to `.4`. It lists genital-looking nodes, props, run-time bones and mouths.
-- **A fix in DetourXS**: on x64 it now asks its length engine for x64 decoding. The x86 decoding
-  counted REX prefixes as instructions of their own, and could cut an instruction in two.
+The complete list, with what each needs, is in **[docs/FEATURES.md](docs/FEATURES.md)**. In short:
 
-Each source file fo4-anatomy added or changed says so in its first lines, with the date and what
-changed. `git log abc0192..` has the full history.
+- **Collision:** each collider pushes once per frame (OCBPC pushed twice near a grid-cell edge, for
+  every config); a penis and a held toy collide as one smooth tube, not a string of balls; held props
+  are colliders, limited to the bones you name; stretch groups let an opening widen for something
+  bigger.
+- **Bones at run time** (`[Bones]`): genital bones are added under each actor's `Pelvis_skin`, so no
+  skeleton is patched or shipped.
+- **Aim and shape** (`[Aim]`, `[Shape]`): in AAF scenes a penis finds the opening the animation
+  meant, bends along the canal or down the throat, follows a gripping hand, and takes a thinner shaft
+  and a bigger head, per man.
+- **The mouth** (`[Mouth]`): it opens to what is at the lips, with the lips fitted to the
+  cross-section of what is inside, corners that open out or hug, and a face that reacts.
+- **Rapport's faces** (`[Face]`): a face Rapport holds is written after the engine's merge, so it can
+  close eyelids and a jaw an animation opened; lip sync keeps the mouth while a line plays; faces
+  ease in and out; the brows follow penetration depth; partners glance into each other's eyes
+  (`[Eyes]`); Rapport's MCM tunes the engine live.
+- **Stability:** guarded, self-checking hooks; a log a second game process cannot truncate; a
+  discovery log (`Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log`) for new bodies, props and
+  creatures.
+
+## Configuration
+
+Two ini files are read, yours first: `Data\F4SE\Plugins\ocbp.ini`, then
+`Data\F4SE\Plugins\Anatomy\ocbp.ini`. The sections below come from Anatomy's file when it has
+them, otherwise from yours. `OCBPCollisionConfig.txt` is read the same way and appended.
+
+| section | what it turns on | off unless |
+| --- | --- | --- |
+| `[Attach]`, bone sections, `[Override:*]`, `[Whitelist]` | OCBPC's physics, as always | - |
+| `[Props]` | held props as colliders (`nodes`, `radius`, `spacing`, `maxLength`, `minBound`, `targets`) | `nodes` is set |
+| `[Bones]` | run-time bones, `name=parent,x,y,z` under `Pelvis_skin` | listed |
+| `[Tube]` | penis chains (and props, `props=1`) as one tube; `skin`, `glans`, `glansProfile` | `enabled=1` |
+| `[Aim]` | the aim: `chain`, openings (`vagina`, `anus`, paths, `throatF/M`, `throatNeckF/M`), angles and reach | `enabled=1` |
+| `[Shape]` | `shaft`, `headMin`, `headMax` | `enabled=1` |
+| `[Mouth]` | the contact mouth, the lip table (`lip<F/M><id>`), corners, glans, `face=` reaction terms | `enabled=1` |
+| `[Face]` | `authority` (Rapport's faces), `react` | on by default |
+| `[Eyes]` | the eye hook; `glances=1` tells Rapport glances work; `uMax`, `vMin`, `vMax`, `rollMax`, `axes` | `enabled` on by default, `glances` off |
+
+Each key's default, clamp and meaning is in the header comment of its source file (`Mouth.h`,
+`Aim.h`, `Eyes.h`, `Bones.h`, `TubeCollide.h`, `FaceAuthority.h`) and in `config.cpp`. `probe=` and
+`test=` keys are for development and log heavily.
+
+The messages Rapport and the engine exchange (`RFAS`, `RFAC`, `RFAD`, `RFAK`, `RFAG`, `RFAX`, and
+the engine's `RFAH` hello) are defined in `CBPSSE/FaceAuthority.h`.
+
+Each source file this fork added or changed says so in its first lines, with the date and what
+changed. `git log abc0192..` has the full history, one reasoned commit per change.
+
+## Tests
+
+`tests/aim`, `tests/face`, `tests/lips` and `tests/tube` are offline suites (`run.bat` in each),
+built with the same toolset. Each was proven by planted mutations: every planted fault must fail it.
 
 ## Build
 
