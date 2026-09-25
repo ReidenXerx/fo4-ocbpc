@@ -47,8 +47,12 @@ namespace
 	const int kProbeLines = 40;                 // per actor
 
 	// ---- the engine, 1.10.163 (GOG; SAM's offsets, byte for byte) ----
-	RelocAddr<uintptr_t> eyeFn(0x9C0410);
-	RelocAddr<uintptr_t> eyeCalls[2] = { RelocAddr<uintptr_t>(0xD38B13), RelocAddr<uintptr_t>(0xD39681) };
+	// Offsets only, made addresses at install (Game()). A static RelocAddr ARRAY held a bad pointer at run
+	// time, though the single RelocAddr beside it was right: the guarded build caught the read of its first
+	// element faulting (2026-09-25, C0000005 at the cmp of the call's first byte). No static game address here.
+	const uintptr_t kEyeFn = 0x9C0410;
+	const uintptr_t kEyeCalls[2] = { 0xD38B13, 0xD39681 };
+	inline uintptr_t Game(uintptr_t offset) { return RelocationManager::s_baseAddr + offset; }
 	const unsigned char kEyePrologue[] = { 0x48, 0x8B, 0xC4, 0x55, 0x48, 0x8D, 0xA8, 0xE8, 0xF8, 0xFF, 0xFF,
 	                                       0x48, 0x81, 0xEC, 0x10, 0x08, 0x00, 0x00 };
 	typedef void (*EyeFn)(float dt);
@@ -262,12 +266,14 @@ static void InstallEyeHookUnguarded()
 		return;
 	// never patch a build we have not read: the eye update's prologue and both calls to it
 	installStep = "reading the eye update's first bytes";
-	bool prologue = std::memcmp(reinterpret_cast<const void*>(eyeFn.GetUIntPtr()), kEyePrologue, sizeof(kEyePrologue)) == 0;
-	bool calls = true;
+	const uintptr_t fn = Game(kEyeFn);
+	bool prologue = RelocationManager::s_baseAddr != 0 &&
+		std::memcmp(reinterpret_cast<const void*>(fn), kEyePrologue, sizeof(kEyePrologue)) == 0;
+	bool calls = prologue;
 	installStep = "reading its two calls";
-	for (auto& c : eyeCalls) {
-		const unsigned char* p = reinterpret_cast<const unsigned char*>(c.GetUIntPtr());
-		calls = calls && p[0] == 0xE8 && c.GetUIntPtr() + 5 + *reinterpret_cast<const int32_t*>(p + 1) == eyeFn.GetUIntPtr();
+	for (uintptr_t off : kEyeCalls) {
+		const unsigned char* p = reinterpret_cast<const unsigned char*>(Game(off));
+		calls = calls && p[0] == 0xE8 && Game(off) + 5 + *reinterpret_cast<const int32_t*>(p + 1) == fn;
 	}
 	if (!prologue || !calls) {
 		Note("eyes|build", "[eyes] this game build is not the one the eyes were read from (prologue %d, calls %d): "
@@ -279,17 +285,18 @@ static void InstallEyeHookUnguarded()
 		Note("eyes|hook", "[eyes] no room for a branch trampoline near the game: no glance turns an eye\n");
 		return;
 	}
-	origEyes = reinterpret_cast<EyeFn>(eyeFn.GetUIntPtr());
+	origEyes = reinterpret_cast<EyeFn>(fn);
 	bool reaches = true;
-	for (auto& c : eyeCalls) {
-		installStep = &c == &eyeCalls[0] ? "patching the first call" : "patching the second call";
-		if (!g_branchTrampoline.Write5Call(c.GetUIntPtr(), reinterpret_cast<uintptr_t>(&HookEyes))) {
+	for (uintptr_t off : kEyeCalls) {
+		const uintptr_t call = Game(off);
+		installStep = off == kEyeCalls[0] ? "patching the first call" : "patching the second call";
+		if (!g_branchTrampoline.Write5Call(call, reinterpret_cast<uintptr_t>(&HookEyes))) {
 			reaches = false;
 			continue;
 		}
 		installStep = "reading a patched call back";
-		const unsigned char* p = reinterpret_cast<const unsigned char*>(c.GetUIntPtr());
-		const unsigned char* s = reinterpret_cast<const unsigned char*>(c.GetUIntPtr() + 5 + *reinterpret_cast<const int32_t*>(p + 1));
+		const unsigned char* p = reinterpret_cast<const unsigned char*>(call);
+		const unsigned char* s = reinterpret_cast<const unsigned char*>(call + 5 + *reinterpret_cast<const int32_t*>(p + 1));
 		reaches = reaches && p[0] == 0xE8 && s[0] == 0xFF && s[1] == 0x25 && *reinterpret_cast<const uint32_t*>(s + 2) == 0 &&
 			*reinterpret_cast<const uintptr_t*>(s + 6) == reinterpret_cast<uintptr_t>(&HookEyes);
 	}
