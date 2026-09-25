@@ -695,14 +695,22 @@ int main()
 		GlanceMath::Params p;
 		GlanceMath::UV uv;
 		Check("straight ahead: the eyes centred", GlanceMath::Want(0.0f, 0.0f, 1.0f, p, uv) && Near(uv.x, 0.0f) && Near(uv.y, 0.0f));
-		Check("30 degrees aside: 0.25 x sin 30", GlanceMath::Want(0.5f, 0.0f, 0.866f, p, uv) && Near(uv.x, 0.125f));
-		p.signX = -1.0f;
-		Check("signX turns it the other way", GlanceMath::Want(0.5f, 0.0f, 0.866f, p, uv) && Near(uv.x, -0.125f));
-		p.signX = 1.0f;
-		Check("far aside: held at the edge the engine keeps (0.15)", GlanceMath::Want(0.9f, 0.0f, 0.44f, p, uv) && Near(uv.x, 0.15f));
-		Check("far up / down: held inside -0.075 .. 0.065",
-			GlanceMath::Want(0.0f, 0.6f, 0.8f, p, uv) && Near(uv.y, 0.065f) &&
-			GlanceMath::Want(0.0f, -0.6f, 0.8f, p, uv) && Near(uv.y, -0.075f));
+		// the engine's own axes (the owner's look and the probe, 2026-09-25): u vertical, v sideways, both negated
+		Check("20 degrees aside: v = -0.25 x sin 20, u untouched",
+			GlanceMath::Want(0.342f, 0.0f, 0.94f, p, uv) && Near(uv.y, -0.0855f < -0.075f ? -0.075f : -0.0855f) && Near(uv.x, 0.0f));
+		Check("10 degrees aside the other way: v = +0.25 x sin 10", GlanceMath::Want(-0.174f, 0.0f, 0.985f, p, uv) &&
+			Near(uv.y, 0.0435f) && Near(uv.x, 0.0f));
+		Check("30 degrees up: u = -0.25 x sin 30, v untouched", GlanceMath::Want(0.0f, 0.5f, 0.866f, p, uv) &&
+			Near(uv.x, -0.125f) && Near(uv.y, 0.0f));
+		p.signUp = 1.0f;
+		Check("signUp turns it the other way", GlanceMath::Want(0.0f, 0.5f, 0.866f, p, uv) && Near(uv.x, 0.125f));
+		p.signUp = -1.0f;
+		Check("far up / down: u held at the edge the engine keeps (0.15)",
+			GlanceMath::Want(0.0f, 0.9f, 0.44f, p, uv) && Near(uv.x, -0.15f) &&
+			GlanceMath::Want(0.0f, -0.9f, 0.44f, p, uv) && Near(uv.x, 0.15f));
+		Check("far aside: v held inside -0.075 .. 0.065",
+			GlanceMath::Want(0.6f, 0.0f, 0.8f, p, uv) && Near(uv.y, -0.075f) &&
+			GlanceMath::Want(-0.6f, 0.0f, 0.8f, p, uv) && Near(uv.y, 0.065f));
 		Check("behind her: out of reach, no glance", !GlanceMath::Want(0.3f, 0.0f, -0.95f, p, uv));
 		GlanceMath::UV from, to;
 		to.x = 0.1f;

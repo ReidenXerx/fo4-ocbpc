@@ -12,7 +12,7 @@
 // ocbp.ini [Eyes]:
 //   enabled=1   hook the eye update (0: no glance ever turns an eye; the lids still open)
 //   glances=0   1: tell Rapport (hello bit 4) that glances work. Only once the owner has seen them work.
-//   signX / signY   which way +UV turns the eye (the probe measures it)
+//   signUp / signSide   the engine's: u (vertical) = -0.25 x up, v (sideways) = -0.25 x side (Glance.h)
 //   eyeRise / eyeBack   the eyes, from the mouth's point: this far up the face and back into it
 //   probe=0     1: log each actor's engine eye offset beside where the player's eyes are, twice a second (dev)
 //   test=0      1: every actor looks into the nearest other actor's eyes 1.5 s of every 4 (dev)
