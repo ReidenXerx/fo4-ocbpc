@@ -116,6 +116,40 @@ int main()
 		std::printf("6: at the elbow a sphere ends %.3f from the joint\n", Len(end - V{ 0, 0, 3 }));
 		Expect(Near(Len(end - V{ 0, 0, 3 }), 2.0f, 0.01f), "6: at the elbow it rests on the joint's radius");
 	}
+	{   // 7. a toy (A-38): AddPropColliders's line, balls of 1.6 every 1.5 over 22.9 (the owner's first
+		// zero-touch log): as one tube a lip rests on it wherever it is; as balls, two or three push at once
+		std::vector<P> toy;
+		for (float t = 0.0f; t <= 22.9f - 1.6f + 1e-3f; t += 1.5f)
+			toy.push_back(P{ V{ 0, 0, t }, 1.6f });
+		std::vector<P> toyTube = toy;
+		for (auto& p : toyTube)
+			p.r -= skin;
+		float lo = 1e9f, hi = -1e9f, blo = 1e9f, bhi = -1e9f;
+		for (float z = 2.0f; z <= 18.0f; z += 0.25f) {
+			V c{ 1.0f, 0.0f, z }, push;
+			Tube::Push(toyTube, c, 1.7f, push);
+			float out = Len(c + push - V{ 0, 0, z });
+			lo = out < lo ? out : lo;
+			hi = out > hi ? out : hi;
+			float b = Len(c + SumOfBalls(toy, c, 1.7f) - V{ 0, 0, z });
+			blo = b < blo ? b : blo;
+			bhi = b > bhi ? b : bhi;
+		}
+		std::printf("7: along a toy an inner-lip sphere (r 1.7) ends %.3f .. %.3f from its axis; as balls %.3f .. %.3f\n",
+			lo, hi, blo, bhi);
+		Expect(Near(lo, 1.4f + 1.7f, 0.01f) && Near(hi, 1.4f + 1.7f, 0.01f), "7: on the toy's tube: no ride");
+		// the toy's balls are DENSE (1.5 apart, reach 3.3): they barely ride, but two or three push at once
+		// and ADD, so a lip went out to ~5.0 where the toy's surface is 3.1 (measured by this test)
+		Expect(blo > 1.4f * (1.6f + 1.7f), "7: (as balls a lip is shoved well past the toy: the comparison is meaningful)");
+	}
+	{   // 8. whom a tube pushes (Tube::Reaches): a penis never its owner; a toy only [Props] targets, its
+		// holder's own included (solo scenes)
+		Expect(Tube::Reaches(false, false, false), "8: a partner's penis pushes her");
+		Expect(!Tube::Reaches(false, true, true), "8: never its own owner's body");
+		Expect(Tube::Reaches(true, true, true), "8: a toy pushes its holder's own lips");
+		Expect(!Tube::Reaches(true, false, false), "8: a toy never pushes a bone that is not a [Props] target");
+		Expect(Tube::Reaches(true, false, true), "8: a toy pushes a partner's target bone");
+	}
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);
 		return 1;

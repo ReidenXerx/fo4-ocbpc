@@ -21,6 +21,14 @@
 
 namespace Tube
 {
+	// Whom a tube may push. A partner's penis never pushes its own owner's body. A TOY is the other way
+	// round: the hand that holds it may be her own (a solo scene), so its holder IS pushed, but only on the
+	// [Props] target bones, the rule its balls always had (Thing.cpp, PropReaches).
+	inline bool Reaches(bool prop, bool ownBody, bool propTarget)
+	{
+		return prop ? propTarget : !ownBody;
+	}
+
 	// The deepest push a sphere (centre c, radius rs) gets out of a tube along pts (each with .pos and
 	// .r, the tube's radius there): per segment, the nearest point with the radius blended along it;
 	// false when the sphere does not reach the tube. out is the displacement for the sphere's centre.

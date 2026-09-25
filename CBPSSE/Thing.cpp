@@ -413,7 +413,7 @@ void Thing::Update(Actor *actor) {
 		{
 			// fo4-anatomy: every partner's penis as one tube: one push each, its deepest ([Tube])
 			NiPoint3 tubePush = zeroVector;
-			if (TubePush(actor, thingCollisionSpheres, tubePush)) {
+			if (TubePush(actor, boneName.c_str(), thingCollisionSpheres, tubePush)) {
 				IsThereCollision = true;
 				collisionVector = collisionVector + tubePush;
 			}
@@ -591,7 +591,7 @@ void Thing::Update(Actor *actor) {
             {
                 // fo4-anatomy: the tubes, as in the first pass, at the moved position
                 NiPoint3 tubePush = zeroVector;
-                if (TubePush(actor, thingCollisionSpheres, tubePush)) {
+                if (TubePush(actor, boneName.c_str(), thingCollisionSpheres, tubePush)) {
                     IsThereCollision = true;
                     maybeNot = true;
                     collisionVector = collisionVector + tubePush;

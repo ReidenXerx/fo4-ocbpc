@@ -7,6 +7,7 @@
 //   chains=a|b|c/...   bones, root first, one chain per list (a node with no collider sphere is skipped)
 //   skin=0.2           the collider sphere less this is the flesh (the mouth's [Mouth] skin, the same fact)
 //   glans=<node>, glansProfile=...   the glans's profile on that tip bone (Glans.h; [Mouth] has the same)
+//   props=1            a toy on a [Props] node collides as one tube too, instead of its line of balls
 // Built each frame after the colliders move (scan.cpp); read by every Thing's collision passes, on the
 // same thread.
 #include "INIReader.h"
@@ -21,5 +22,6 @@ void LoadTubeConfig(INIReader& reader);
 void BuildTubes();
 // A collider node that is part of a tube this frame: the per-sphere collision passes skip it
 bool IsTubeMember(const Actor* owner, const std::string& node);
-// The push every tube but self's own gives these spheres: one per tube (its deepest), added over tubes
-bool TubePush(const Actor* self, const std::vector<Sphere>& spheres, NiPoint3& push);
+// The push the tubes give these spheres of `bone`: one per tube (its deepest), added over tubes. A penis
+// never pushes its own owner; a toy pushes only the [Props] targets, its holder's included (Tube::Reaches)
+bool TubePush(const Actor* self, const char* bone, const std::vector<Sphere>& spheres, NiPoint3& push);

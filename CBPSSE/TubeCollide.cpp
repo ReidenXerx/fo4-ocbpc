@@ -19,6 +19,7 @@ namespace
 	bool enabled = false;
 	std::vector<std::vector<std::string>> chainNames;
 	float skin = 0.2f;
+	bool propsToo = true;
 	std::string glansNode;
 	std::vector<Glans::Step> glansProfile;
 
@@ -30,6 +31,7 @@ namespace
 	struct Chain
 	{
 		const Actor* owner;
+		bool prop;                              // a toy on a [Props] node (Tube::Reaches)
 		std::vector<Point> pts;
 		NiPoint3 lo, hi;                        // its bounds, with its widest radius
 	};
@@ -73,6 +75,7 @@ void LoadTubeConfig(INIReader& reader)
 			chainNames.push_back(names);
 	}
 	skin = (std::max)(0.0f, (float)reader.GetReal("Tube", "skin", skin));
+	propsToo = reader.GetBoolean("Tube", "props", true);
 	glansNode = reader.Get("Tube", "glans", "");
 	glansProfile.clear();
 	for (auto& step : Split(reader.Get("Tube", "glansProfile", ""), ',')) {
@@ -91,6 +94,9 @@ void LoadTubeConfig(INIReader& reader)
 		"[tube] %s: %d chain(s), skin %.2f, glans %s (%d step(s)); their bones' own balls %s\n",
 		enabled ? "on" : "off", (int)chainNames.size(), skin, glansNode.empty() ? "-" : glansNode.c_str(),
 		(int)glansProfile.size(), enabled ? "no longer collide one by one" : "collide as before");
+	Note("tube|props|" + std::to_string((int)(enabled && propsToo)), "[tube] toys: %s\n",
+		enabled && propsToo ? "each collides as one tube (its line of balls no longer pushes one by one)"
+		                    : "collide as their line of balls");
 }
 
 void BuildTubes()
@@ -105,7 +111,7 @@ void BuildTubes()
 			byActor[c.colliderActor][c.colliderNodeName] = &c;
 	for (auto& actorNodes : byActor) {
 		for (auto& names : chainNames) {
-			Chain ch{ actorNodes.first, {}, NiPoint3(), NiPoint3() };
+			Chain ch{ actorNodes.first, false, {}, NiPoint3(), NiPoint3() };
 			std::vector<std::string> used;
 			bool tipFound = false;
 			for (auto& n : names) {
@@ -138,6 +144,29 @@ void BuildTubes()
 				members.emplace_back(actorNodes.first, n);
 		}
 	}
+	// a toy: its line of balls (CollisionHub.cpp AddPropColliders, root to tip) is the tube's line. OCBPC
+	// ADDED every overlapping ball's push, and a toy is ~16 balls 1.5 apart: a lip against it took two or
+	// three pushes at once and rode as they passed, the ball-riding the penis tube cured (A-35)
+	for (auto& c : otherColliders) {
+		if (!propsToo || !c.isProp || !c.colliderActor || c.collisionSpheres.size() < 2)
+			continue;
+		Chain ch{ c.colliderActor, true, {}, NiPoint3(), NiPoint3() };
+		float widest = 0.0f;
+		for (auto& s : c.collisionSpheres) {
+			float r = (std::max)(0.2f, (float)s.radius - skin);   // the same reading as a penis's
+			ch.pts.push_back(Point{ s.worldPos, r });
+			widest = (std::max)(widest, r);
+		}
+		ch.lo = ch.hi = ch.pts.front().pos;
+		for (auto& p : ch.pts) {
+			ch.lo = NiPoint3((std::min)(ch.lo.x, p.pos.x), (std::min)(ch.lo.y, p.pos.y), (std::min)(ch.lo.z, p.pos.z));
+			ch.hi = NiPoint3((std::max)(ch.hi.x, p.pos.x), (std::max)(ch.hi.y, p.pos.y), (std::max)(ch.hi.z, p.pos.z));
+		}
+		ch.lo = ch.lo - NiPoint3(widest, widest, widest);
+		ch.hi = ch.hi + NiPoint3(widest, widest, widest);
+		tubes.push_back(ch);
+		members.emplace_back(c.colliderActor, c.colliderNodeName);
+	}
 	Note("tube|built|" + std::to_string(tubes.size()), "[tube] %d tube(s) this frame (the first frame with this many)\n",
 		(int)tubes.size());
 }
@@ -150,12 +179,12 @@ bool IsTubeMember(const Actor* owner, const std::string& node)
 	return false;
 }
 
-bool TubePush(const Actor* self, const std::vector<Sphere>& spheres, NiPoint3& push)
+bool TubePush(const Actor* self, const char* bone, const std::vector<Sphere>& spheres, NiPoint3& push)
 {
 	bool hit = false;
 	for (auto& t : tubes) {
-		if (t.owner == self)
-			continue;                               // one's own penis never pushes one's own body
+		if (!Tube::Reaches(t.prop, t.owner == self, t.prop && PropReaches(bone)))
+			continue;
 		for (auto& s : spheres) {
 			float r = (float)s.radius;
 			const NiPoint3& c = s.worldPos;
