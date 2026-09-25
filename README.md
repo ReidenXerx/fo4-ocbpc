@@ -52,6 +52,7 @@ them, otherwise from yours. `OCBPCollisionConfig.txt` is read the same way and a
 | `[Mouth]` | the contact mouth, the lip table (`lip<F/M><id>`), corners, glans, `face=` reaction terms | `enabled=1` |
 | `[Face]` | `authority` (Rapport's faces), `react` | on by default |
 | `[Eyes]` | the eye hook; `glances=1` tells Rapport glances work; `uMax`, `vMin`, `vMax`, `rollMax`, `axes` | `enabled` on by default, `glances` off |
+| `[Log]` | `discover=1`: log genital- or toy-looking nodes on nearby actors (a modder's tool; walks scene graphs every 2 s) | `discover=1` |
 
 Each key's default, clamp and meaning is in the header comment of its source file (`Mouth.h`,
 `Aim.h`, `Eyes.h`, `Bones.h`, `TubeCollide.h`, `FaceAuthority.h`) and in `config.cpp`. `probe=` and

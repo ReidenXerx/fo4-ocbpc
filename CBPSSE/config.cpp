@@ -70,6 +70,7 @@ float propSpacing = 1.5f;
 float propMaxLength = 40.0f;
 float propMinBound = 1.0f;
 std::vector<std::string> propTargets;
+bool discoverNodes = false;
 
 bool PropReaches(const char* bone)
 {
@@ -273,6 +274,10 @@ bool LoadConfig() {
     }
     if (propSpacing < 0.25f)
         propSpacing = 0.25f;
+    // the discovery scan (release logging audit, 2026-09-26): it walked every nearby actor's whole scene
+    // graph every 2 s by default, lowercasing each node's name against 12 words, and after the first pass
+    // it logged nothing new. Players pay for a developer's tool only when they ask for it.
+    discoverNodes = (extrasSections.count("Log") ? anatomyExtras : configReader).GetBoolean("Log", "discover", false);
 
     //Read armorIgnore
     auto armorIgnoreStr = configReader.Get("General", "armorIgnore", "");

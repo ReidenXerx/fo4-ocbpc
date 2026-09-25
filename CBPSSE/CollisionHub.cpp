@@ -309,10 +309,10 @@ void CreateOtherColliders()
 		AddPropColliders(actorEntries[i].actor, mostInterestingRoot);
 	}
 
-	// the discovery scan: every 2 seconds at most, so a whole scene graph walk never costs a frame
+	// the discovery scan ([Log] discover=1, off by default): every 2 seconds at most
 	static clock_t lastScan = 0;
 	clock_t now = clock();
-	if (now - lastScan > 2 * CLOCKS_PER_SEC)
+	if (discoverNodes && now - lastScan > 2 * CLOCKS_PER_SEC)
 	{
 		lastScan = now;
 		for (int i = 0; i < actorEntries.size(); i++)

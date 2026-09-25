@@ -118,9 +118,11 @@ All [Anatomy config, `[Mouth]`]. Fallout 4 heads have no mouth bones: the mouth 
 - **A log two game processes cannot break** [alone]: a second Fallout4.exe (a relaunch after a crash)
   used to truncate the running game's log; now it rotates it aside or writes its own.
 - **Discovery log** `Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log` [alone], last four runs
-  kept: props turned into colliders, genital- or toy-looking nodes on nearby actors (to name an
-  unknown creature's bones), the bones added, the mouth, the aim's lock and release reasons, every
-  hook's install result. Capped at 4000 lines with a notice.
+  kept: props turned into colliders, the bones added, the mouth, the aim's lock and release reasons,
+  every hook's install result. Each line is written once per run (about 20 lines a minute in a real
+  session, most at load), capped at 4000 with a notice. For modders, `[Log] discover=1` also lists
+  genital- or toy-looking nodes on nearby actors, to name an unknown creature's bones; it walks their
+  scene graphs every 2 s, so it is off unless you turn it on.
 - **Builds with today's compiler** (VS 2022, v143), statically linked, the same imports and exports as
   the original.
 

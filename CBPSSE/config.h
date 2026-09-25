@@ -89,6 +89,9 @@ extern float propMinBound;
 // [Props] targets: the only bones a prop may push (empty = every affected bone, OCBPC's own rule).
 // fo4-anatomy lists its genital and anus bones: a mug held at the chest must not push her breasts.
 extern std::vector<std::string> propTargets;
+// fo4-anatomy: [Log] discover=1 walks nearby actors' scene graphs every 2 s for genital-looking nodes
+// (the discovery log's [node] lines). A developer's tool: off unless an ini turns it on.
+extern bool discoverNodes;
 bool PropReaches(const char* bone);
 
 extern std::vector<std::string> AffectedNodeLines;
