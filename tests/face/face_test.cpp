@@ -691,9 +691,18 @@ int main()
 		FaceCompose::AfterMerge(w, keep, nullptr, false, m, true);
 		Check("no glance: the lids are the face's", Near(w[18], 0.7f));
 
-		// where the eyes go (Glance.h): the engine's own numbers
-		GlanceMath::Params p;
+		// where the eyes go (Glance.h): the default is the photo's map (2026-09-26)
 		GlanceMath::UV uv;
+		{
+			GlanceMath::Params ph;
+			Check("the default map: a target at her right turns u+ only",
+				GlanceMath::Want(0.3f, 0.0f, 0.95f, ph, uv) && Near(uv.x, 0.075f) && Near(uv.y, 0.0f));
+			Check("and a target above turns v+ only", GlanceMath::Want(0.0f, 0.2f, 0.98f, ph, uv) && Near(uv.y, 0.05f)
+				&& Near(uv.x, 0.0f));
+		}
+		// the first reading's signs, kept for an explicit axes=0,0,0,0
+		GlanceMath::Params p;
+		p.a = p.b = p.c = p.d = 0.0f;
 		Check("straight ahead: the eyes centred", GlanceMath::Want(0.0f, 0.0f, 1.0f, p, uv) && Near(uv.x, 0.0f) && Near(uv.y, 0.0f));
 		{   // [Eyes] axes: a whole map, for an eye whose texture turns it at a slant
 			GlanceMath::Params m = p;
@@ -707,7 +716,7 @@ int main()
 			Check("an unset map (all 0): the signs, as before", GlanceMath::Want(0.2f, 0.4f, 0.89f, m, uv) &&
 				Near(uv.x, -0.1f) && Near(uv.y, -0.05f));
 		}
-		// the engine's own axes (the owner's look and the probe, 2026-09-25): u vertical, v sideways, both negated
+		// the signs (an unset map): u from up, v from side, both negated - the first reading, not the default
 		Check("20 degrees aside: v = -0.25 x sin 20, u untouched",
 			GlanceMath::Want(0.342f, 0.0f, 0.94f, p, uv) && Near(uv.y, -0.0855f < -0.075f ? -0.075f : -0.0855f) && Near(uv.x, 0.0f));
 		Check("10 degrees aside the other way: v = +0.25 x sin 10", GlanceMath::Want(-0.174f, 0.0f, 0.985f, p, uv) &&
@@ -742,12 +751,15 @@ int main()
 			Decode(kGlance, &self, sizeof(self)).command == Command::None);
 		GlanceMath::Params p;
 		p.a = -1.4f;                                    // the owner's sweep: u- is up
+		p.b = 0.0f;
+		p.c = 0.0f;
 		p.d = -1.0f;
 		GlanceMath::UV r = GlanceMath::Roll(p, 0.24f);
 		Check("the eyes roll up the axes' own up (u -0.24 when u- is up)", Near(r.x, -0.24f) && Near(r.y, 0.0f));
 		p.a = 1.4f;
 		Check("and the other way when the map's up is +", Near(GlanceMath::Roll(p, 0.24f).x, 0.24f));
 		GlanceMath::Params s;                           // no map: the signs
+		s.a = s.b = s.c = s.d = 0.0f;
 		s.signUp = -1.0f;
 		Check("without a map, by signUp", Near(GlanceMath::Roll(s, 0.2f).x, -0.2f));
 
@@ -898,6 +910,43 @@ int main()
 		Clear(0x77);
 		Set(0x77, b, 7000);
 		Check("a fresh hold (after a clear) snaps", Near(shown(7000, 14), 0.8f));
+
+		// a face let go fades back to the engine's over 250 ms (RFAC), instead of snapping in one frame
+		auto hold = [&](std::uint64_t t) {
+			for (auto& h : Snapshot(t))
+				if (h.first == 0x77)
+					return h.second.hold;
+			return -1.0f;                                 // gone
+		};
+		Clear(0x77, 8000);
+		Check("a released face still shows in full at once", Near(hold(8000), 1.0f));
+		Check("half released at 125 ms", Near(hold(8125), 0.5f));
+		{
+			Face f;
+			for (auto& h : Snapshot(8125))
+				if (h.first == 0x77)
+					f = h.second;
+			float w[kMorphs] = {};
+			w[14] = 0.1f;                                 // the engine's own brow
+			Compose(w, f, false);
+			Check("half way from the held brow (0.8) back to the engine's (0.1)", Near(w[14], 0.45f));
+			f.deepMask = 1ull << 13;
+			f.deep[13] = 1.0f;
+			float e[kMorphs] = {};
+			w[13] = 0.0f;
+			BlendDeep(w, e, f, 1.0f);
+			Check("its deep face fades by the same share", Near(w[13], 0.5f));
+		}
+		Check("gone at 250 ms", Near(hold(8250), -1.0f));
+		Set(0x77, b, 9000);
+		Clear(0x77, 9000);
+		Set(0x77, a, 9100);                                // a new face mid-release: held again
+		Check("a new face mid-release is held in full", Near(hold(9400), 1.0f));
+		Clear(0x77, 9500);
+		Clear(0x77, 9600);                                 // a second let-go does not restart the fade
+		Check("a second let-go does not restart the fade", Near(hold(9625), 0.5f));
+		Clear(0, 9700);
+		Check("everyone (a load) goes at once", Near(hold(9700), -1.0f));
 		Clear(0);
 	}
 

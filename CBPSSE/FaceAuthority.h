@@ -144,6 +144,12 @@ namespace FaceAuthority
 		std::uint64_t easeMask = 0;
 		std::uint64_t easeStartMs = 0;
 		float from[kMorphs] = {};
+		// A face let go (RFAC) fades back to the engine's over kEaseMs instead of snapping in one frame (the
+		// Sonnet harness's finding, queued by the owner 2026-09-26): hold is how much of it still shows, 1
+		// while held, falling to 0 from releaseStartMs; Snapshot(nowMs) drops it once it reaches 0
+		float hold = 1.0f;
+		bool releasing = false;
+		std::uint64_t releaseStartMs = 0;
 	};
 	constexpr std::uint32_t kEaseMs = 250;
 
@@ -186,7 +192,9 @@ namespace FaceAuthority
 	void Set(std::uint32_t formID, const Face& face, std::uint64_t nowMs);
 	// What a held face shows at nowMs (its eases applied), per morph
 	void Shown(const Face& face, std::uint64_t nowMs, float* out);
-	void Clear(std::uint32_t formID);              // 0 = everyone
+	void Clear(std::uint32_t formID);              // 0 = everyone, at once (a load)
+	// Let one actor's face go at nowMs: it fades out over kEaseMs (Snapshot(nowMs) applies and ends it)
+	void Clear(std::uint32_t formID, std::uint64_t nowMs);
 	// A-29: the deep face of a face already held (false: none is held for that form, and nothing is kept)
 	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values);
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot();

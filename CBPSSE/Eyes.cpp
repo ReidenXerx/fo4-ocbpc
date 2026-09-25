@@ -332,7 +332,7 @@ void LoadEyeConfig(INIReader& reader)
 	char key[96];
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "eyes|config|%d|%d|%d|%d|%d|%d", (int)enabled, (int)glancesOn,
 		(int)params.signUp, (int)params.signSide, (int)probe, (int)test);
-	Note(key, "[eyes] [Eyes] enabled %d, glances told to Rapport %d, u = %+d x 0.25 up, v = %+d x 0.25 side, eyes %.1f up / "
+	Note(key, "[eyes] [Eyes] enabled %d, glances told to Rapport %d, signs (only for axes=0,0,0,0) u = %+d x 0.25 up, v = %+d x 0.25 side, eyes %.1f up / "
 		"%.1f back from the mouth, probe %d, test %d\n", (int)enabled, (int)glancesOn, (int)params.signUp, (int)params.signSide,
 		eyeRise, eyeBack, (int)probe, test);
 	if (params.a != 0.0f || params.b != 0.0f || params.c != 0.0f || params.d != 0.0f)

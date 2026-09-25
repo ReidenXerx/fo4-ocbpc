@@ -19,7 +19,8 @@
 // to HER LEFT at the height they rest at. So u IS sideways (u- her left) and v is up and down; the engine's
 // "vertical part" is in the head bone's own frame, not the head's. The owner's words read in the screen's
 // frame agree with it all along: "13-15 h" for u -0.15, "only in her left" (screen left) for u +0.18. The
-// map lives in [Eyes] axes, so the defaults here stay as the first reading was.
+// map lives in [Eyes] axes, and it is the default here too (2026-09-26, the Sonnet harness's finding): an ini
+// with no axes key cannot bring the first reading back. The signs below serve only an explicit axes=0,0,0,0.
 #include <cmath>
 
 namespace GlanceMath
@@ -29,10 +30,12 @@ namespace GlanceMath
 		float gain = 0.25f;          // UV per unit of the direction's up / sideways part (the engine's)
 		float xMax = 0.15f;          // u: inside the engine's own give-up edges (|u| 0.16,
 		float yMin = -0.075f, yMax = 0.065f;   // v: -0.08 .. 0.07), [Eyes] uMax, vMin, vMax
-		float signUp = -1.0f, signSide = -1.0f;   // the engine's: u = -0.25 up, v = -0.25 side
+		float signUp = -1.0f, signSide = -1.0f;   // the first reading (u = -0.25 up, v = -0.25 side): only
+		                                          // for an unset map (axes=0,0,0,0)
 		// ...or a whole map, when the eye's texture turns the eye at a slant ([Eyes] axes=a,b,c,d):
-		// u = gain (a up + b side), v = gain (c up + d side). Unset (all 0): the signs above.
-		float a = 0.0f, b = 0.0f, c = 0.0f, d = 0.0f;
+		// u = gain (a up + b side), v = gain (c up + d side). Unset (all 0): the signs above. The default
+		// is the photo's map: u sideways (u+ her right), v up and down (v+ up)
+		float a = 0.0f, b = 1.0f, c = 1.0f, d = 0.0f;
 		float minAhead = 0.3f;       // the target this far in front at least (a unit direction's forward
 		                             // part): behind her, no eye can reach it and the glance does nothing
 		float speed = 2.0f;          // UV a second (the engine's)

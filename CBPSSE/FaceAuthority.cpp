@@ -207,16 +207,16 @@ namespace FaceAuthority
 			if (speaking && IsMouth(i))
 				continue;                               // the line's lip sync
 			float v = face.value[i] < 0.0f ? 0.0f : (face.value[i] > 1.0f ? 1.0f : face.value[i]);
-			if (i == kLeftBlink || i == kRightBlink)
-				weights[i] = weights[i] > v ? weights[i] : v;
-			else
-				weights[i] = v;
+			float h = face.hold < 0.0f ? 0.0f : (face.hold > 1.0f ? 1.0f : face.hold);
+			float to = (i == kLeftBlink || i == kRightBlink) ? (weights[i] > v ? weights[i] : v) : v;
+			weights[i] += (to - weights[i]) * h;        // h 1: the held face; a released one fades out
 		}
 	}
 
 	void BlendDeep(float* weights, const float* engine, const Face& face, float w)
 	{
 		w = w < 0.0f ? 0.0f : (w > 1.0f ? 1.0f : w);
+		w *= face.hold < 0.0f ? 0.0f : (face.hold > 1.0f ? 1.0f : face.hold);   // a released face's deep too
 		for (int i = 0; i < kMorphs; i++) {
 			if (!((face.deepMask >> i) & 1u) || IsMouth(i))
 				continue;
@@ -296,6 +296,20 @@ namespace FaceAuthority
 			held.erase(formID);
 	}
 
+	void Clear(std::uint32_t formID, std::uint64_t nowMs)
+	{
+		if (formID == 0) {
+			Clear(0);
+			return;
+		}
+		std::lock_guard<std::mutex> guard(lock);
+		auto it = held.find(formID);
+		if (it == held.end() || it->second.releasing)
+			return;
+		it->second.releasing = true;
+		it->second.releaseStartMs = nowMs;
+	}
+
 	bool SetDeep(std::uint32_t formID, std::uint64_t mask, const float* values)
 	{
 		std::lock_guard<std::mutex> guard(lock);
@@ -316,6 +330,18 @@ namespace FaceAuthority
 	std::vector<std::pair<std::uint32_t, Face>> Snapshot(std::uint64_t nowMs)
 	{
 		std::lock_guard<std::mutex> guard(lock);
+		for (auto it = held.begin(); it != held.end();) {   // a released face fades, then is gone
+			Face& f = it->second;
+			if (f.releasing) {
+				float t = nowMs > f.releaseStartMs ? (float)(nowMs - f.releaseStartMs) / (float)kEaseMs : 0.0f;
+				f.hold = 1.0f - (t > 1.0f ? 1.0f : t);
+				if (f.hold <= 0.0f) {
+					it = held.erase(it);
+					continue;
+				}
+			}
+			++it;
+		}
 		std::vector<std::pair<std::uint32_t, Face>> out(held.begin(), held.end());
 		for (auto& h : out) {
 			float shown[kMorphs];

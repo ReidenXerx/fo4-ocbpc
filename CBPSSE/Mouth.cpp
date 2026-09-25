@@ -1075,7 +1075,7 @@ static void FaceMessage(F4SEMessagingInterface::Message* msg)
 			Note(key, "[face] %s: %08X stops looking\n", who, d.formID);
 	}
 	else if (d.command == FaceAuthority::Command::Clear) {
-		FaceAuthority::Clear(d.formID);
+		FaceAuthority::Clear(d.formID, EyeClockMs());   // one face fades out over 250 ms; 0 (everyone) at once
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "face|clear|%s|%08X", who, d.formID);
 		if (d.formID)
 			Note(key, "[face] %s let go of %08X's face\n", who, d.formID);
