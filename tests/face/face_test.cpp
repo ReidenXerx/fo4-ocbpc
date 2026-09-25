@@ -695,6 +695,18 @@ int main()
 		GlanceMath::Params p;
 		GlanceMath::UV uv;
 		Check("straight ahead: the eyes centred", GlanceMath::Want(0.0f, 0.0f, 1.0f, p, uv) && Near(uv.x, 0.0f) && Near(uv.y, 0.0f));
+		{   // [Eyes] axes: a whole map, for an eye whose texture turns it at a slant
+			GlanceMath::Params m = p;
+			m.a = 0.5f;                             // u = 0.25 (0.5 up + 0.25 side), v = 0.25 (-0.75 up + 1 side)
+			m.b = 0.25f;
+			m.c = -0.75f;
+			m.d = 1.0f;
+			Check("the axes map: u and v each from up AND side", GlanceMath::Want(0.2f, 0.4f, 0.89f, m, uv) &&
+				Near(uv.x, 0.25f * (0.5f * 0.4f + 0.25f * 0.2f)) && Near(uv.y, 0.25f * (-0.75f * 0.4f + 1.0f * 0.2f)));
+			m.a = m.b = m.c = m.d = 0.0f;
+			Check("an unset map (all 0): the signs, as before", GlanceMath::Want(0.2f, 0.4f, 0.89f, m, uv) &&
+				Near(uv.x, -0.1f) && Near(uv.y, -0.05f));
+		}
 		// the engine's own axes (the owner's look and the probe, 2026-09-25): u vertical, v sideways, both negated
 		Check("20 degrees aside: v = -0.25 x sin 20, u untouched",
 			GlanceMath::Want(0.342f, 0.0f, 0.94f, p, uv) && Near(uv.y, -0.0855f < -0.075f ? -0.075f : -0.0855f) && Near(uv.x, 0.0f));

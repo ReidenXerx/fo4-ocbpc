@@ -58,6 +58,10 @@ namespace
 	// to her lips, a shaft crossed them at the animation's slant, cutting an oval wider than her mouth opens,
 	// and her mouth's corner clipped it (the owner's look, 2026-09-25). Along the axis it cuts a circle.
 	float mouthLead = 1.5f;
+	// [Aim] probe=1 (dev): once a second per shaft and mouth in reach, what a new lock would say, and where the
+	// animation's tip is against her mouth (the owner's lying blowjob, 2026-09-26: the shaft through her chin)
+	bool probe = false;
+	std::unordered_map<std::uint64_t, std::pair<ULONGLONG, int>> probed;   // pair -> (last line, lines)
 	std::string anatomyBone = "AnatVulva";        // an actor carries our openings only with our bones
 	const char* kPelvis = "Pelvis_skin";
 	// The shape ([Shape], A-31): every chain's shaft this thin and its head this big, one head size per man
@@ -410,6 +414,7 @@ void LoadAimConfig(INIReader& reader)
 	mouths = reader.GetBoolean("Aim", "mouths", true);
 	mouthDrop = (float)reader.GetReal("Aim", "mouthDrop", mouthDrop);
 	mouthLead = (std::max)(0.0f, (float)reader.GetReal("Aim", "mouthLead", mouthLead));
+	probe = reader.GetBoolean("Aim", "probe", false);
 	anatomyBone = reader.Get("Aim", "anatomyBone", anatomyBone);
 	shaftScale = (float)reader.GetReal("Shape", "shaft", 1.0);
 	headLo = (float)reader.GetReal("Shape", "headMin", 1.0);
@@ -573,6 +578,36 @@ void UpdateAims()
 			if (i > 0) {
 				c.offsets[i] = AimSolve::Scale(ToV3(h.basePos[i - 1]), scale);
 				scale *= h.baseScale[i];
+			}
+		}
+
+		if (probe && aimOn) {
+			std::vector<V3> joints;
+			std::vector<AimSolve::Quat> world;
+			AimSolve::Pose(c, c.locals, 1.0f, joints, world);
+			for (const AimSolve::Target& t : targets) {
+				if (t.kind != AimSolve::kMouth || t.owner == a->formID || joints.empty())
+					continue;
+				V3 tip = joints.back();
+				V3 rel = AimSolve::Sub(tip, t.point);
+				float depth = AimSolve::Dot(rel, t.in) - mouthLead;     // past her lips (+) or short of them
+				float aside = AimSolve::Length(AimSolve::Sub(rel, AimSolve::Scale(t.in, AimSolve::Dot(rel, t.in))));
+				if (AimSolve::Length(rel) > 40.0f)
+					continue;
+				std::uint64_t pairKey = ((std::uint64_t)a->formID << 32) | t.owner;
+				auto& seen = probed[pairKey];
+				if (seen.second >= 120 || (seen.first && ms - seen.first < 1000))
+					continue;
+				seen.first = ms;
+				int line = seen.second++;
+				AimSolve::Fit f = AimSolve::Judge(c, joints, t, params, h.state.locked && h.state.lockedOwner == t.owner &&
+					h.state.lockedKind == AimSolve::kMouth);
+				char key[64];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|probe|%08X|%08X|%d", a->formID, t.owner, line);
+				Note(key, "[aim] probe %08X -> %08X's mouth: %s (miss %.1f, turn %.0f deg); the tip %.1f %s her lips, %.1f off "
+					"her mouth's axis; locked %d\n", a->formID, t.owner, f.ok ? "would lock" : f.why, f.miss,
+					f.angle * 57.29578f, std::fabs(depth), depth >= 0.0f ? "past" : "short of", aside,
+					(int)(h.state.locked && h.state.lockedOwner == t.owner));
 			}
 		}
 

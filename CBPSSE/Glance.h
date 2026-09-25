@@ -24,6 +24,9 @@ namespace GlanceMath
 		float xMax = 0.15f;          // u (vertical): inside the engine's own give-up edges (|u| 0.16,
 		float yMin = -0.075f, yMax = 0.065f;   // v (sideways): -0.08 .. 0.07)
 		float signUp = -1.0f, signSide = -1.0f;   // the engine's: u = -0.25 up, v = -0.25 side
+		// ...or a whole map, when the eye's texture turns the eye at a slant ([Eyes] axes=a,b,c,d):
+		// u = gain (a up + b side), v = gain (c up + d side). Unset (all 0): the signs above.
+		float a = 0.0f, b = 0.0f, c = 0.0f, d = 0.0f;
 		float minAhead = 0.3f;       // the target this far in front at least (a unit direction's forward
 		                             // part): behind her, no eye can reach it and the glance does nothing
 		float speed = 2.0f;          // UV a second (the engine's)
@@ -39,7 +42,9 @@ namespace GlanceMath
 	{
 		if (!(ahead >= p.minAhead))
 			return false;
-		float x = p.signUp * p.gain * up, y = p.signSide * p.gain * side;
+		const bool map = p.a != 0.0f || p.b != 0.0f || p.c != 0.0f || p.d != 0.0f;
+		float x = map ? p.gain * (p.a * up + p.b * side) : p.signUp * p.gain * up;
+		float y = map ? p.gain * (p.c * up + p.d * side) : p.signSide * p.gain * side;
 		out.x = x < -p.xMax ? -p.xMax : (x > p.xMax ? p.xMax : x);
 		out.y = y < p.yMin ? p.yMin : (y > p.yMax ? p.yMax : y);
 		return true;

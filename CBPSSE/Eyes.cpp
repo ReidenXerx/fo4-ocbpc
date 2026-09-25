@@ -39,7 +39,13 @@ namespace
 	bool enabled = true;
 	bool glancesOn = false;
 	bool probe = false;
-	bool test = false;
+	int test = 0;                               // 1: glance at the nearest actor; 2: the sweep
+	// the sweep (test=2): every actor in reach, eyes to four fixed offsets in turn, 3 s each and 1 s centred
+	// between, lids open, so the owner can name where each one points (the eyes' own axes, measured by eye)
+	const float kSweep[4][2] = { { -0.12f, 0.0f }, { 0.0f, -0.06f }, { 0.12f, 0.0f }, { 0.0f, 0.06f } };
+	std::mutex sweepLock;
+	std::vector<UInt32> sweepers;               // the scan's, read by the eye update
+	int sweepPose = -1;                          // -1: centred
 	float eyeRise = 4.8f, eyeBack = 0.8f;
 	GlanceMath::Params params;
 	const float kLidRate = 10.0f;               // 1/s: the lids open for a glance and give the face back
@@ -227,10 +233,42 @@ namespace
 		}
 	}
 
+	void ApplySweep(float dt)
+	{
+		std::vector<UInt32> who;
+		int pose;
+		{
+			std::lock_guard<std::mutex> guard(sweepLock);
+			who = sweepers;
+			pose = sweepPose;
+		}
+		for (UInt32 id : who) {
+			BSShaderProperty* property = EyeProperty(ActorOf(id));
+			if (!property || !property->shaderMaterial)
+				continue;
+			GlanceMath::UV cur, want;
+			if (pose >= 0) {
+				want.x = kSweep[pose][0];
+				want.y = kSweep[pose][1];
+			}
+			property->shaderMaterial->GetOffsetUV(&cur.x, &cur.y);
+			GlanceMath::UV next = GlanceMath::Step(cur, want, params, dt);
+			property->iLastRenderPassState = 0x7FFFFFFF;
+			property->shaderMaterial->SetOffsetUV(next.x, next.y);
+			std::lock_guard<std::mutex> guard(lookLock);
+			Look& l = looks[id];
+			l.active = true;
+			l.lidsOpen = 1.0f;
+		}
+	}
+
 	void HookEyes(float dt)
 	{
 		origEyes(dt);                              // the engine's own eyes first, every actor's
-		ApplyGlances(dt < 0.0f ? 0.0f : (dt > 0.1f ? 0.1f : dt));
+		dt = dt < 0.0f ? 0.0f : (dt > 0.1f ? 0.1f : dt);
+		if (test == 2 && enabled && hooked)
+			ApplySweep(dt);
+		ApplyGlances(dt);
 	}
 }
 
@@ -251,13 +289,29 @@ void LoadEyeConfig(INIReader& reader)
 	eyeRise = (float)reader.GetReal("Eyes", "eyeRise", eyeRise);
 	eyeBack = (float)reader.GetReal("Eyes", "eyeBack", eyeBack);
 	probe = reader.GetBoolean("Eyes", "probe", false);
-	test = reader.GetBoolean("Eyes", "test", false);
+	test = (int)reader.GetInteger("Eyes", "test", 0);
+	{
+		auto axes = reader.Get("Eyes", "axes", "");
+		float v[4] = {};
+		if (!axes.empty() && sscanf_s(axes.c_str(), "%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3]) == 4) {
+			params.a = v[0];
+			params.b = v[1];
+			params.c = v[2];
+			params.d = v[3];
+		}
+	}
 	char key[96];
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "eyes|config|%d|%d|%d|%d|%d|%d", (int)enabled, (int)glancesOn,
 		(int)params.signUp, (int)params.signSide, (int)probe, (int)test);
 	Note(key, "[eyes] [Eyes] enabled %d, glances told to Rapport %d, u = %+d x 0.25 up, v = %+d x 0.25 side, eyes %.1f up / "
 		"%.1f back from the mouth, probe %d, test %d\n", (int)enabled, (int)glancesOn, (int)params.signUp, (int)params.signSide,
-		eyeRise, eyeBack, (int)probe, (int)test);
+		eyeRise, eyeBack, (int)probe, test);
+	if (params.a != 0.0f || params.b != 0.0f || params.c != 0.0f || params.d != 0.0f)
+		Note("eyes|axes", "[eyes] axes: u = 0.25 (%+.2f up %+.2f side), v = 0.25 (%+.2f up %+.2f side)\n", params.a, params.b,
+			params.c, params.d);
+	if (test == 2)
+		Note("eyes|sweep", "[eyes] the sweep: every actor near the player turns its eyes to 1: u -0.12, 2: v -0.06, 3: u +0.12, "
+			"4: v +0.06 - in that order, 3 s each, centred 1 s between, lids open, over and over\n");
 }
 
 static void InstallEyeHookUnguarded()
@@ -359,9 +413,20 @@ void UpdateEyeProbe(const std::vector<ActorEntry>& actors, float dt)
 		return;
 	Actor* player = *g_player;
 	testClock += dt;
-	bool fire = test && testClock >= 4.0f;
+	bool fire = test == 1 && testClock >= 4.0f;
 	if (fire)
 		testClock = 0.0f;
+	if (test == 2) {
+		float t = std::fmod(testClock, 16.0f);
+		int pose = (int)(t / 4.0f);
+		std::vector<UInt32> who;
+		for (auto& e : actors)
+			if (e.actor && e.actor != player)
+				who.push_back(e.actor->formID);
+		std::lock_guard<std::mutex> guard(sweepLock);
+		sweepers = who;
+		sweepPose = std::fmod(t, 4.0f) < 3.0f ? pose : -1;
+	}
 	for (auto& e : actors) {
 		Actor* a = e.actor;
 		if (!a || a == player)
