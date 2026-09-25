@@ -1,10 +1,12 @@
 // fo4-ocbpc: the lips around what is in her mouth (A-32), tested outside the game. Build and run: tests/lips/run.bat.
 // The table is the female head's, as fo4-anatomy tools/lips.py measured it on the game's heads (2026-09-25).
 #include "LipFit.h"
+#include "Glans.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 using namespace LipFit;
 
@@ -268,6 +270,49 @@ int main()
 		for (int m = 0; m < t.count; m++)
 			worst = (std::max)(worst, std::fabs(a[m] - b[m]));
 		Expect(worst < 1e-4f, "14: inside the rim, the fit is the same with or without the corners");
+	}
+	{   // 15. the glans (Glans.h): the crown is where the mesh has it, behind the tip bone, at its full width
+		struct V {
+			float x, y, z;
+			V operator+(const V& o) const { return { x + o.x, y + o.y, z + o.z }; }
+			V operator-(const V& o) const { return { x - o.x, y - o.y, z - o.z }; }
+			V operator*(float s) const { return { x * s, y * s, z * s }; }
+		};
+		struct P { V pos; float r; };
+		// fo4-anatomy's profile; Penis_04 2.67 behind Penis_05 (the mesh), the head at x1.4: R = 1.8 x 1.4
+		const std::vector<Glans::Step> prof = { { -0.85f, 0.90f }, { -0.60f, 1.00f }, { -0.35f, 0.93f },
+			{ -0.12f, 0.81f }, { 0.0f, 0.73f } };
+		const float skin = 0.2f, R = 2.52f;
+		std::vector<P> chain = { { { -3.0f, 0, 0 }, 1.7f }, { { 0, 0, 0 }, 1.7f }, { { 2.67f, 0, 0 }, R } };
+		Glans::Shape(chain, prof, skin);
+		auto radiusAt = [&](float x) {             // as Mouth.cpp reads a chain: straight between points
+			for (size_t k = 0; k + 1 < chain.size(); k++)
+				if (chain[k].pos.x <= x && x <= chain[k + 1].pos.x) {
+					float s = (x - chain[k].pos.x) / (chain[k + 1].pos.x - chain[k].pos.x);
+					return chain[k].r + (chain[k + 1].r - chain[k].r) * s - skin;
+				}
+			return -1.0f;
+		};
+		float crown = 2.67f - 0.60f * R;
+		std::printf("15: %d points; the flesh at the crown (%.2f) %.2f, the mesh's 2.52; the tip bone keeps %.2f\n",
+			(int)chain.size(), crown, radiusAt(crown), chain.back().r - skin);
+		Expect(chain.size() == 7, "15: the tip sphere becomes the profile's five points");
+		Expect(std::fabs(radiusAt(crown) - R) < 0.01f, "15: at the crown the mouth sees the head's full width");
+		Expect(std::fabs(chain.back().pos.x - 2.67f) < 1e-4f && std::fabs(chain.back().r - (0.73f * R + skin)) < 1e-4f,
+			"15: the last point is still the tip bone (depth and the tip's cap unchanged), at the tip's own radius");
+		std::vector<P> short1 = { { { 0, 0, 0 }, 1.7f }, { { 1.0f, 0, 0 }, R } };
+		Glans::Shape(short1, prof, skin);
+		bool ahead = true;                           // a segment 1.0 long: -0.85R and -0.60R lie behind its joint
+		for (size_t k = 1; k < short1.size(); k++)
+			ahead = ahead && short1[k].pos.x > 0.0f;
+		Expect(short1.size() == 4 && ahead && short1.back().pos.x == 1.0f,
+			"15: a step behind the joint before it is skipped (only the bone's own flesh)");
+		std::vector<P> kept = { { { 0, 0, 0 }, 1.7f }, { { 2.67f, 0, 0 }, R } };
+		Glans::Shape(kept, { { -0.6f, 1.0f } }, skin);   // does not end on the bone
+		Expect(kept.size() == 2 && kept.back().r == R, "15: a profile that does not end on the bone changes nothing");
+		std::vector<P> big = { { { 0, 0, 0 }, 1.7f }, { { 2.67f, 0, 0 }, 1.8f * 1.2f } };
+		Glans::Shape(big, prof, skin);
+		Expect(std::fabs(big[2].pos.x - (2.67f - 0.60f * 2.16f)) < 1e-4f, "15: a smaller head's crown sits closer to its bone");
 	}
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);

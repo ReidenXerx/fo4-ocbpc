@@ -19,6 +19,7 @@
 #include "FaceAuthority.h"
 #include "FaceCompose.h"
 #include "LipFit.h"
+#include "Glans.h"
 #include "Aim.h"
 
 #include <windows.h>
@@ -78,6 +79,10 @@ namespace
 	// closeRate (6) they opened for the head and had not closed back onto the shaft before the next stroke:
 	// "like the same big width as head" (the owner's look, 2026-09-25).
 	float lipOpenRate = 30.0f, lipCloseRate = 25.0f;
+	// The glans (Glans.h): [Mouth] glans=<the tip bone that carries it>, glansProfile=along:radius,... in the
+	// tip sphere's radius. Empty: the spheres as they are.
+	std::string glansNode;
+	std::vector<Glans::Step> glansProfile;
 
 	// The rest of the face while the mouth is busy (the owner, 2026-09-24: "expressions on the face
 	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
@@ -510,6 +515,23 @@ void LoadMouthConfig(INIReader& reader)
 			: "[mouth] no lip table ([Mouth] lip*): the jaw opens by femaleGap/maleGap as before (%d/%d)\n",
 			lipTable[0].count, lipTable[1].count);
 	}
+	// the glans: all of the profile or none of it
+	glansNode = reader.Get("Mouth", "glans", "");
+	glansProfile.clear();
+	for (auto& step : Split(reader.Get("Mouth", "glansProfile", ""), ',')) {
+		auto parts = Split(step, ':');
+		if (parts.size() != 2) {
+			glansProfile.clear();
+			break;
+		}
+		glansProfile.push_back(Glans::Step{ (float)std::atof(parts[0].c_str()), (float)std::atof(parts[1].c_str()) });
+	}
+	if (!Glans::Valid(glansProfile) || glansNode.empty())
+		glansProfile.clear();
+	Note("mouth|glans|" + glansNode + "|" + std::to_string(glansProfile.size()), glansProfile.empty()
+		? "[mouth] no glans profile ([Mouth] glans/glansProfile): the tip is its collider sphere\n"
+		: "[mouth] the glans on %s: %d step(s), the crown where the mesh has it\n", glansNode.c_str(),
+		(int)glansProfile.size());
 	// face=id:contact:depth:stroke,... ids 0-49 of the expression table; never a mouth id (Rapport's
 	// MOUTH set: the contact mouth's and a line's lip sync) nor the blink
 	faceTerms.clear();
@@ -712,12 +734,16 @@ void UpdateMouths()
 	for (auto& actorNodes : byActor) {
 		for (auto& names : chainNames) {
 			Chain ch{ actorNodes.first, false, names.front(), {} };
+			bool tipFound = false;
 			for (auto& n : names) {
 				auto it = actorNodes.second.find(n);
+				tipFound = it != actorNodes.second.end() && !it->second->collisionSpheres.empty();
 				if (it != actorNodes.second.end())
 					for (auto& s : it->second->collisionSpheres)
 						ch.pts.push_back(Point{ s.worldPos, (float)s.radius });
 			}
+			if (tipFound && !glansProfile.empty() && names.back() == glansNode)
+				Glans::Shape(ch.pts, glansProfile, skin);   // the crown behind the tip bone, at its width
 			if (!ch.pts.empty())
 				chains.push_back(ch);
 		}
