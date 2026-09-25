@@ -70,6 +70,10 @@ namespace
 	float lipXs[LipFit::kSamples] = { -1.2f, -0.8f, -0.4f, 0.0f, 0.4f, 0.8f, 1.2f };
 	LipFit::Table lipTable[2];       // 0 female, 1 male; count 0 = none (the old jaw/funnel/lift)
 	LipFit::Params lipParams;
+	// and the corners (LipFit::Corners): the inner rim's ends and how far Lip Corner Out (8 left, 31 right)
+	// moves each, per sex ([Mouth] lipCorner<F|M>=rimL,rimR,moveL,moveR); moves 0 = no corners
+	const int kLeftLipCornerOut = 8, kRightLipCornerOut = 31;
+	float lipRim[2][2] = {}, lipCornerMove[2][2] = {};
 
 	// The rest of the face while the mouth is busy (the owner, 2026-09-24: "expressions on the face
 	// instead of stony, cheeks, brows, nose"). Each term raises one morph toward
@@ -143,6 +147,7 @@ namespace
 		float depth = 0.0f, lastDepth = -1.0f, stroke = 0.0f;
 		float face[kMaxFace] = {};
 		float lip[LipFit::kMaxMorphs] = {};     // A-32: the fitted lips as they show (eased toward the fit)
+		float corner[2] = {};                   // and Lip Corner Out, left and right
 	};
 	std::unordered_map<UInt32, State> states;
 	unsigned frameCount = 0;
@@ -485,6 +490,12 @@ void LoadMouthConfig(INIReader& reader)
 				}
 			}
 			lipTable[s] = ok ? t : LipFit::Table{};
+			auto c = Split(reader.Get("Mouth", std::string("lipCorner") + sexes[s], ""), ',');
+			bool cornerOk = ok && c.size() == 4;
+			for (int k = 0; k < 2; k++) {
+				lipRim[s][k] = cornerOk ? (float)std::atof(c[k].c_str()) : 0.0f;
+				lipCornerMove[s][k] = cornerOk ? (float)std::atof(c[2 + k].c_str()) : 0.0f;
+			}
 		}
 		lipParams.clearance = (float)reader.GetReal("Mouth", "lipClearance", lipParams.clearance);
 		Note("mouth|lips|" + std::to_string(lipTable[0].count) + "|" + std::to_string(lipTable[1].count),
@@ -808,6 +819,18 @@ void UpdateMouths()
 				LipFit::Fit(lt, want, lipParams, st.lip, fit);
 				for (int m = 0; m < lt.count; m++)
 					st.lip[m] = Toward(st.lip[m], fit[m], fit[m] > st.lip[m] ? openRate : closeRate, dt);
+				int sx = male ? 1 : 0;
+				if (lipCornerMove[sx][0] > 0.0f || lipCornerMove[sx][1] > 0.0f) {
+					float lo = 1e9f, hi = -1e9f;               // what is inside, across the mouth (head units)
+					for (const Section& sec : sections) {
+						lo = (std::min)(lo, (sec.qs - sec.hs) / sc);
+						hi = (std::max)(hi, (sec.qs + sec.hs) / sc);
+					}
+					float want2[2] = {};
+					LipFit::Corners(lo, hi, lipRim[sx], lipCornerMove[sx], lipParams.clearance, want2[0], want2[1]);
+					for (int k = 0; k < 2; k++)
+						st.corner[k] = Toward(st.corner[k], want2[k], want2[k] > st.corner[k] ? openRate : closeRate, dt);
+				}
 				char lk[96];
 				_snprintf_s(lk, sizeof(lk), _TRUNCATE, "mouth|lips|%08X", a->formID);
 				Note(lk, "[mouth] %08X: lips round it: jaw %.2f, funnels %.2f/%.2f, upper lip up %.2f/%.2f down %.2f/%.2f, "
@@ -854,6 +877,14 @@ void UpdateMouths()
 			for (int k = 0; k < o.mouth.lipCount; k++) {
 				o.mouth.lipId[k] = lt.id[k];
 				o.mouth.lipValue[k] = st.lip[k];
+			}
+			int sx = actorUtils::IsActorMale(a) ? 1 : 0;
+			if (lt.count > 0 && (lipCornerMove[sx][0] > 0.0f || lipCornerMove[sx][1] > 0.0f) &&
+				o.mouth.lipCount + 2 <= FaceCompose::kMaxTerms) {
+				o.mouth.lipId[o.mouth.lipCount] = kLeftLipCornerOut;
+				o.mouth.lipValue[o.mouth.lipCount++] = st.corner[0];
+				o.mouth.lipId[o.mouth.lipCount] = kRightLipCornerOut;
+				o.mouth.lipValue[o.mouth.lipCount++] = st.corner[1];
 			}
 			o.mouth.termCount = terms;
 			for (int k = 0; k < terms; k++) {

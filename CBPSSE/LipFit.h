@@ -49,4 +49,12 @@ namespace LipFit
 
 	// The edges these weights give, at each sample (for tests and the log).
 	void Edges(const Table& t, const float* w, float* upper, float* lower);
+
+	// The mouth's corners (the owner's look, 2026-09-25: the corner still clipped a shaft that fills her
+	// mouth). Lip Corner Out moves a corner OUT (the inner rim's end, -x left, +x right) and barely moves
+	// the lips' heights, so it is not in the fit: when what is inside reaches past a corner (lo / hi, the
+	// section's extent across the mouth, plus clearance), that corner goes out by just the missing
+	// distance over its morph's move (rim: the resting ends, move: how far each morph takes its end at
+	// 1.0), in [0, 1].
+	void Corners(float lo, float hi, const float rim[2], const float move[2], float clearance, float& left, float& right);
 }

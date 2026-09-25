@@ -189,6 +189,19 @@ int main()
 		Fit(t, Round(0.0f, -1.0f, 1.3f, 1.3f), still, start, w);
 		Expect(w[0] == 0.3f && w[1] == 1.0f && w[2] == 0.0f, "9: the start is used, clamped");
 	}
+	{   // 10. the corners: the female head's rim (-1.60 .. 1.59) and Corner Out's moves (0.40 left, 0.34 right)
+		const float rim[2] = { -1.60f, 1.59f }, move[2] = { 0.40f, 0.34f };
+		float l, r;
+		Corners(-1.2f, 1.2f, rim, move, 0.05f, l, r);
+		Expect(l == 0.0f && r == 0.0f, "10: a shaft inside the corners leaves them be");
+		Corners(-1.75f, 1.64f, rim, move, 0.05f, l, r);
+		Expect(std::fabs(l - 0.5f) < 1e-4f && std::fabs(r - 0.2941f) < 1e-3f,
+			"10: past a corner, it goes out by the missing distance over its move (left 0.20/0.40, right 0.10/0.34)");
+		Corners(-3.0f, 3.0f, rim, move, 0.05f, l, r);
+		Expect(l == 1.0f && r == 1.0f, "10: far too wide: both corners out as far as they go, not past");
+		Corners(-1.3f, 1.7f, rim, move, 0.05f, l, r);
+		Expect(l == 0.0f && r > 0.4f, "10: off to the right: only the right corner goes out");
+	}
 
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);

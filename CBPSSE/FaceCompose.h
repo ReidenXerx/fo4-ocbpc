@@ -47,6 +47,8 @@ namespace FaceCompose
 	constexpr int kLowerLipFunnel = 22;
 	constexpr int kRightUpperLipUp = 44;
 	constexpr int kUpperLipFunnel = 46;
+	constexpr int kLeftLipCornerOut = 8;           // not MOUTH ids (Rapport's smiles use them): the lip path may
+	constexpr int kRightLipCornerOut = 31;         // write them, by inside, so only while something is inside
 	constexpr int kLeftBlink = 18;
 	constexpr int kRightBlink = 41;
 

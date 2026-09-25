@@ -27,7 +27,10 @@ namespace FaceCompose
 		if (m.lipCount > 0) {                       // A-32: the fitted lips, each by inside
 			for (int k = 0; k < m.lipCount && k < kMaxTerms; k++) {
 				int id = m.lipId[k];
-				if (id >= 0 && id < kMorphs && FaceAuthority::IsMouth(id))
+				if (id == kLeftLipCornerOut || id == kRightLipCornerOut)
+					w[id] = (std::max)(w[id], m.lipValue[k] * m.inside);   // a corner only ever goes OUT: a
+					                                    // smile Rapport holds stays, the contact adds room to it
+				else if (id >= 0 && id < kMorphs && FaceAuthority::IsMouth(id))
 					w[id] += (m.lipValue[k] - w[id]) * m.inside;
 			}
 			w[kJawOpen] = (std::max)(w[kJawOpen], m.floor);

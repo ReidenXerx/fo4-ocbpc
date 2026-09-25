@@ -575,6 +575,17 @@ int main()
 		m.lipValue[0] = 0.2f;
 		FaceCompose::AfterMerge(v, keep, nullptr, false, m, true);
 		Check("a tip on its way still opens the jaw to its floor over the fit", Near(v[2], 0.6f));
+		float c[kMorphs] = {};
+		c[8] = 0.3f;                                // a smile's corner (Rapport's, or the animation's)
+		c[31] = 0.3f;
+		FaceCompose::Mouth k;
+		k.inside = 1.0f;
+		k.lipCount = 2;
+		k.lipId[0] = 8;  k.lipValue[0] = 0.8f;      // the left corner must go out for the shaft
+		k.lipId[1] = 31; k.lipValue[1] = 0.0f;      // the right needs nothing
+		FaceCompose::AfterMerge(c, keep, nullptr, false, k, true);
+		Check("a corner goes out as far as the shaft needs (8: 0.3 -> 0.8)", Near(c[8], 0.8f));
+		Check("and a corner that needs nothing keeps the smile it had (31 stays 0.3)", Near(c[31], 0.3f));
 	}
 
 	printf("store\n");

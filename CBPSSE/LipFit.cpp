@@ -21,6 +21,14 @@ namespace LipFit
 		}
 	}
 
+	void Corners(float lo, float hi, const float rim[2], const float move[2], float clearance, float& left, float& right)
+	{
+		float needL = rim[0] - (lo - clearance);          // how far past the left end (-x) it reaches
+		float needR = (hi + clearance) - rim[1];
+		left = move[0] > 0.0f ? (std::max)(0.0f, (std::min)(1.0f, needL / move[0])) : 0.0f;
+		right = move[1] > 0.0f ? (std::max)(0.0f, (std::min)(1.0f, needR / move[1])) : 0.0f;
+	}
+
 	// Cyclic coordinate descent on a piecewise quadratic, each weight in turn to its best in [0, 1] with
 	// the others held: per sample, the upper edge toward top + clearance and the lower toward bottom -
 	// clearance (an edge on the wrong side costs `inside` times a gap), or both toward closed. Eleven
