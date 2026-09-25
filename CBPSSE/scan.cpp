@@ -36,6 +36,7 @@
 #include "Bones.h"
 #include "Mouth.h"
 #include "Aim.h"
+#include "TubeCollide.h"
 #include "Utility.hpp"
 #include "f4se/GameRTTI.h"
 #include "f4se/GameForms.h"
@@ -249,6 +250,8 @@ void UpdateActors() {
         UpdateColliderPositions(otherColliders);
 
         UpdateMouths();   // fo4-anatomy: every mouth against every penis chain, after the colliders moved
+
+        BuildTubes();     // fo4-anatomy: the penis chains as tubes for this frame's collisions ([Tube])
 
         //LoadLastColliderPositions();
 

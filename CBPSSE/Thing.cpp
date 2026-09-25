@@ -8,6 +8,9 @@
 #include "ActorUtils.h"
 #include "log.h"
 #include "Thing.h"
+#include "TubeCollide.h"
+
+#include <algorithm>
 #include "Utility.hpp"
 
 constexpr auto DEG_TO_RAD = 3.14159265 / 180;
@@ -359,6 +362,7 @@ void Thing::Update(Actor *actor) {
 		}
 
 		NiPoint3 lastcollisionVector = zeroVector;
+		std::vector<NiAVObject*> seenColliders;         // fo4-anatomy: each collider once per pass
 
 		for (int j = 0; j < thingIdList.size(); j++)
 		{
@@ -372,6 +376,13 @@ void Thing::Update(Actor *actor) {
                         continue;
                     // fo4-anatomy: a hand prop pushes only the [Props] targets (not her breasts)
                     if (partitions[id].partitionCollisions[i].isProp && !PropReaches(boneName.c_str()))
+                        continue;
+                    // fo4-anatomy: a collider in two of this bone's grid cells pushed it twice; once per pass
+                    if (std::find(seenColliders.begin(), seenColliders.end(), partitions[id].partitionCollisions[i].CollisionObject) != seenColliders.end())
+                        continue;
+                    seenColliders.push_back(partitions[id].partitionCollisions[i].CollisionObject);
+                    // fo4-anatomy: a penis chain's balls collide as its tube ([Tube], TubeCollide.h), after this loop
+                    if (IsTubeMember(partitions[id].partitionCollisions[i].colliderActor, partitions[id].partitionCollisions[i].colliderNodeName))
                         continue;
 
                     callCount++;
@@ -397,6 +408,14 @@ void Thing::Update(Actor *actor) {
                     //velocity = velocity + collisionDiff;
 					collisionVector = collisionVector + collisionDiff;
 				}
+			}
+		}
+		{
+			// fo4-anatomy: every partner's penis as one tube: one push each, its deepest ([Tube])
+			NiPoint3 tubePush = zeroVector;
+			if (TubePush(actor, thingCollisionSpheres, tubePush)) {
+				IsThereCollision = true;
+				collisionVector = collisionVector + tubePush;
 			}
 		}
 		if (IsThereCollision)
@@ -522,6 +541,7 @@ void Thing::Update(Actor *actor) {
             //Prevent normal movement to cause collision (This prevents shakes)			
             collisionVector = zeroVector;
             NiPoint3 lastcollisionVector = zeroVector;
+            std::vector<NiAVObject*> seenColliders;     // fo4-anatomy: each collider once per pass
             for (int j = 0; j < thingIdList.size(); j++)
             {
                 long id = thingIdList[j];
@@ -534,6 +554,12 @@ void Thing::Update(Actor *actor) {
                             continue;
                         // fo4-anatomy: a hand prop pushes only the [Props] targets (not her breasts)
                         if (partitions[id].partitionCollisions[i].isProp && !PropReaches(boneName.c_str()))
+                            continue;
+                        // fo4-anatomy: once per pass, and a tube's balls not one by one (as in the first pass)
+                        if (std::find(seenColliders.begin(), seenColliders.end(), partitions[id].partitionCollisions[i].CollisionObject) != seenColliders.end())
+                            continue;
+                        seenColliders.push_back(partitions[id].partitionCollisions[i].CollisionObject);
+                        if (IsTubeMember(partitions[id].partitionCollisions[i].colliderActor, partitions[id].partitionCollisions[i].colliderNodeName))
                             continue;
 
                         callCount++;
@@ -562,6 +588,15 @@ void Thing::Update(Actor *actor) {
                 }
             }
 
+            {
+                // fo4-anatomy: the tubes, as in the first pass, at the moved position
+                NiPoint3 tubePush = zeroVector;
+                if (TubePush(actor, thingCollisionSpheres, tubePush)) {
+                    IsThereCollision = true;
+                    maybeNot = true;
+                    collisionVector = collisionVector + tubePush;
+                }
+            }
             if (!maybeNot) {
                 logger.Info("Collision 2 didnt happen!\n");
                 newPos = maybePos;

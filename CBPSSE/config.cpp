@@ -9,6 +9,7 @@
 #include "Mouth.h"
 #include "Aim.h"
 #include "Eyes.h"
+#include "TubeCollide.h"
 #include "SimObj.h"
 #include "Thing.h"
 #include "Utility.hpp"
@@ -323,6 +324,7 @@ bool LoadConfig() {
     LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
     LoadAimConfig(extrasSections.count("Aim") ? anatomyExtras : configReader);
     LoadEyeConfig(extrasSections.count("Eyes") ? anatomyExtras : configReader);
+    LoadTubeConfig(extrasSections.count("Tube") ? anatomyExtras : configReader);
 
     return reloadActors;
 }
