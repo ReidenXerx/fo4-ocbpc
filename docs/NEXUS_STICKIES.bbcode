@@ -1,0 +1,62 @@
+=== STICKY: Every feature in fo4-ocbpc 1.0.0 ===
+[b]Every feature in fo4-ocbpc 1.0.0[/b]
+[i]alone[/i] = works with just this DLL; [i]Anatomy[/i] = switched on by Anatomy's config; [i]Rapport[/i] = needs Rapport.
+
+[b]Collision[/b]
+[list]
+[*]Each collider pushes once per frame, for every OCBPC config ([i]alone[/i]).
+[*]A penis collides as one continuous tube with a measured head profile ([i]Anatomy[/i]). Thrust wobble on the real mesh: anus 0.69 → 0.21, vagina 0.26 → 0.13.
+[*]Held props are colliders ([i]Anatomy[/i]): what an animation hangs on a hand becomes collision along its length, limited to the bones you name. A mug at the chest pushes nothing; weapons are excluded.
+[*]A penis never pushes its own owner.
+[/list]
+[b]Bones and config[/b]
+[list]
+[*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped; one that already has them is left alone. Cost: one comparison per skin.
+[*]Layered config: your ocbp.ini is read first, then Anatomy's; collision files are appended the same way. Installing Anatomy never overwrites your physics config.
+[/list]
+[b]Aim and shape[/b] ([i]Anatomy[/i], AAF scenes only)
+[list]
+[*]Turns toward the opening the animation meant: a new lock turns at most 35°, is kept up to 45°, and an entry is allowed up to 75° off the way in. A short shaft stretches at most 10%.
+[*]Bends along a measured canal path; the throat path follows head and neck; a curled hand is a target of its own.
+[*]Exact per-frame bend, no lag on a fast pull-out; switching openings crossfades.
+[*]A thinner shaft (×0.85) and a bigger head (×1.2 to 1.25, fixed per man), scaled on his bones.
+[/list]
+[b]The mouth[/b] ([i]Anatomy[/i])
+[list]
+[*]Opens to what is at the lips, over the animation's own face, and hands back when nothing is there.
+[*]Lips fit the cross-section inside: 15 measured morphs solved every frame at 7 points. Corners open around a wide shaft and hug a narrow one. Lips follow at 60/50 per second.
+[*]Reads the real width, head included. Brows, cheeks and nose react to contact, depth and speed.
+[/list]
+[b]Faces[/b] ([i]Rapport[/i])
+[list]
+[*]Rapport's face is written after the engine's merge, so it can close eyes and a jaw the animation opened ([i]alone[/i] on the engine side). Blinks still work.
+[*]Lip sync is kept for exactly the line being spoken; faces ease in and out over 250 ms.
+[*]Glances into the partner's eyes for 4-7 s, a face for the glance, and eye rolls (needs Anatomy's [i]glances=1[/i]).
+[*]Brows draw in as oral depth grows.
+[/list]
+[b]Stability[/b]
+[list]
+[*]Every hook checks the game's code first and stays off, logged, on any other build; the engine's code is never modified.
+[*]A fault while installing the eye or mouth hook turns only that feature off.
+[*]The DetourXS x64 decode fix; a log a relaunched game cannot wipe; the discovery log for modders is off by default.
+[*]Offline test suites, each proven by planted faults: aim (22 cases), face (51 checks), lips (17), tube (8).
+[/list]
+[b]Not yet confirmed in game:[/b] toys as one tube, big-toy and fist stretch, Rapport's MCM knobs for the engine, and brows following vaginal and anal depth. Tell us what you see.
+
+=== STICKY: fo4-ocbpc settings, for modders ===
+[b]fo4-ocbpc settings, for modders[/b]
+Two ini files are read, yours first: [i]Data\F4SE\Plugins\ocbp.ini[/i], then [i]Data\F4SE\Plugins\Anatomy\ocbp.ini[/i]. OCBPCollisionConfig.txt is read the same way and appended.
+
+[list]
+[*][b][Attach], bone sections, [Override:*], [Whitelist][/b]: OCBPC's physics, as always.
+[*][b][Props][/b]: held props as colliders (nodes, radius, spacing, maxLength, minBound, targets). Off unless [i]nodes[/i] is set.
+[*][b][Bones][/b]: run-time bones, [i]name=parent,x,y,z[/i] under Pelvis_skin. Only what is listed.
+[*][b][Tube][/b]: penis chains, and props with [i]props=1[/i], as one tube; skin, glans, glansProfile. Off unless [i]enabled=1[/i].
+[*][b][Aim][/b]: the chain, the openings and their paths, the throat, angles and reach. Off unless [i]enabled=1[/i].
+[*][b][Shape][/b]: shaft, headMin, headMax. Off unless [i]enabled=1[/i].
+[*][b][Mouth][/b]: the contact mouth, the lip table, corners, glans, face reaction terms. Off unless [i]enabled=1[/i].
+[*][b][Face][/b]: authority (Rapport's faces) and react. On by default.
+[*][b][Eyes][/b]: the eye hook, on by default; [i]glances=1[/i] tells Rapport glances work (off unless set); uMax, vMin, vMax, rollMax, axes.
+[*][b][Log][/b]: [i]discover=1[/i] lists genital- or toy-looking nodes on nearby actors. It walks their scene graphs every 2 s, so it is off unless you set it.
+[/list]
+Every key's default, clamp and meaning is in the header comment of its source file (Mouth.h, Aim.h, Eyes.h, Bones.h, TubeCollide.h, FaceAuthority.h) and config.cpp, in [url=https://github.com/ReidenXerx/fo4-ocbpc]the repository[/url]. [i]probe=[/i] and [i]test=[/i] keys are for development and log heavily.

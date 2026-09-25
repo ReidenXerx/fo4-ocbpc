@@ -1,0 +1,88 @@
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/tube.jpg[/img][/center]
+
+[center][size=4][b]A drop-in replacement for OCBPC's cbp.dll. Every OCBPC config collides better with it, and with Anatomy it adds a penis that collides as one smooth tube and finds its opening, a mouth that fits what is in it, and eyes that meet.[/b][/size][/center]
+
+[center]
+[url=https://github.com/ReidenXerx/fo4-ocbpc#licence][img]https://img.shields.io/badge/license-GPL--3.0%20%28MIT%20base%29-blue?style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/fo4-ocbpc][img]https://img.shields.io/badge/source-GitHub-181717?style=for-the-badge&labelColor=2b2b2b&logo=github&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/fo4-ocbpc/commits][img]https://img.shields.io/github/last-commit/ReidenXerx/fo4-ocbpc?label=last%20commit&style=for-the-badge&labelColor=2b2b2b[/img][/url]
+[img]https://img.shields.io/badge/Fallout%204-1.10.163%20%28old--gen%29-4a4a4a?style=for-the-badge&labelColor=2b2b2b[/img] [url=https://f4se.silverlock.org/][img]https://img.shields.io/badge/requires-F4SE-8a5a00?style=for-the-badge&labelColor=2b2b2b[/img][/url] [img]https://img.shields.io/badge/drop--in%20for-OCBPC-2f6f3f?style=for-the-badge&labelColor=2b2b2b[/img]
+[/center]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
+
+[size=5][b][color=#ffb547]What it is[/color][/b][/size]
+
+The Anatomy Engine (fo4-ocbpc) is OCBPC, the physics-with-collisions [font=Courier New]cbp.dll[/font], extended. It is a fork of [url=https://github.com/ericncream/OpenCBP_FO4]ericncream's OpenCBP_FO4[/url], the code behind OCBPC 0.3, and it replaces that one file. [b]Your ocbp.ini and OCBPCollisionConfig.txt keep working unchanged[/b], whether they come from OCBPC, Jiggle Physics or MadKita's.
+
+It is the engine under [b]Anatomy[/b], and it is what lets [url=https://www.nexusmods.com/fallout4/mods/109219]Rapport[/url] own the face in a scene. On its own it still fixes a collision bug every OCBPC user has.
+
+[size=5][b][color=#ffb547]For every OCBPC user[/color][/b][/size]
+
+[list]
+[*][b]Each collider pushes once per frame.[/b] OCBPC put a collider in every grid cell it touched and pushed a bone once per cell, so near a cell edge a push doubled and snapped back the next frame. Breasts, butt, anything your config collides: pushed once.
+[*][b]Hooks that check first.[/b] Every hook reads the game's code before patching it and stays off, logged, on any other build. A fault while installing the eye or the mouth hook turns that one feature off instead of crashing the game.
+[*][b]A log two game processes can't break.[/b] A relaunch after a crash no longer wipes the running game's log.
+[*]Built with today's compiler, statically linked, with the same imports and exports as the original.
+[/list]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
+
+[size=5][b][color=#ffb547]With Anatomy[/color][/b][/size]
+
+Anatomy's own config switches these on; without it, they stay off.
+
+[list]
+[*][b]One smooth tube, not a string of balls.[/b] OCBPC reads a penis as five balls with gaps between them, so flesh rode in and out along a thrust. Measured on the real mesh: thrust wobble at the anus 0.69 → 0.21, at the vagina 0.26 → 0.13 (the card above).
+[*][b]Bones at run time.[/b] The genital bones are added under each actor's pelvis as she loads. No skeleton file is shipped or overwritten.
+[*][b]The shaft finds its opening.[/b] In an AAF scene it turns toward the opening the animation meant, bends along a measured path instead of poking through the body, follows the throat when the head tilts back, and follows a gripping hand.
+[*][b]Lips that fit.[/b] Fallout 4 heads have no mouth bones, so the engine solves 15 measured mouth morphs every frame to rest the lips on whatever crosses them, and closes them between strokes.
+[*][b]A shape per man:[/b] a thinner shaft and a bigger head, scaled on his bones at run time. BodyTalk4's files are untouched.
+[/list]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/aim.jpg[/img][/center]
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/lips.jpg[/img][/center]
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/crown.jpg[/img][/center]
+[center][i]The head's crown is measured from the real mesh, and both the tube and the lips read it.[/i][/center]
+
+[size=5][b][color=#ffb547]With Rapport[/color][/b][/size]
+
+[list]
+[*][b]Rapport's face is the one that shows[/b] in any AAF scene. It is written after the engine's own merge, so it can close eyelids and a jaw an animation opened, which an expression override never can. Blinks still close the eyes.
+[*][b]Spoken lines keep their lip sync[/b], and a held face eases in and out over a quarter of a second.
+[*][b]Eyes that meet.[/b] Fallout 4 eyes have no bones: the game slides the eye's texture. The engine hooks that slide, so during a scene she looks up into her partner's eyes for 4-7 seconds now and then (Anatomy's config switches the glances on).
+[/list]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/glances.jpg[/img][/center]
+
+[size=5][b][color=#ffb547]Before you play[/color][/b][/size]
+
+[quote]
+[b]Fallout 4 1.10.163 with F4SE 0.6.23[/b], Steam or GOG. Not the next-gen update: on any other build every hook stays off and says so in the log.
+
+[b]It replaces cbp.dll.[/b] If OCBPC, Jiggle Physics or another mod also ships [font=Courier New]F4SE\Plugins\cbp.dll[/font], let this one win in your mod manager. Keep their configs: they are read as they are.
+
+[b]The log.[/b] [font=Courier New]Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log[/font] records what was set up, once per run. A discovery log for modders, which lists unknown genital- or toy-looking bones nearby, is off unless you turn it on ([font=Courier New][Log] discover=1[/font]).
+[/quote]
+
+[size=5][b][color=#ffb547]FAQ[/color][/b][/size]
+
+[b]Do I need Anatomy?[/b]
+[spoiler]No. On its own it is OCBPC with the once-per-frame collision fix and safer hooks. Everything genital, the mouth and the aim is switched on by Anatomy's config.[/spoiler]
+
+[b]Why is the source public?[/b]
+[spoiler]F4SE requires a plugin's source to be public, and it is also how you can check this DLL: [url=https://github.com/ReidenXerx/fo4-ocbpc]github.com/ReidenXerx/fo4-ocbpc[/url]. The fork's changes are GPL-3.0 on top of OCBPC's MIT base, and every changed file says what changed and when.[/spoiler]
+
+[b]Where is every setting?[/b]
+[spoiler]In the sticky posts: each ini section, what it turns on, and what stays off unless you set it.[/spoiler]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
+
+[size=5][b][color=#ffb547]Credits[/color][/b][/size]
+
+[list]
+[*][b]JS[/b] and the OpenCBP authors, and [b]ericncream[/b] for OCBPC, which this is built on.
+[*][b]The F4SE team[/b], and [b]Ian Patterson[/b] for the common library.
+[*]The [b]DetourXS[/b] and [b]BeaEngine[/b] authors.
+[*][b]maximusmaxy[/b], whose Screen Archer Menu source documented the face data the mouth uses.
+[/list]
+
+Bugs go to the [b]Bugs[/b] tab, with [font=Courier New]anatomy_ocbpc.log[/font].
