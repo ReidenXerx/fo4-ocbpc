@@ -21,12 +21,14 @@ namespace LipFit
 		}
 	}
 
-	void Corners(float lo, float hi, const float rim[2], const float move[2], float clearance, float& left, float& right)
+	void Ends(const Table& t, const float* w, float& left, float& right)
 	{
-		float needL = rim[0] - (lo - clearance);          // how far past the left end (-x) it reaches
-		float needR = (hi + clearance) - rim[1];
-		left = move[0] > 0.0f ? (std::max)(0.0f, (std::min)(1.0f, needL / move[0])) : 0.0f;
-		right = move[1] > 0.0f ? (std::max)(0.0f, (std::min)(1.0f, needR / move[1])) : 0.0f;
+		left = t.restLeft;
+		right = t.restRight;
+		for (int m = 0; m < t.count; m++) {
+			left += w[m] * t.left[m];
+			right += w[m] * t.right[m];
+		}
 	}
 
 	// Cyclic coordinate descent on a piecewise quadratic, each weight in turn to its best in [0, 1] with
@@ -39,8 +41,11 @@ namespace LipFit
 		float w[kMaxMorphs] = {};
 		for (int m = 0; m < n; m++)
 			w[m] = start ? (std::max)(0.0f, (std::min)(1.0f, start[m])) : 0.0f;
-		float u[kSamples], l[kSamples];
+		float u[kSamples], l[kSamples], el, er;
 		Edges(t, w, u, l);
+		Ends(t, w, el, er);
+		// across: a corner INSIDE the section's extent costs like an edge inside it; wider costs nothing
+		const bool across = want.across && t.restLeft < 0.0f && t.restRight > 0.0f;
 		for (int sweep = 0; sweep < p.steps; sweep++) {
 			float moved = 0.0f;
 			for (int m = 0; m < n; m++) {
@@ -61,6 +66,17 @@ namespace LipFit
 					g += 2.0f * (cu * ru * t.up[m][k] + cl * rl * t.lo[m][k]);
 					h += 2.0f * (cu * t.up[m][k] * t.up[m][k] + cl * t.lo[m][k] * t.lo[m][k]);
 				}
+				if (across) {
+					// > 0: that corner is inside it, and costs `inside`; wider costs nothing. The fewest
+					// morphs (prefer) then stop a corner right at its target. (A pull back for corners pushed
+					// past it by the other side's Corner Out was tried: it bought ~0.06, less than it cost.)
+					float tL = want.lo - p.clearance, tR = want.hi + p.clearance;
+					float rL = el - tL, rR = tR - er;
+					float cL = rL > 0.0f ? p.inside : 0.0f;
+					float cR = rR > 0.0f ? p.inside : 0.0f;
+					g += 2.0f * cL * rL * t.left[m] - 2.0f * cR * rR * t.right[m];
+					h += 2.0f * (cL * t.left[m] * t.left[m] + cR * t.right[m] * t.right[m]);
+				}
 				if (h <= 0.0f)
 					continue;
 				float next = (std::max)(0.0f, (std::min)(1.0f, w[m] - g / h));
@@ -73,6 +89,8 @@ namespace LipFit
 					u[k] += d * t.up[m][k];
 					l[k] += d * t.lo[m][k];
 				}
+				el += d * t.left[m];
+				er += d * t.right[m];
 			}
 			if (moved < 1e-5f)
 				break;

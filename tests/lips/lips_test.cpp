@@ -21,24 +21,31 @@ static const float kXs[kSamples] = { -1.2f, -0.8f, -0.4f, 0.0f, 0.4f, 0.8f, 1.2f
 
 static Table Female()
 {
-	struct Row { int id; float u[kSamples]; float l[kSamples]; };
+	struct Row { int id; float u[kSamples]; float l[kSamples]; float dl, dr; };
 	static const Row rows[] = {
-		{ 2, { -0.523f, -0.164f, -0.066f, -0.066f, -0.075f, -0.156f, -0.367f }, { -1.457f, -1.734f, -1.888f, -1.910f, -1.895f, -1.746f, -1.509f } },
-		{ 22, { 0.003f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.003f }, { -0.022f, -0.172f, -0.316f, -0.317f, -0.316f, -0.172f, -0.021f } },
-		{ 46, { 0.005f, 0.145f, 0.179f, 0.171f, 0.177f, 0.154f, 0.033f }, { 0.0f, 0.002f, 0.0f, 0.0f, 0.0f, 0.001f, 0.0f } },
-		{ 21, { 0.37f, 0.38f, 0.34f, 0.23f, 0.12f, 0.04f, 0.0f }, { 0.01f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f } },
-		{ 44, { 0.0f, 0.04f, 0.12f, 0.23f, 0.34f, 0.38f, 0.38f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.01f } },
-		{ 11, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { -0.32f, -0.39f, -0.33f, -0.22f, -0.13f, -0.05f, -0.01f } },
-		{ 34, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { -0.01f, -0.05f, -0.13f, -0.22f, -0.33f, -0.39f, -0.33f } },
-		{ 20, { -0.24f, -0.28f, -0.26f, -0.18f, -0.10f, -0.03f, 0.0f }, { 0.02f, -0.05f, -0.07f, -0.07f, -0.07f, -0.05f, 0.01f } },
-		{ 43, { 0.0f, -0.03f, -0.10f, -0.18f, -0.26f, -0.28f, -0.25f }, { 0.02f, -0.05f, -0.07f, -0.07f, -0.07f, -0.05f, 0.01f } },
-		{ 12, { 0.03f, 0.03f, 0.04f, 0.05f, 0.04f, 0.03f, 0.03f }, { 0.29f, 0.30f, 0.25f, 0.17f, 0.10f, 0.04f, 0.0f } },
-		{ 35, { 0.03f, 0.03f, 0.04f, 0.05f, 0.04f, 0.03f, 0.03f }, { 0.0f, 0.04f, 0.10f, 0.17f, 0.25f, 0.30f, 0.29f } },
+		{ 2, { -0.523f, -0.164f, -0.066f, -0.066f, -0.075f, -0.156f, -0.367f }, { -1.457f, -1.734f, -1.888f, -1.910f, -1.895f, -1.746f, -1.509f }, -0.27f, 0.22f },
+		{ 22, { 0.003f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.003f }, { -0.022f, -0.172f, -0.316f, -0.317f, -0.316f, -0.172f, -0.021f }, 0.08f, -0.08f },
+		{ 46, { 0.005f, 0.145f, 0.179f, 0.171f, 0.177f, 0.154f, 0.033f }, { 0.0f, 0.002f, 0.0f, 0.0f, 0.0f, 0.001f, 0.0f }, 0.08f, -0.07f },
+		{ 21, { 0.37f, 0.38f, 0.34f, 0.23f, 0.12f, 0.04f, 0.0f }, { 0.01f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, 0.04f, 0.0f },
+		{ 44, { 0.0f, 0.04f, 0.12f, 0.23f, 0.34f, 0.38f, 0.38f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.01f }, 0.0f, -0.04f },
+		{ 11, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { -0.32f, -0.39f, -0.33f, -0.22f, -0.13f, -0.05f, -0.01f }, 0.0f, 0.0f },
+		{ 34, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { -0.01f, -0.05f, -0.13f, -0.22f, -0.33f, -0.39f, -0.33f }, 0.0f, 0.0f },
+		{ 20, { -0.24f, -0.28f, -0.26f, -0.18f, -0.10f, -0.03f, 0.0f }, { 0.02f, -0.05f, -0.07f, -0.07f, -0.07f, -0.05f, 0.01f }, 0.0f, 0.01f },
+		{ 43, { 0.0f, -0.03f, -0.10f, -0.18f, -0.26f, -0.28f, -0.25f }, { 0.02f, -0.05f, -0.07f, -0.07f, -0.07f, -0.05f, 0.01f }, -0.01f, 0.0f },
+		{ 12, { 0.03f, 0.03f, 0.04f, 0.05f, 0.04f, 0.03f, 0.03f }, { 0.29f, 0.30f, 0.25f, 0.17f, 0.10f, 0.04f, 0.0f }, 0.0f, 0.0f },
+		{ 35, { 0.03f, 0.03f, 0.04f, 0.05f, 0.04f, 0.03f, 0.03f }, { 0.0f, 0.04f, 0.10f, 0.17f, 0.25f, 0.30f, 0.29f }, 0.0f, 0.0f },
+		// Lip Corner Out: barely a lip's height; its own corner out 0.40 / 0.34, the other 0.11 / 0.12
+		{ 8, { 0.06f, 0.01f, -0.02f, -0.02f, 0.0f, -0.02f, 0.04f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, -0.40f, 0.11f },
+		{ 31, { -0.01f, -0.02f, 0.0f, -0.01f, -0.02f, 0.01f, 0.06f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, -0.12f, 0.34f },
 	};
 	Table t;
+	t.restLeft = -1.60f;                            // the rim's ends at rest
+	t.restRight = 1.59f;
 	for (const Row& r : rows) {
 		int m = t.count++;
 		t.id[m] = r.id;
+		t.left[m] = r.dl;
+		t.right[m] = r.dr;
 		for (int k = 0; k < kSamples; k++) {
 			t.up[m][k] = r.u[k];
 			t.lo[m][k] = r.l[k];
@@ -51,6 +58,9 @@ static Table Female()
 static Want Round(float cx, float cu, float rx, float ru)
 {
 	Want w;
+	w.across = true;
+	w.lo = cx - rx;
+	w.hi = cx + rx;
 	for (int k = 0; k < kSamples; k++) {
 		float d = (kXs[k] - cx) / rx;
 		if (std::fabs(d) < 1.0f) {
@@ -189,20 +199,76 @@ int main()
 		Fit(t, Round(0.0f, -1.0f, 1.3f, 1.3f), still, start, w);
 		Expect(w[0] == 0.3f && w[1] == 1.0f && w[2] == 0.0f, "9: the start is used, clamped");
 	}
-	{   // 10. the corners: the female head's rim (-1.60 .. 1.59) and Corner Out's moves (0.40 left, 0.34 right)
-		const float rim[2] = { -1.60f, 1.59f }, move[2] = { 0.40f, 0.34f };
-		float l, r;
-		Corners(-1.2f, 1.2f, rim, move, 0.05f, l, r);
-		Expect(l == 0.0f && r == 0.0f, "10: a shaft inside the corners leaves them be");
-		Corners(-1.75f, 1.64f, rim, move, 0.05f, l, r);
-		Expect(std::fabs(l - 0.5f) < 1e-4f && std::fabs(r - 0.2941f) < 1e-3f,
-			"10: past a corner, it goes out by the missing distance over its move (left 0.20/0.40, right 0.10/0.34)");
-		Corners(-3.0f, 3.0f, rim, move, 0.05f, l, r);
-		Expect(l == 1.0f && r == 1.0f, "10: far too wide: both corners out as far as they go, not past");
-		Corners(-1.3f, 1.7f, rim, move, 0.05f, l, r);
-		Expect(l == 0.0f && r > 0.4f, "10: off to the right: only the right corner goes out");
+	{   // 10. ACROSS: a head wider than her mouth's rim (half-width 2.15, centre 1.0 below): the corners open
+		// round it (Jaw Open widens, Corner Out opens; reach: -2.39 .. 2.26)
+		Want want = Round(0.0f, -1.0f, 2.15f, 1.3f);
+		Fit(t, want, p, nullptr, w);
+		float el, er;
+		Ends(t, w, el, er);
+		std::printf("10: corners %.2f .. %.2f for a head %.2f .. %.2f; corner out %.2f/%.2f, funnels %.2f/%.2f\n", el, er,
+			want.lo, want.hi, Weight(t, w, 8), Weight(t, w, 31), Weight(t, w, 22), Weight(t, w, 46));
+		Expect(el <= want.lo + 0.02f && er >= want.hi - 0.02f, "10: both corners clear the head");
+		Expect(Weight(t, w, 8) > 0.3f && Weight(t, w, 31) > 0.3f, "10: Corner Out opens both corners");
+		// (a head this big cannot also be wrapped top to bottom near the corners: at x 1.2 the lower lip drops at
+		// most ~1.84 and the head's underside is lower; while the head passes the lips the fit only minimises it)
+	}
+	{   // 11. a shaft narrower than the rim (half-width 1.3): the corners stay where they are
+		Want want = Round(0.0f, -1.0f, 1.3f, 1.3f);
+		Fit(t, want, p, nullptr, w);
+		Expect(Weight(t, w, 8) < 0.05f && Weight(t, w, 31) < 0.05f, "11: a narrower shaft leaves the corners be");
+	}
+	{   // 12. off to the right (centre x 0.6, half-width 1.4: out to 2.0; the reach is ~2.2 with the funnels the
+		// vertical fit uses): the right corner clears it and does at least the left's work (Left Corner Out
+		// also pushes the right end 0.11, so the fit may use both)
+		Want want = Round(0.6f, -1.0f, 1.4f, 1.3f);
+		Fit(t, want, p, nullptr, w);
+		float el, er;
+		Ends(t, w, el, er);
+		std::printf("12: corners %.2f .. %.2f for %.2f .. %.2f; corner out %.2f/%.2f, jaw %.2f\n", el, er, want.lo, want.hi,
+			Weight(t, w, 8), Weight(t, w, 31), Weight(t, w, 2));
+		Expect(er >= want.hi - 0.02f && Weight(t, w, 31) >= Weight(t, w, 8), "12: off to one side, that corner opens");
 	}
 
+	{   // 13. EXACTLY round it, the across terms alone: two corner morphs as the real ones (each opens its own
+		// end and nudges the other), no lip heights. A corner that must move lands at the extent plus the
+		// clearance: no further, no nearer. (On the real table the fit may take a corner past it when that
+		// also lifts the upper lip where a tall head needs it: the vertical fit's right, not a miss.)
+		Table c;
+		c.restLeft = -1.60f;
+		c.restRight = 1.59f;
+		c.count = 2;
+		c.id[0] = 8;  c.left[0] = -0.40f; c.right[0] = 0.11f;
+		c.id[1] = 31; c.left[1] = -0.12f; c.right[1] = 0.34f;
+		Want want;
+		want.across = true;
+		want.lo = -1.75f;
+		want.hi = 1.70f;
+		Fit(c, want, p, nullptr, w);
+		float el, er;
+		Ends(c, w, el, er);
+		std::printf("13: corners %.3f .. %.3f, wanted %.3f .. %.3f\n", el, er, want.lo - p.clearance, want.hi + p.clearance);
+		Expect(std::fabs(el - (want.lo - p.clearance)) < 0.02f && std::fabs(er - (want.hi + p.clearance)) < 0.02f,
+			"13: each corner lands at the extent plus the clearance");
+		want.lo = -1.95f;                            // the left needs most of its corner (0.8 of it)
+		Fit(c, want, p, nullptr, w);
+		Ends(c, w, el, er);
+		Expect(std::fabs(el - (want.lo - p.clearance)) < 0.02f, "13: a corner far out still lands on its target");
+		want.lo = -1.2f;
+		want.hi = 1.2f;
+		Fit(c, want, p, nullptr, w);
+		Expect(w[0] < 0.01f && w[1] < 0.01f, "13: inside the rim, the corners stay put");
+	}
+	{   // 14. a shaft inside the rim: the across terms change nothing (no corner is pulled IN toward it)
+		Want want = Round(0.0f, -1.0f, 1.3f, 1.3f);
+		float a[kMaxMorphs], b[kMaxMorphs];
+		Fit(t, want, p, nullptr, a);
+		want.across = false;
+		Fit(t, want, p, nullptr, b);
+		float worst = 0.0f;
+		for (int m = 0; m < t.count; m++)
+			worst = (std::max)(worst, std::fabs(a[m] - b[m]));
+		Expect(worst < 1e-4f, "14: inside the rim, the fit is the same with or without the corners");
+	}
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);
 		return 1;

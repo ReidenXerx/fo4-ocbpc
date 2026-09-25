@@ -16,7 +16,7 @@
 namespace LipFit
 {
 	constexpr int kSamples = 7;           // points across the mouth ([Mouth] lipXs)
-	constexpr int kMaxMorphs = 12;
+	constexpr int kMaxMorphs = 16;
 
 	struct Table
 	{
@@ -24,6 +24,11 @@ namespace LipFit
 		int id[kMaxMorphs] = {};                          // the engine's morph id
 		float up[kMaxMorphs][kSamples] = {};              // the upper edge's move at 1.0, at each sample
 		float lo[kMaxMorphs][kSamples] = {};              // the lower edge's
+		// ACROSS (the owner, 2026-09-25: "fit head of penis IN HORIZONTAL AXIS"): the mouth's inner
+		// corners, the rim's ends at rest (left < 0 < right; both 0 = not measured, no across terms), and
+		// how far each morph moves them at 1.0 (Jaw Open widens, the funnels narrow, Corner Out opens)
+		float restLeft = 0.0f, restRight = 0.0f;
+		float left[kMaxMorphs] = {}, right[kMaxMorphs] = {};
 	};
 
 	// What crosses her lips, at each sample: its top and bottom relative to the resting lip line (head
@@ -33,6 +38,8 @@ namespace LipFit
 		bool spans[kSamples] = {};
 		float top[kSamples] = {};
 		float bottom[kSamples] = {};
+		bool across = false;          // its extent across the mouth (lo < hi), which the corners must clear
+		float lo = 0.0f, hi = 0.0f;
 	};
 
 	struct Params
@@ -50,11 +57,6 @@ namespace LipFit
 	// The edges these weights give, at each sample (for tests and the log).
 	void Edges(const Table& t, const float* w, float* upper, float* lower);
 
-	// The mouth's corners (the owner's look, 2026-09-25: the corner still clipped a shaft that fills her
-	// mouth). Lip Corner Out moves a corner OUT (the inner rim's end, -x left, +x right) and barely moves
-	// the lips' heights, so it is not in the fit: when what is inside reaches past a corner (lo / hi, the
-	// section's extent across the mouth, plus clearance), that corner goes out by just the missing
-	// distance over its morph's move (rim: the resting ends, move: how far each morph takes its end at
-	// 1.0), in [0, 1].
-	void Corners(float lo, float hi, const float rim[2], const float move[2], float clearance, float& left, float& right);
+	// The corners these weights give (the rim's left and right end).
+	void Ends(const Table& t, const float* w, float& left, float& right);
 }
