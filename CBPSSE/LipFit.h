@@ -57,6 +57,10 @@ namespace LipFit
 		float hug = 2.0f;             // where the lips meet is drawn to the section's sides (plus clearance),
 		                              // either way, at this over a gap's 1: in on a thin shaft as the lips close
 		                              // on top and below, out with the head where it widens
+		float cornerInside = 10.0f;   // ...and a corner INSIDE the section costs this: under the lips' `inside`,
+		                              // so the jaw still wins where no morph can take a corner out far enough
+		                              // (a head), but far over the hug: opening the jaw draws the corners in
+		                              // ~0.2, and with the hug alone they stayed in the shaft (Photo223-224)
 		int steps = 200;              // sweeps at most (it stops once nothing moves)
 	};
 

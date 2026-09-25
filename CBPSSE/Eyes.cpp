@@ -186,10 +186,11 @@ namespace
 		return p ? reinterpret_cast<BSShaderProperty*>(p) : nullptr;
 	}
 
-	void ApplyGlances(float dt)
+	// kept: actors whose lids something else holds open this frame (the sweep), which the glances must not let go
+	void ApplyGlances(float dt, const std::unordered_set<UInt32>& kept)
 	{
 		auto running = FaceAuthority::Glances(EyeClockMs());
-		std::unordered_set<UInt32> now;
+		std::unordered_set<UInt32> now = kept;
 		for (auto& r : running) {
 			Actor* a = ActorOf(r.looker);
 			Actor* b = ActorOf(r.glance.target);
@@ -233,8 +234,11 @@ namespace
 		}
 	}
 
-	void ApplySweep(float dt)
+	// the sweep's actors, their lids held open (the owner, 2026-09-26: in a blowjob "eyes stopped working" -
+	// her lids were shut by her face, and ApplyGlances let go of every look that was not a glance's)
+	std::unordered_set<UInt32> ApplySweep(float dt)
 	{
+		std::unordered_set<UInt32> swept;
 		std::vector<UInt32> who;
 		int pose;
 		{
@@ -259,16 +263,19 @@ namespace
 			Look& l = looks[id];
 			l.active = true;
 			l.lidsOpen = 1.0f;
+			swept.insert(id);
 		}
+		return swept;
 	}
 
 	void HookEyes(float dt)
 	{
 		origEyes(dt);                              // the engine's own eyes first, every actor's
 		dt = dt < 0.0f ? 0.0f : (dt > 0.1f ? 0.1f : dt);
+		std::unordered_set<UInt32> kept;
 		if (test == 2 && enabled && hooked)
-			ApplySweep(dt);
-		ApplyGlances(dt);
+			kept = ApplySweep(dt);
+		ApplyGlances(dt, kept);
 	}
 }
 

@@ -98,8 +98,9 @@ static Table FemaleWithCorners()
 	Table t = Female();
 	struct Row { int id; float u[kSamples]; float l[kSamples]; float dl, dr; };
 	static const Row in[] = {
-		{ 7, { -0.06f, -0.08f, -0.05f, -0.01f, -0.01f, 0.03f, 0.03f }, { -0.09f, -0.09f, -0.04f, 0.04f, -0.06f, 0.03f, 0.03f }, 0.0f, 0.0f },   // its extremes: only the bulge
-		{ 30, { 0.03f, 0.03f, -0.01f, -0.01f, -0.05f, -0.07f, -0.02f }, { 0.05f, 0.03f, -0.06f, 0.04f, -0.04f, -0.09f, -0.12f }, 0.0f, 0.0f },
+		// the hug's knob only (tools/lips.py): its extremes' bulge and its <= 0.09 of lip move are dropped
+		{ 7, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, 0.0f, 0.0f },
+		{ 30, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, 0.0f, 0.0f },
 	};
 	for (const Row& r : in) {
 		int m = t.count++;
@@ -339,7 +340,8 @@ int main()
 		Ends(c, w, el, er);
 		std::printf("16: the head (-2.10 .. 2.10): corners %.3f .. %.3f with the hug, %.3f .. %.3f without, rim ends "
 			"%.3f .. %.3f; corner in %.2f/%.2f\n", cl, cr, headL0, headR0, el, er, Weight(c, w, 7), Weight(c, w, 30));
-		Expect(cl < headL0 - 0.03f && cr > headR0 + 0.03f, "16: the head takes the corners out with it");
+		Expect(Weight(c, w, 8) > 0.95f && Weight(c, w, 31) > 0.95f && cl <= headL0 + 1e-3f && cr >= headR0 - 1e-3f,
+			"16: the head takes the corners as far out as Corner Out goes");
 		Judge(c, head, w, in, gap);
 		std::printf("16: the head, lips: inside %.3f with the hug, %.3f without\n", in, in0);
 		// A head this size is more than the lips can clear (0.48 inside without the hug): the fit takes any
@@ -355,6 +357,24 @@ int main()
 			cl, cr, sideL0, sideR0);
 		Expect(cl > sideL0 + 0.05f, "16: off to one side, the far corner closes in");
 		Expect(cr > sideR0 + 0.02f, "16: and the near one goes out toward it");
+	}
+	{   // 17. the owner's photo from inside the shaft (Photo223-224): the shaft taller than the mouth can open,
+		// the jaw at full, which draws the corners in ~0.2 - and they stayed in the shaft. They must open to it.
+		const Table c = FemaleWithCorners();
+		Want tall = Round(0.0f, -1.3f, 1.53f, 1.53f);    // the shaft (1.5 flesh) where the aim puts it
+		Fit(c, tall, p, nullptr, w);
+		float cl, cr;
+		Corners(c, w, cl, cr);
+		std::printf("17: a shaft taller than the mouth (-1.53 .. 1.53): corners %.3f .. %.3f, jaw %.2f, corner out "
+			"%.2f/%.2f in %.2f/%.2f\n", cl, cr, Weight(c, w, 2), Weight(c, w, 8), Weight(c, w, 31), Weight(c, w, 7),
+			Weight(c, w, 30));
+		// with the jaw and the funnels the lips need, Corner Out at full reaches -1.53 / 1.49 on this head: the
+		// corners end within 0.1 of the shaft's sides (the photo's left corner was ~0.27 in, Corner In at 1.0)
+		Expect(cl <= tall.lo - p.clearance + 0.1f && cr >= tall.hi + p.clearance - 0.1f,
+			"17: where the lips meet, within 0.1 of the shaft's sides");
+		Expect(Weight(c, w, 8) > 0.95f && Weight(c, w, 31) > 0.95f, "17: Corner Out all the way to get there");
+		Expect(Weight(c, w, 7) < 0.02f && Weight(c, w, 30) < 0.02f, "17: no Corner In while a corner is short of it");
+		Expect(Weight(c, w, 2) > 0.95f, "17: and the jaw still all the way open for the lips");
 	}
 	{   // 15. the glans (Glans.h): the crown is where the mesh has it, behind the tip bone, at its full width
 		struct V {

@@ -91,12 +91,13 @@ namespace LipFit
 					h += 2.0f * (cL * t.left[m] * t.left[m] + cR * t.right[m] * t.right[m]);
 				}
 				if (hug) {
-					// toward the section's sides, both ways, gently: a wide head can hold a corner inside it that
-					// no morph can take out far enough (Corner Out reaches ~0.4), and an `inside` cost there would
-					// fight the jaw the lips need; the rim's ends (above) keep the clearance
+					// toward the section's sides: wider costs the gentle hug, inside costs cornerInside (under
+					// the lips' `inside`: a wide head can hold a corner inside it that no morph can take out far
+					// enough, and the lips come first there)
 					float tL = want.lo - p.clearance, tR = want.hi + p.clearance;
 					float rL = cl - tL, rR = tR - cr;
-					float cL = p.hug, cR = p.hug;
+					float cL = rL > 0.0f ? p.cornerInside : p.hug;
+					float cR = rR > 0.0f ? p.cornerInside : p.hug;
 					g += 2.0f * cL * rL * t.cornerL[m] - 2.0f * cR * rR * t.cornerR[m];
 					h += 2.0f * (cL * t.cornerL[m] * t.cornerL[m] + cR * t.cornerR[m] * t.cornerR[m]);
 				}

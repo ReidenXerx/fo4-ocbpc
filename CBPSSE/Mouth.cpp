@@ -525,6 +525,7 @@ void LoadMouthConfig(INIReader& reader)
 		}
 		lipParams.clearance = (float)reader.GetReal("Mouth", "lipClearance", lipParams.clearance);
 		lipParams.hug = (std::max)(0.0f, (float)reader.GetReal("Mouth", "lipHug", lipParams.hug));
+		lipParams.cornerInside = (std::max)(0.0f, (float)reader.GetReal("Mouth", "lipCornerInside", lipParams.cornerInside));
 		lipOpenRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipOpenRate", lipOpenRate));
 		lipCloseRate = (std::max)(1.0f, (float)reader.GetReal("Mouth", "lipCloseRate", lipCloseRate));
 		Note("mouth|lips|" + std::to_string(lipTable[0].count) + "|" + std::to_string(lipTable[1].count),
