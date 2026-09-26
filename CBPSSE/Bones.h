@@ -18,3 +18,12 @@
 void LoadBonesConfig(INIReader& reader);
 // true when nodes were created for this actor this frame
 bool EnsureAnatomyBones(Actor* actor);
+
+// A-44: every actor whose 3D is loaded, not only the player's cell's. OCBPC's scan walks the object list
+// of the cell the player stands in, so in the open world a woman one cell over was never pointed at our
+// nodes: her genitals rode the stranded copies off the actor's root, near enough while she stood, left
+// where she died once she ragdolled, and floating there when her body was re-equipped as she was looted
+// (a player's report, 2026-09-26). The game's own TESObjectLoadedEvent (F4SE's 1.10.163 dispatcher)
+// names every reference whose 3D loads; the actors among them are kept and visited a few per frame.
+void WatchLoadedActors();                      // once, at kMessage_GameDataReady
+void EnsureLoadedActors(int budget);           // each frame, from UpdateActors

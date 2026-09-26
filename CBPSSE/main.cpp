@@ -16,6 +16,7 @@
 #include "Mouth.h"
 #include "Aim.h"
 #include "Eyes.h"
+#include "Bones.h"
 
 
 bool RegisterFuncs(VirtualMachine* vm);
@@ -41,6 +42,7 @@ void MessageHandler(F4SEMessagingInterface::Message * msg)
         case F4SEMessagingInterface::kMessage_GameDataReady:
         {
             logger.Info("kMessage_GameDataReady\n");
+            WatchLoadedActors();   // fo4-anatomy (A-44): Bones.h
         }
         break;
         case F4SEMessagingInterface::kMessage_GameLoaded:

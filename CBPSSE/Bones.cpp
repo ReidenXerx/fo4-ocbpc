@@ -7,13 +7,18 @@
 #include "log.h"
 
 #include "f4se/BSGeometry.h"
+#include "f4se/GameEvents.h"
+#include "f4se/GameForms.h"
+#include "f4se/GameRTTI.h"
 #include "f4se/BSSkin.h"
 #include "f4se/GameTypes.h"
 #include "f4se/NiNodes.h"
 #include "f4se/NiObjects.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -241,4 +246,70 @@ bool EnsureAnatomyBones(Actor* actor)
 			actor->formID, created, repointed);
 	}
 	return created > 0;
+}
+
+// ---- A-44: every loaded actor (see Bones.h)
+namespace
+{
+	std::mutex loadedLock;
+	std::vector<UInt32> loadedActors;               // form ids, in the order their 3D loaded
+	size_t loadedCursor = 0;
+
+	class LoadedSink : public BSTEventSink<TESObjectLoadedEvent>
+	{
+	public:
+		EventResult ReceiveEvent(TESObjectLoadedEvent* evn, void* dispatcher) override
+		{
+			if (!evn)
+				return kEvent_Continue;
+			TESForm* form = LookupFormByID(evn->formId);
+			if (!form || form->formType != kFormType_ACHR)
+				return kEvent_Continue;              // only actors carry a body
+			std::lock_guard<std::mutex> guard(loadedLock);
+			auto it = std::find(loadedActors.begin(), loadedActors.end(), evn->formId);
+			if (evn->loaded && it == loadedActors.end())
+				loadedActors.push_back(evn->formId);
+			else if (!evn->loaded && it != loadedActors.end())
+				loadedActors.erase(it);
+			return kEvent_Continue;
+		}
+	};
+	LoadedSink loadedSink;
+	bool watching = false;
+}
+
+void WatchLoadedActors()
+{
+	if (watching)
+		return;
+	auto dispatcher = GetEventDispatcher<TESObjectLoadedEvent>();
+	if (!dispatcher)
+		return;
+	dispatcher->AddEventSink(&loadedSink);
+	watching = true;
+	Note("bones|watch", "[bones] watching every actor whose 3D loads (TESObjectLoadedEvent), not only the player's cell\n");
+}
+
+void EnsureLoadedActors(int budget)
+{
+	if (table.empty() || budget <= 0)
+		return;
+	std::vector<UInt32> batch;
+	{
+		std::lock_guard<std::mutex> guard(loadedLock);
+		if (loadedActors.empty())
+			return;
+		size_t n = loadedActors.size() < (size_t)budget ? loadedActors.size() : (size_t)budget;
+		for (size_t k = 0; k < n; k++) {
+			if (loadedCursor >= loadedActors.size())
+				loadedCursor = 0;
+			batch.push_back(loadedActors[loadedCursor++]);
+		}
+	}
+	for (UInt32 id : batch) {
+		Actor* actor = DYNAMIC_CAST(LookupFormByID(id), TESForm, Actor);
+		if (!actor || (actor->flags & TESForm::kFlag_IsDeleted) || !actor->unkF0 || !actor->unkF0->rootNode)
+			continue;
+		EnsureAnatomyBones(actor);
+	}
 }

@@ -132,6 +132,8 @@ void UpdateActors() {
     // we retain all state by actor ID, in a map - it's cleared on cell change
     actorEntries.clear();
 
+    EnsureLoadedActors(12);   // fo4-anatomy (A-44): our bones on every loaded actor, not only this cell's
+
 
 	//if (tuningModeCollision != 0)
 	//{
