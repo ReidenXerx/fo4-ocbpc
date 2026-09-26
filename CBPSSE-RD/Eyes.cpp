@@ -73,7 +73,10 @@ namespace
 	// Runtime Database defines no BSShaderProperty or BSShaderMaterial: the classic code's view of them, by the offsets
 	// measured on 1.10.163 (G::Measured, and textCoordOffset[2] at +0x0C of the material), proven per eye: the
 	// geometry's shader property must carry BSLightingShaderProperty's vtable and its material the eye material's.
-	uintptr_t shaderVtable = 0, eyeMaterialVtable = 0;   // resolved at install, by RD's VTABLE ids
+	// resolved at install, by RD's VTABLE ids. The eyes' material is BSLightingShaderMaterialEnvmap (the AE run, 2026-09-26:
+	// every eye geometry of both sexes, read by RTTI; RD's Eye class is accepted too): the UV offsets sit in the base
+	// BSShaderMaterial they share.
+	uintptr_t shaderVtable = 0, eyeMaterialVtable = 0, envmapMaterialVtable = 0;
 	struct EyeMaterial
 	{
 		uintptr_t at = 0;
@@ -115,7 +118,8 @@ namespace
 		if (!prop || !shaderVtable || *reinterpret_cast<uintptr_t*>(prop) != shaderVtable)
 			return nullptr;
 		const uintptr_t mat = *reinterpret_cast<uintptr_t*>(prop + G::Measured::kShaderMaterial);
-		if (!mat || !eyeMaterialVtable || *reinterpret_cast<uintptr_t*>(mat) != eyeMaterialVtable)
+		const uintptr_t mv = mat ? *reinterpret_cast<uintptr_t*>(mat) : 0;
+		if (!mv || !((eyeMaterialVtable && mv == eyeMaterialVtable) || (envmapMaterialVtable && mv == envmapMaterialVtable)))
 			return nullptr;
 		EyeShader& s = ring[next++ % 8];
 		s.material.at = mat;
@@ -204,7 +208,11 @@ namespace
 			const char* n = G::Name(o);
 			std::string name = n ? n : "";
 			std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-			if (name.find("eyes") == std::string::npos || name.find("lash") != std::string::npos)
+			// the eye itself, not its layers: the lashes, the wet sheen, the ambient-occlusion shell (the AE run:
+			// 'femaleeyeshumanlashes', '...wet', '...ao' beside '...lightgrey')
+			const bool layer = name.find("lash") != std::string::npos || name.find("wet") != std::string::npos ||
+			                   (name.size() >= 2 && name.compare(name.size() - 2, 2, "ao") == 0);
+			if (name.find("eyes") == std::string::npos || layer)
 				return nullptr;
 			if (ProvenShader(g))
 				return g;
@@ -212,9 +220,9 @@ namespace
 			const uintptr_t prop = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(g) + G::Measured::kGeometryShaderProperty);
 			const uintptr_t mat = prop ? *reinterpret_cast<uintptr_t*>(prop + G::Measured::kShaderMaterial) : 0;
 			const uintptr_t mv = mat ? *reinterpret_cast<uintptr_t*>(mat) : 0;
-			G::Once("eyes|reject|" + name, "diag: eye geometry '{}' refused: shader vtable +{:X}, material vtable +{:X} (want +{:X})",
+			G::Once("eyes|reject|" + name, "diag: eye geometry '{}' refused: shader vtable +{:X}, material vtable +{:X} (want +{:X} or +{:X})",
 				name, prop ? *reinterpret_cast<uintptr_t*>(prop) - base : 0, mv ? mv - base : 0,
-				eyeMaterialVtable ? eyeMaterialVtable - base : 0);
+				eyeMaterialVtable ? eyeMaterialVtable - base : 0, envmapMaterialVtable ? envmapMaterialVtable - base : 0);
 			return nullptr;
 		}
 		NiNode* node = G::AsNode(o);
@@ -237,7 +245,7 @@ namespace
 		// geometry named "...Eyes..." under the root, is the way here
 		BSGeometry* geometry = FindEyes(root, 0);
 		if (!geometry) {
-			G::Once("eyes|none", "diag: {:08X}: no geometry named '...eyes...' within 4 levels of '{}'", a->formID, G::Name(root));
+			G::Once("eyes|none", "diag: {:08X}: no eye geometry accepted within 8 levels of '{}' (none named '...eyes...', or every one refused)", a->formID, G::Name(root));
 			return nullptr;
 		}
 		EyeShader* s = ProvenShader(geometry);
@@ -419,17 +427,19 @@ static void InstallEyeHookUnguarded()
 	const auto second = Hook::CallSite(kEyeOwners[1], kEyeTarget, "[eyes] the eye update's second call");
 	const auto shader = REL::IDDatabase::get().resolve(RE::VTABLE::BSLightingShaderProperty[0]);
 	const auto material = REL::IDDatabase::get().resolve(RE::VTABLE::BSLightingShaderMaterialEye[0]);
+	const auto envmap = REL::IDDatabase::get().resolve(RE::VTABLE::BSLightingShaderMaterialEnvmap[0]);
 	installStep = "reading the eye update's first bytes";
 	bool prologue = fn && (!Hook::OgFamily() ||
 		std::memcmp(reinterpret_cast<const void*>(*fn), kEyePrologue, sizeof(kEyePrologue)) == 0);
-	if (!fn || !first || !second || !shader || !material || !prologue) {
+	if (!fn || !first || !second || !shader || !(material || envmap) || !prologue) {
 		Note("eyes|build", "[eyes] this game build is not proven for the eyes (update %d, calls %d/%d, vtables %d/%d, "
 			"prologue %d): no glance turns an eye\n", (int)fn.has_value(), (int)first.has_value(), (int)second.has_value(),
-			(int)(bool)shader, (int)(bool)material, (int)prologue);
+			(int)(bool)shader, (int)((bool)material || (bool)envmap), (int)prologue);
 		return;
 	}
 	shaderVtable = REL::Module::get().base() + *shader.rva;
-	eyeMaterialVtable = REL::Module::get().base() + *material.rva;
+	eyeMaterialVtable = material ? REL::Module::get().base() + *material.rva : 0;
+	envmapMaterialVtable = envmap ? REL::Module::get().base() + *envmap.rva : 0;
 	origEyes = reinterpret_cast<EyeFn>(*fn);
 	installStep = "patching the first call";
 	bool reaches = Hook::WriteCall(*first, reinterpret_cast<uintptr_t>(&HookEyes)) == *fn;
