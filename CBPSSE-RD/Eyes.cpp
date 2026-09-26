@@ -51,8 +51,12 @@ namespace
 	const int kProbeLines = 40;                 // per actor
 
 	// ---- the engine: Address Library ids (Hook.h), 1.10.163 addresses in the comments (SAM's offsets there) ----
-	constexpr Hook::IdPair kEyeTarget{ 1217611, 0 };                                // 0x9C0410: the eye update
-	constexpr Hook::IdPair kEyeOwners[2] = { { 235979, 0 }, { 633524, 0 } };       // its two callers (0xD38B13, 0xD39681)
+	// AE 1.11.240: 0x97E190, the function with the eye update's own shape (two [rdx+0x2C] = 0x7FFFFFFF render-pass
+	// locks, 17 ucomiss against the material's +0xC/+0x10/+0x14 UVs, the geometry's +0x138 shader; frame 0x800 vs
+	// 0x810), called from exactly two functions as in 1.10.163: 0xC33660 (a small wrapper) and 0xC339D0. The eye
+	// offsets used here are the update's own on AE. Ids from f4rd-runtime.bin and the AE Address Library agree.
+	constexpr Hook::IdPair kEyeTarget{ 1217611, 2219241 };                                        // 0x9C0410 / AE 0x97E190
+	constexpr Hook::IdPair kEyeOwners[2] = { { 235979, 2228914 }, { 633524, 2228917 } };         // 0xD38AF0 / AE 0xC33660, 0xD38E60 / AE 0xC339D0
 	// the prologue as read on 1.10.163: checked there only
 	const unsigned char kEyePrologue[] = { 0x48, 0x8B, 0xC4, 0x55, 0x48, 0x8D, 0xA8, 0xE8, 0xF8, 0xFF, 0xFF,
 	                                       0x48, 0x81, 0xEC, 0x10, 0x08, 0x00, 0x00 };

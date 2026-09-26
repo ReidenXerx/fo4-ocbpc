@@ -14,8 +14,12 @@ void UpdateActors();
 
 namespace
 {
-	constexpr Hook::IdPair kFrameOwner{ 239710, 0 };    // 1.10.163 0x2042430: the only caller of the one below
-	constexpr Hook::IdPair kFrameTarget{ 967097, 0 };   // 1.10.163 0x211CF80: ProcessEventQueue_Internal
+	// 1.10.163 0x211CF80 is a 4-instruction reset (xor eax,eax; mov [rcx+0Ch],rax; mov [rcx+4],rax; ret) whose one
+	// direct caller runs once per frame. Its bytes are unique in both executables (tools/rd/bytecallers.py), with one
+	// caller each: AE 1.11.240 0x1B1E2F0, called once at 0x1A815BC in 0x1A80610. AE ids from f4rd-runtime.bin and the
+	// AE Address Library agree; both records also know NG 1.10.984.
+	constexpr Hook::IdPair kFrameOwner{ 239710, 2284754 };    // 0x2042430 / AE 0x1A80610: the only caller of the one below
+	constexpr Hook::IdPair kFrameTarget{ 967097, 2287625 };   // 0x211CF80 / AE 0x1B1E2F0: the classic "ProcessEventQueue_Internal"
 
 	using Frame_t = void (*)(void*);
 	Frame_t original = nullptr;
