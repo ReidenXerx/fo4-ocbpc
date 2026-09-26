@@ -110,8 +110,13 @@ namespace
 	std::uint32_t testConfigured = 0;           // [Face] test as read; latched into testForm on a load
 
 	// ---- the engine: Address Library ids (Hook.h), 1.10.163 addresses in the comments ----
-	constexpr Hook::IdPair kMergeOwner{ 317245, 0 };   // 0x686040: the merge's one caller (its call at 0x6860FA)
-	constexpr Hook::IdPair kMergeTarget{ 3139, 0 };    // 0x6689D0: the face merge
+	// AE 1.11.240: the only function in either executable reading [p+i*4+0x1C8] and [p+i*4+0x18] and [p+0xF0]
+	// (tools/rd/opscan.py) is the merge, 0x6D1630 (final = maxss(+0xF0, +0x1C8), unrolled); same prologue (lock at
+	// +0x2B4), flag in r8b, dt in xmm1, bool in al. Its one caller: 0x6E8F00. The lip-sync readers match too (OG
+	// 0x667E50/0x668040/0x668170 = AE 0x6D0880/0x6D0C20/0x6D0D40: [p+0x2C0], [lip+0xC] & 0x70000000), so every face
+	// offset here is AE's as well. Ids from f4rd-runtime.bin and the AE Address Library agree; NG 1.10.984 known too.
+	constexpr Hook::IdPair kMergeOwner{ 317245, 2209487 };   // 0x686040 / AE 0x6E8F00: the merge's one caller
+	constexpr Hook::IdPair kMergeTarget{ 3139, 2209139 };    // 0x6689D0 / AE 0x6D1630: the face merge
 	uintptr_t faceDataVtable = 0;                      // BSFaceGenAnimationData's vtable (1.10.163 0x2CE9C58), by RD id
 	// the merge's first bytes as the classic build read them on 1.10.163 (Steam and GOG alike): checked there only
 	const unsigned char kMergePrologue[] = { 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x68, 0x18, 0x48, 0x89, 0x78, 0x20,
