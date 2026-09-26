@@ -71,6 +71,8 @@ namespace Layout
 		if (!Guarded(&Read, &probe)) {
 			probe.problem = "reading the skin faulted";
 		}
+		G::Once("layout|first", "diag: first skin check on '{}': {} slot(s) checked, problem '{}'", G::Name(a_geometry),
+			probe.checked, probe.problem ? probe.problem : "none");
 		if (probe.problem) {
 			skin = State::kBad;
 			rdlog::error("layout: BSGeometry/BSSkin::Instance differ on this runtime ({}): the genital bones and their "
