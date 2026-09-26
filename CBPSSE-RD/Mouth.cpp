@@ -733,11 +733,11 @@ void UpdateMouths()
 			bool delivered;
 			if (hold) {
 				FaceAuthority::SetMessage m = FaceAuthority::TestFace(test);
-				delivered = messaging->Dispatch(FaceAuthority::kSet, &m, sizeof(m), kSelf);
+				delivered = messaging->Dispatch(FaceAuthority::kSet, &m, sizeof(m), nullptr);   // never by name: to everyone
 			}
 			else {
 				FaceAuthority::ClearMessage m{ FaceAuthority::kVersion, test };   // never form 0: everyone
-				delivered = messaging->Dispatch(FaceAuthority::kClear, &m, sizeof(m), kSelf);
+				delivered = messaging->Dispatch(FaceAuthority::kClear, &m, sizeof(m), nullptr);
 			}
 			if (!delivered)
 				Note("face|test|lost", "[face] self-test: F4SE delivered the test message to no one\n");
@@ -1059,7 +1059,10 @@ void UpdateMouths()
 // Rapport's messages (and, in the self-test, ours): on Rapport's thread, a Papyrus one
 static void FaceMessage(F4SE::MessagingInterface::Message* msg)
 {
-	if (!msg)
+	if (!msg || !msg->sender)
+		return;
+	// the listener hears every sender (ListenForFaces): only Rapport's, and in the self-test our own
+	if (_stricmp(msg->sender, kRapport) != 0 && !(testConfigured && _stricmp(msg->sender, kSelf) == 0))
 		return;
 	const char* who = msg->sender ? msg->sender : "?";
 	FaceAuthority::Decoded d = FaceAuthority::Decode(msg->type, msg->data, msg->dataLen);
@@ -1130,12 +1133,14 @@ void ListenForFaces(const F4SE::MessagingInterface* m)
 		Note("face|listen", "[face] [Face] authority=0: not listening to Rapport, and no hello\n");
 		return;
 	}
-	// F4SE refuses a sender it has not loaded, which is why this waits for PostLoad
-	bool rapport = messaging->RegisterListener(FaceMessage, kRapport);
-	Note("face|listen", rapport ? "[face] Rapport is loaded: listening for the faces it holds\n"
-		: "[face] Rapport is not loaded: no faces to hold\n");
-	if (testConfigured && !messaging->RegisterListener(FaceMessage, kSelf))
-		Note("face|test|listen", "[face] self-test: F4SE would not let this plugin listen to itself\n");
+	// Never by name (the rapport session, AE 1.11.240 + F4SE 0.7.9, 3/3): a named sender makes F4SE compare it with
+	// every loaded plugin's name, and a bad one earlier in the load order killed the game silently. A null sender
+	// takes F4SE's other branch; FaceMessage keeps Rapport's (and, in the self-test, ours). CommonLibF4RD's wrapper
+	// cannot pass null, so F4SE's own interface is called.
+	const auto& raw = reinterpret_cast<const F4SE::detail::F4SEMessagingInterface&>(*messaging);
+	bool listening = raw.RegisterListener(F4SE::GetPluginHandle(), nullptr, reinterpret_cast<void*>(&FaceMessage));
+	Note("face|listen", listening ? "[face] listening to every plugin's messages, keeping Rapport's faces\n"
+		: "[face] F4SE would not register the face listener: no faces to hold\n");
 }
 
 void SayFaceHello()
@@ -1153,7 +1158,8 @@ void SayFaceHello()
 		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
 		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
 		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) };
-	bool heard = messaging->Dispatch(FaceAuthority::kHello, &hello, sizeof(hello), kRapport);
+	// to everyone, never by name (ListenForFaces): Rapport listens to every sender and keeps "OCBPC plugin"'s
+	bool heard = messaging->Dispatch(FaceAuthority::kHello, &hello, sizeof(hello), nullptr);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"
 		: "[face] hello not heard: Rapport is not loaded, or is not listening to \"OCBPC plugin\"\n");
 }
