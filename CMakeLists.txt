@@ -19,7 +19,15 @@ add_subdirectory("extern/CommonLibF4RD/CommonLibF4" "CommonLibF4")
 
 file(GLOB RD_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE-RD/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE-RD/*.h")
 
-add_library(cbp SHARED ${RD_SOURCES})
+# pure maths, no game in it: compiled from the classic folder by both builds, one source of truth
+set(SHARED_SOURCES
+	"${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE/AimSolve.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE/FaceAuthority.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE/FaceCompose.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/CBPSSE/LipFit.cpp"
+)
+
+add_library(cbp SHARED ${RD_SOURCES} ${SHARED_SOURCES})
 set_target_properties(cbp PROPERTIES OUTPUT_NAME "cbp")
 target_compile_features(cbp PRIVATE cxx_std_23)
 target_compile_definitions(

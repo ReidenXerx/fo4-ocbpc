@@ -29,7 +29,7 @@ namespace
 
 	bool InitializeLogger()
 	{
-		auto path = logger::log_directory();
+		auto path = rdlog::log_directory();
 		if (!path) {
 			return false;
 		}
@@ -65,7 +65,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 		return false;
 	}
 	F4SE::Init(a_f4se);
-	logger::info("{} {} (Runtime Database) on Fallout 4 {}", kName, OCBPC_VERSION_STRING,
+	rdlog::info("{} {} (Runtime Database) on Fallout 4 {}", kName, OCBPC_VERSION_STRING,
 		REL::Module::get().version().string());   // "1-10-163-0": RD prints dashes
 	return true;
 }
