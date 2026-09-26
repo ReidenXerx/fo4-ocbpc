@@ -4,6 +4,7 @@
 #include "Bones.h"
 
 #include "Game.h"
+#include "Hook.h"
 #include "CollisionHub.h"
 #include "log.h"
 
@@ -143,6 +144,10 @@ bool EnsureAnatomyBones(Actor* actor)
 		return false;
 	int created = 0, repointed = 0;
 	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
+		// Runtime Database: the skin's members are 1.10.163's measurements, proven on this runtime first (Layout.cpp)
+		Layout::CheckSkin(geo);
+		if (Layout::Skin() != Layout::State::kGood)
+			return;
 		G::SkinInstance* skin = G::Skin(geo);
 		if (!skin || !G::SkinBones(skin).entries || !G::SkinWorldTransforms(skin).entries)
 			return;
