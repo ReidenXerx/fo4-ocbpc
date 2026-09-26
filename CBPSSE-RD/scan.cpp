@@ -136,6 +136,7 @@ void UpdateActors() {
 
     // If no player then return
     auto player = G::LookupActor(0x14);
+    G::Once("scan|enter", "diag: UpdateActors runs; player {} root {}", (void*)player, (void*)(player ? G::Root(player) : nullptr));
     if (!player || !G::Root(player)) return;
 
     // If player has no cell then return
@@ -170,6 +171,8 @@ void UpdateActors() {
                     candidates.push_back(actorPtr.get());
             }
         }
+        G::Once("scan|cand|" + std::to_string(candidates.size() > 1), "diag: scan candidates {} (player + high actors), "
+            "process lists {}", candidates.size(), (void*)RE::ProcessLists::GetSingleton());
         for (Actor* actor : candidates) {
             {
                 if (actor && G::Root(actor)) {
@@ -327,6 +330,8 @@ void UpdateActors() {
     }
 
     //logger.error("Updating %d entities\n", actorEntries.size());
+    G::Once("scan|entries|" + std::to_string(actorEntries.size() > 1), "diag: actor entries {} (cell {})",
+        actorEntries.size(), (void*)curCell);
     for (auto &a : actorEntries) {
         EnsureAnatomyBones(a.actor);   // fo4-anatomy (A-21): our bones exist before OCBPC looks them up by name
         auto objIterator = actors.find(a.id);

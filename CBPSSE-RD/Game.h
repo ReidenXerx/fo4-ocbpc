@@ -39,6 +39,8 @@ namespace G
 	inline const NiTransform& World(const NiAVObject* a_obj) { return *reinterpret_cast<const NiTransform*>(&a_obj->world); }
 	inline NiNode* Parent(NiAVObject* a_obj) { return a_obj->parent; }
 	inline const char* Name(const NiAVObject* a_obj) { return a_obj->name.c_str(); }
+	// BSGeometry is only declared in CommonLibF4RD: it is a NiAVObject at offset 0 (single inheritance)
+	inline const char* Name(const RE::BSGeometry* a_geo) { return Name(reinterpret_cast<const NiAVObject*>(a_geo)); }
 	inline NiNode* AsNode(NiAVObject* a_obj) { return a_obj ? a_obj->IsNode() : nullptr; }
 
 	inline NiAVObject* Find(NiAVObject* a_under, const char* a_name)
@@ -78,6 +80,20 @@ namespace G
 		return buffer.c_str();
 	}
 	inline bool NameIs(const NiAVObject* a_obj, const char* a_name) { return a_obj && std::strcmp(a_obj->name.c_str(), a_name) == 0; }
+	// a diagnostic line in cbp.log, once per key (the Runtime Database build's first runs on a new runtime)
+	template <class... Args>
+	void Once(const std::string& a_key, spdlog::format_string_t<Args...> a_fmt, Args&&... a_args)
+	{
+		static std::mutex lock;
+		static std::unordered_map<std::string, bool> said;
+		{
+			std::lock_guard<std::mutex> guard(lock);
+			if (said[a_key])
+				return;
+			said[a_key] = true;
+		}
+		spdlog::info(a_fmt, std::forward<Args>(a_args)...);
+	}
 	inline bool Deleted(const TESForm* a_form) { return (a_form->formFlags & (1u << 5)) != 0; }   // kDeleted, TESForm +0x10
 
 	// ---- what CommonLibF4RD does not define: measured on 1.10.163 (the classic F4SE SDK's headers), checked on the

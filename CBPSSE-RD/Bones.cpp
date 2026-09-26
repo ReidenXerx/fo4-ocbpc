@@ -144,6 +144,7 @@ bool EnsureAnatomyBones(Actor* actor)
 		return false;
 	int created = 0, repointed = 0;
 	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
+		G::Once("bones|geo", "diag: first geometry visited: '{}' on {:08X}", G::Name(geo), actor->formID);
 		// Runtime Database: the skin's members are 1.10.163's measurements, proven on this runtime first (Layout.cpp)
 		Layout::CheckSkin(geo);
 		if (Layout::Skin() != Layout::State::kGood)
@@ -261,6 +262,8 @@ namespace
 			RE::BSTEventSource<RE::TESObjectLoadedEvent>*) override
 		{
 			TESForm* form = evn.formID ? TESForm::GetFormByID(evn.formID) : nullptr;
+			G::Once("bones|event", "diag: first load event: form {:08X} type {} (kACHR {})", evn.formID,
+				form ? (int)form->GetFormType() : -1, (int)RE::ENUM_FORM_ID::kACHR);
 			if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kACHR)
 				return RE::BSEventNotifyControl::kContinue;   // only actors carry a body
 			std::lock_guard<std::mutex> guard(loadedLock);

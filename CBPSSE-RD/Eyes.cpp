@@ -220,9 +220,22 @@ namespace
 		// Runtime Database defines no BGSHeadPart (nor TESNPC's head parts): the classic build's own fallback, the
 		// geometry named "...Eyes..." under the root, is the way here
 		BSGeometry* geometry = FindEyes(root, 0);
-		if (!geometry)
+		if (!geometry) {
+			G::Once("eyes|none", "diag: {:08X}: no geometry named '...eyes...' within 4 levels of '{}'", a->formID, G::Name(root));
 			return nullptr;
-		return ProvenShader(geometry);
+		}
+		EyeShader* s = ProvenShader(geometry);
+		if (!s) {
+			const uintptr_t base = REL::Module::get().base();
+			const uintptr_t prop = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(geometry) + G::Measured::kGeometryShaderProperty);
+			const uintptr_t pv = prop ? *reinterpret_cast<uintptr_t*>(prop) : 0;
+			const uintptr_t mat = prop ? *reinterpret_cast<uintptr_t*>(prop + G::Measured::kShaderMaterial) : 0;
+			const uintptr_t mv = mat ? *reinterpret_cast<uintptr_t*>(mat) : 0;
+			G::Once("eyes|shader", "diag: {:08X} '{}': shader vtable +{:X} (want +{:X}), material vtable +{:X} (want +{:X})",
+				a->formID, G::Name(geometry), pv ? pv - base : 0, shaderVtable ? shaderVtable - base : 0, mv ? mv - base : 0,
+				eyeMaterialVtable ? eyeMaterialVtable - base : 0);
+		}
+		return s;
 	}
 
 	// kept: actors whose lids something else holds open this frame (the sweep), which the glances must not let go
