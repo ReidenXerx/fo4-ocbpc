@@ -191,15 +191,31 @@ namespace
 		return true;
 	}
 
+	EyeShader* ProvenShader(BSGeometry* geometry);
+
+	// Runtime Database: no head parts (BGSHeadPart is not defined), so the eyes are found by name - never the lashes
+	// ('FemaleEyesHumanLashes' carries its own material: AE run 2026-09-26), 8 levels deep (a male's eyes were not within
+	// 4 of 'skeleton.nif'), and only a geometry whose shader and material prove to be the eyes' counts.
 	BSGeometry* FindEyes(NiAVObject* o, int depth)
 	{
-		if (!o || depth > 4)
+		if (!o || depth > 8)
 			return nullptr;
 		if (BSGeometry* g = G::AsGeometry(o)) {
 			const char* n = G::Name(o);
 			std::string name = n ? n : "";
 			std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-			return name.find("eyes") != std::string::npos ? g : nullptr;
+			if (name.find("eyes") == std::string::npos || name.find("lash") != std::string::npos)
+				return nullptr;
+			if (ProvenShader(g))
+				return g;
+			const uintptr_t base = REL::Module::get().base();
+			const uintptr_t prop = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(g) + G::Measured::kGeometryShaderProperty);
+			const uintptr_t mat = prop ? *reinterpret_cast<uintptr_t*>(prop + G::Measured::kShaderMaterial) : 0;
+			const uintptr_t mv = mat ? *reinterpret_cast<uintptr_t*>(mat) : 0;
+			G::Once("eyes|reject|" + name, "diag: eye geometry '{}' refused: shader vtable +{:X}, material vtable +{:X} (want +{:X})",
+				name, prop ? *reinterpret_cast<uintptr_t*>(prop) - base : 0, mv ? mv - base : 0,
+				eyeMaterialVtable ? eyeMaterialVtable - base : 0);
+			return nullptr;
 		}
 		NiNode* node = G::AsNode(o);
 		if (!node)
