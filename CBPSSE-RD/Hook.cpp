@@ -21,13 +21,27 @@ namespace
 	constexpr Hook::IdPair kFrameOwner{ 239710, 2284754 };    // 0x2042430 / AE 0x1A80610: the only caller of the one below
 	constexpr Hook::IdPair kFrameTarget{ 967097, 2287625 };   // 0x211CF80 / AE 0x1B1E2F0: the classic "ProcessEventQueue_Internal"
 
-	using Frame_t = void (*)(void*);
-	Frame_t original = nullptr;
+	// The reset's own 11 bytes (xor eax,eax; mov [rcx+0Ch],rax; mov [rcx+4],rax; ret), the same in 1.10.163 and 1.11.240:
+	// checked before its entry is patched, and done again here, whole, before the physics.
+	constexpr std::uint8_t kReset[11] = { 0x33, 0xC0, 0x48, 0x89, 0x41, 0x0C, 0x48, 0x89, 0x41, 0x04, 0xC3 };
 
-	void Frame(void* a_this)
+	std::uint64_t Frame(void* a_this)
 	{
-		original(a_this);
+		*reinterpret_cast<std::uint64_t*>(static_cast<char*>(a_this) + 0x0C) = 0;
+		*reinterpret_cast<std::uint64_t*>(static_cast<char*>(a_this) + 0x04) = 0;
 		UpdateActors();
+		return 0;   // the reset's xor eax,eax
+	}
+
+	// ONCE: AllocTrampoline replaces the trampoline region on every call (CommonLibF4RD src/F4SE/API.cpp), which would
+	// strand the stubs of the hooks written before. 1 KB holds this plugin's hooks many times over.
+	void EnsureTrampoline()
+	{
+		static const bool allocated = [] {
+			F4SE::AllocTrampoline(1 << 10);
+			return true;
+		}();
+		(void)allocated;
 	}
 
 	[[nodiscard]] bool Known(const Hook::IdPair& a_id) { return Hook::OgFamily() ? a_id.og != 0 : a_id.ae != 0; }
@@ -77,23 +91,32 @@ namespace Hook
 	{
 		// ONCE: AllocTrampoline replaces the trampoline region on every call (CommonLibF4RD src/F4SE/API.cpp), which
 		// would strand the stubs of the hooks written before. 1 KB holds this plugin's four call sites many times over.
-		static const bool allocated = [] {
-			F4SE::AllocTrampoline(1 << 10);
-			return true;
-		}();
-		(void)allocated;
+		EnsureTrampoline();
 		return F4SE::GetTrampoline().write_call<5>(a_site, a_fn);
 	}
 
+	// On the reset's ENTRY, as the classic build detoured it - not on its one call: F4SE hooks that call itself (its task
+	// queue: measured in the running AE game 2026-09-26, the call at +1A815BC led into f4se_1_11_240.dll+0x16310, and our
+	// call hook installed before it was silently replaced, so the physics never ran). F4SE's hook still ends in the
+	// reset, so the entry is reached every frame whoever owns the call. The owner's call is still resolved first, to
+	// prove the target is the reset this build was matched on.
 	bool InstallFrame()
 	{
-		const auto site = CallSite(kFrameOwner, kFrameTarget, "per-frame hook (the physics)");
-		if (!site) {
+		const auto version = REL::Module::get().version().string();
+		const auto target = Resolve(kFrameTarget);
+		if (!target || !CallSite(kFrameOwner, kFrameTarget, "per-frame hook (the physics)")) {
+			if (!target)
+				rdlog::warn("per-frame hook: the reset does not resolve on {}: physics OFF", version);
 			return false;
 		}
-		original = reinterpret_cast<Frame_t>(WriteCall(*site, reinterpret_cast<std::uintptr_t>(&Frame)));
-		rdlog::info("per-frame hook: installed at +{:X} on Fallout 4 {}", *site - REL::Module::get().base(),
-			REL::Module::get().version().string());
+		if (std::memcmp(reinterpret_cast<const void*>(*target), kReset, sizeof(kReset)) != 0) {
+			rdlog::warn("per-frame hook: the reset's bytes are not the ones matched on {}: physics OFF", version);
+			return false;
+		}
+		EnsureTrampoline();
+		F4SE::GetTrampoline().write_branch<5>(*target, reinterpret_cast<std::uintptr_t>(&Frame));
+		rdlog::info("per-frame hook: installed on the reset's entry at +{:X} on Fallout 4 {}", *target - REL::Module::get().base(),
+			version);
 		return true;
 	}
 }
