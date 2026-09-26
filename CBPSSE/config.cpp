@@ -22,6 +22,12 @@
 #include <string>
 #include <unordered_map>
 
+#include "CollisionHub.h"
+
+// fo4-anatomy (A-46): Anatomy's own default preset and collision, for a player who has none (tools/default_preset.py)
+static const char* kDefaultPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-default.ini";
+static const char* kDefaultCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt";
+
 #include "f4se/GameObjects.h"
 #include "f4se/GameRTTI.h"
 #include "f4se_common/Utilities.h"
@@ -212,7 +218,21 @@ bool LoadConfig() {
     armorIgnore.clear();
 
     // Note: Using INIReader results in a slight double read
-    INIReader configReader("Data\\F4SE\\Plugins\\ocbp.ini");
+    // fo4-anatomy (A-46): the player's physics preset, else Anatomy's own default (read only when theirs is missing,
+    // so nobody's preset is ever overwritten or mixed with ours)
+    const char* presetPath = "Data\\F4SE\\Plugins\\ocbp.ini";
+    {
+        INIReader theirs(presetPath);
+        if (theirs.ParseError() < 0) {
+            INIReader ours(kDefaultPreset);
+            if (ours.ParseError() >= 0) {
+                presetPath = kDefaultPreset;
+                AnatomyLogLine("config|default", "[config] no ocbp.ini of the player's: Anatomy's default preset "
+                    "(F4SE\\Plugins\\Anatomy\\ocbp-default.ini)\n");
+            }
+        }
+    }
+    INIReader configReader(presetPath);
     if (configReader.ParseError() < 0) {
         logger.Error("Can't load 'ocbp.ini'\n");
     }
@@ -452,6 +472,11 @@ void LoadCollisionConfig()
     ColliderNodesList.clear();
 
     bool theirs = ParseCollisionFile("Data\\F4SE\\Plugins\\OCBPCollisionConfig.txt");
+    if (!theirs && ParseCollisionFile(kDefaultCollision)) {   // fo4-anatomy (A-46): Anatomy's own, only then
+        theirs = true;
+        AnatomyLogLine("config|defaultcollision", "[config] no OCBPCollisionConfig.txt of the player's: Anatomy's "
+            "default (F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt)\n");
+    }
     bool ours = ParseCollisionFile("Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig.txt");
     if (theirs || ours)
     {
