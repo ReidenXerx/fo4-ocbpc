@@ -132,8 +132,6 @@ void UpdateActors() {
     // we retain all state by actor ID, in a map - it's cleared on cell change
     actorEntries.clear();
 
-    EnsureLoadedActors(12);   // fo4-anatomy (A-44): our bones on every loaded actor, not only this cell's
-
 
 	//if (tuningModeCollision != 0)
 	//{
@@ -330,6 +328,15 @@ void UpdateActors() {
             actors.clear();
             actorEntries.clear();
         }
+    }
+
+    // fo4-anatomy (A-44, A-45): our bones on every loaded actor, not only this cell's, and at rest on those
+    // OCBPC does not move this frame
+    {
+        std::vector<UInt32> simulated;
+        for (auto& a : actorEntries)
+            simulated.push_back(a.id);
+        EnsureLoadedActors(12, simulated);
     }
 
     //logger.error("Updating %d entities\n", actorEntries.size());

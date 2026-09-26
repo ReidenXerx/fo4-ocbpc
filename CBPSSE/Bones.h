@@ -26,4 +26,9 @@ bool EnsureAnatomyBones(Actor* actor);
 // (a player's report, 2026-09-26). The game's own TESObjectLoadedEvent (F4SE's 1.10.163 dispatcher)
 // names every reference whose 3D loads; the actors among them are kept and visited a few per frame.
 void WatchLoadedActors();                      // once, at kMessage_GameDataReady
-void EnsureLoadedActors(int budget);           // each frame, from UpdateActors
+// A-45 (the owner's reading of the same report): OCBPC simulates the player's cell only, and an actor that
+// leaves it keeps whatever offset physics last wrote into our bones, up to [Labia] maxoffset 20 units,
+// swung hardest by a death's ragdoll: the genitals stay stretched until the player comes close. So an
+// actor not simulated this frame has our bones put back where [Bones] rests them (identity rotation).
+// `simulated` holds the form ids OCBPC updates this frame (actorEntries).
+void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated);

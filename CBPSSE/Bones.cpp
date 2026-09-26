@@ -16,6 +16,7 @@
 #include "f4se/NiObjects.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -290,7 +291,32 @@ void WatchLoadedActors()
 	Note("bones|watch", "[bones] watching every actor whose 3D loads (TESObjectLoadedEvent), not only the player's cell\n");
 }
 
-void EnsureLoadedActors(int budget)
+// A-45: our nodes under the skeleton's Pelvis_skin back where [Bones] rests them; the farthest was off, or -1
+static float RestOurBones(Actor* actor)
+{
+	BSFixedString pelvisName(kPelvis);
+	NiAVObject* pelvis = actor->unkF0->rootNode->GetObjectByName(&pelvisName);
+	if (!pelvis)
+		return -1.0f;
+	float worst = -1.0f;
+	for (auto& def : table) {
+		BSFixedString wanted(def.name.c_str());
+		NiAVObject* node = pelvis->GetObjectByName(&wanted);
+		if (!node)
+			continue;
+		NiPoint3 off = node->m_localTransform.pos - def.local;
+		float d = sqrtf(off.x * off.x + off.y * off.y + off.z * off.z);
+		if (d > worst)
+			worst = d;
+		node->m_localTransform.pos = def.local;
+		for (int r = 0; r < 3; r++)
+			for (int c = 0; c < 4; c++)
+				node->m_localTransform.rot.data[r][c] = r == c ? 1.0f : 0.0f;
+	}
+	return worst;
+}
+
+void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated)
 {
 	if (table.empty() || budget <= 0)
 		return;
@@ -311,5 +337,14 @@ void EnsureLoadedActors(int budget)
 		if (!actor || (actor->flags & TESForm::kFlag_IsDeleted) || !actor->unkF0 || !actor->unkF0->rootNode)
 			continue;
 		EnsureAnatomyBones(actor);
+		if (std::find(simulated.begin(), simulated.end(), id) != simulated.end())
+			continue;                                // OCBPC moves these bones this frame
+		float off = RestOurBones(actor);
+		if (off > 0.5f) {                            // once per actor and size: the owner's theory, measured
+			char key[64];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|rest|%08X|%d", id, (int)off);
+			Note(key, "[bones] %08X: not simulated (outside the player's cell), our bones put back at rest; they were "
+				"up to %.1f units off\n", id, off);
+		}
 	}
 }
