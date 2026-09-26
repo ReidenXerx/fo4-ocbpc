@@ -18,6 +18,8 @@
 
 #define DLLEXPORT __declspec(dllexport)
 
-namespace logger = F4SE::log;
+namespace rdlog = F4SE::log;   // the classic code has its own `logger` (log.h)
 
 using namespace std::literals;
+
+#include "Game.h"   // the classic code's view of the game, on CommonLibF4RD
