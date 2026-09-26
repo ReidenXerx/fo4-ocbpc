@@ -20,6 +20,7 @@
 //   test=0      1: every actor looks into the nearest other actor's eyes 1.5 s of every 4 (dev)
 #include "INIReader.h"
 
+#include "Game.h"
 #include <vector>
 
 struct ActorEntry;

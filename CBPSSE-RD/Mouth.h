@@ -17,8 +17,8 @@
 // on the merge then writes those values OVER the merged weights, so the animation's own mouth
 // (and AAF's, and anyone's) gives way while something is there, and comes back when it is gone.
 #include "INIReader.h"
-#include "Game.h"
 
+#include "Game.h"
 void LoadMouthConfig(INIReader& reader);
 void InstallMouthHook();
 void UpdateMouths();
