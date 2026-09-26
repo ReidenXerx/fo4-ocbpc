@@ -268,3 +268,8 @@ x64_v143/
 x64_v141/
 *.user
 .vs/
+
+# Runtime Database build (scripts/build-rd.ps1)
+build-rd/
+tools/rd/.cache/
+__pycache__/
