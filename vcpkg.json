@@ -1,0 +1,14 @@
+{
+  "name": "fo4-ocbpc",
+  "version-string": "1.1.0",
+  "description": "The Anatomy Engine (cbp.dll), Runtime Database build: one DLL for Fallout 4 OG, NG and AE",
+  "supports": "windows & x64",
+  "dependencies": [
+    "boost-stl-interfaces",
+    "fmt",
+    "rsm-mmio",
+    "spdlog",
+    "zydis"
+  ],
+  "builtin-baseline": "386d7c478221b7ee0c97bfe6ea61dcf65121d564"
+}
