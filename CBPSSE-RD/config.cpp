@@ -27,6 +27,10 @@
 
 // fo4-anatomy (A-46): Anatomy's own default preset and collision, for a player who has none (tools/default_preset.py)
 static const char* kDefaultPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-default.ini";
+// A-47: the default collision only with the default preset. Its spheres (hands on breasts and butt) were sized for our
+// preset's small offsets; beside a player's own preset (an AE profile with an ocbp.ini but no collision file, 2026-09-26)
+// a hand pushed ButtFat as far as that preset allows and tore a flat facet into the cheek.
+static bool usingDefaultPreset = false;
 static const char* kDefaultCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt";
 
 
@@ -219,12 +223,14 @@ bool LoadConfig() {
     // fo4-anatomy (A-46): the player's physics preset, else Anatomy's own default (read only when theirs is missing,
     // so nobody's preset is ever overwritten or mixed with ours)
     const char* presetPath = "Data\\F4SE\\Plugins\\ocbp.ini";
+    usingDefaultPreset = false;
     {
         INIReader theirs(presetPath);
         if (theirs.ParseError() < 0) {
             INIReader ours(kDefaultPreset);
             if (ours.ParseError() >= 0) {
                 presetPath = kDefaultPreset;
+                usingDefaultPreset = true;
                 AnatomyLogLine("config|default", "[config] no ocbp.ini of the player's: Anatomy's default preset "
                     "(F4SE\\Plugins\\Anatomy\\ocbp-default.ini)\n");
             }
@@ -470,7 +476,7 @@ void LoadCollisionConfig()
     ColliderNodesList.clear();
 
     bool theirs = ParseCollisionFile("Data\\F4SE\\Plugins\\OCBPCollisionConfig.txt");
-    if (!theirs && ParseCollisionFile(kDefaultCollision)) {   // fo4-anatomy (A-46): Anatomy's own, only then
+    if (!theirs && usingDefaultPreset && ParseCollisionFile(kDefaultCollision)) {   // fo4-anatomy (A-46, A-47): ours, with our preset only
         theirs = true;
         AnatomyLogLine("config|defaultcollision", "[config] no OCBPCollisionConfig.txt of the player's: Anatomy's "
             "default (F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt)\n");
