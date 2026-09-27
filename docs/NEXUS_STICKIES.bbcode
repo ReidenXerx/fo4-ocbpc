@@ -1,6 +1,7 @@
-=== STICKY: Every feature in fo4-ocbpc 1.0.0 ===
-[b]Every feature in fo4-ocbpc 1.0.0[/b]
+=== STICKY: Every feature in fo4-ocbpc 1.1.0 ===
+[b]Every feature in fo4-ocbpc 1.1.0[/b]
 [i]alone[/i] = works with just this DLL; [i]Anatomy[/i] = switched on by Anatomy's config; [i]Rapport[/i] = needs Rapport.
+[b]Runtimes[/b]: one DLL for 1.10.163 (F4SE 0.6.23) and the Anniversary Edition 1.11.x (its F4SE and Runtime Database); tested in game on 1.11.240, on 1.10.163 awaiting players' confirmation, next-gen 1.10.984 untested.
 
 [b]Collision[/b]
 [list]
@@ -13,6 +14,8 @@
 [list]
 [*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped; one that already has them is left alone. Cost: one comparison per skin.
 [*]Layered config: your ocbp.ini is read first, then Anatomy's; collision files are appended the same way. Installing Anatomy never overwrites your physics config.
+[*]With no ocbp.ini of yours, Anatomy's own default preset stands in, and its collision only with it ([i]Anatomy[/i]).
+[*]Bones on every loaded actor, not only your cell's, put back at rest when OCBPC isn't simulating her ([i]Anatomy[/i]; built, not yet confirmed in game).
 [/list]
 [b]Aim and shape[/b] ([i]Anatomy[/i], AAF scenes only)
 [list]
@@ -36,16 +39,16 @@
 [/list]
 [b]Stability[/b]
 [list]
-[*]Every hook checks the game's code first and stays off, logged, on any other build; the engine's code is never modified.
+[*]Every address comes from Runtime Database; every hook and every class the engine reads directly is checked first, and whatever doesn't prove out stays off, logged. The game's own functions are never modified.
 [*]A fault while installing the eye or mouth hook turns only that feature off.
-[*]The DetourXS x64 decode fix; a log a relaunched game cannot wipe; the discovery log for modders is off by default.
+[*]No DetourXS: every hook goes through F4SE's trampoline; F4SE is never named a plugin (AE kills the game over it); a log a relaunched game cannot wipe; the discovery log for modders is off by default.
 [*]Offline test suites, each proven by planted faults: aim (22 cases), face (51 checks), lips (17), tube (8).
 [/list]
-[b]Not yet confirmed in game:[/b] toys as one tube, big-toy and fist stretch, Rapport's MCM knobs for the engine, and brows following vaginal and anal depth. Tell us what you see.
+[b]Not yet confirmed in game:[/b] 1.1.0 on 1.10.163 and next-gen, bones kept outside your cell, toys as one tube, big-toy and fist stretch, Rapport's MCM knobs for the engine, and brows following vaginal and anal depth. Tell us what you see.
 
 === STICKY: fo4-ocbpc settings, for modders ===
 [b]fo4-ocbpc settings, for modders[/b]
-Two ini files are read, yours first: [i]Data\F4SE\Plugins\ocbp.ini[/i], then [i]Data\F4SE\Plugins\Anatomy\ocbp.ini[/i]. OCBPCollisionConfig.txt is read the same way and appended.
+Two ini files are read, yours first: [i]Data\F4SE\Plugins\ocbp.ini[/i], then [i]Data\F4SE\Plugins\Anatomy\ocbp.ini[/i]. OCBPCollisionConfig.txt is read the same way and appended. With no ocbp.ini of yours, [i]Anatomy\ocbp-default.ini[/i] stands in, and [i]Anatomy\OCBPCollisionConfig-default.txt[/i] is read only then.
 
 [list]
 [*][b][Attach], bone sections, [Override:*], [Whitelist][/b]: OCBPC's physics, as always.

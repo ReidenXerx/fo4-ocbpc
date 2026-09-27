@@ -24,21 +24,22 @@ Fallout 4 skeletons have no genital bones, so contact had nothing to move. For e
 [*]creates any missing node under it, at the offset from the entry;
 [*]points the skin's bone and world-transform entries at the new nodes.
 [/list]
-A skeleton that already has the bones is left alone. Skins are cached by their bone array and count, so the steady-state cost is one comparison per skin. Anatomy ships 15 entries: 9 bones that contact pushes, and 6 [font=Courier New]_Stretch[/font] children that open wider under a bigger push (knee, gain and a 1.5 cap per opening; the large-object case is built, not yet seen in game).
+A skeleton that already has the bones is left alone. Skins are cached by their bone array and count, so the steady-state cost is one comparison per skin. Since 1.1.0 the engine also keeps a list of every loaded actor (12 checked per frame, in turn), not only the ones in your cell, and puts the bones of an actor OCBPC isn't simulating back at rest (built, not yet confirmed in game). Anatomy ships 15 entries: 9 bones that contact pushes, and 6 [font=Courier New]_Stretch[/font] children that open wider under a bigger push (knee, gain and a 1.5 cap per opening; the large-object case is built, not yet seen in game).
 
 [b]4. Config layering[/b]
-Your own [font=Courier New]Data\F4SE\Plugins\ocbp.ini[/font] is read first, then [font=Courier New]Data\F4SE\Plugins\Anatomy\ocbp.ini[/font]. The engine's own sections ([font=Courier New][Props] [Mouth] [Face] [Bones] [Aim] [Eyes] [Tube][/font]) come from Anatomy's file when it has them. The collision files are [i]appended[/i]: a node listed in both keeps its spheres and gains Anatomy's. Nothing of your physics mod is overwritten.
+Your own [font=Courier New]Data\F4SE\Plugins\ocbp.ini[/font] is read first, then [font=Courier New]Data\F4SE\Plugins\Anatomy\ocbp.ini[/font]. The engine's own sections ([font=Courier New][Props] [Mouth] [Face] [Bones] [Aim] [Eyes] [Tube][/font]) come from Anatomy's file when it has them. The collision files are [i]appended[/i]: a node listed in both keeps its spheres and gains Anatomy's. Nothing of your physics mod is overwritten. With no ocbp.ini of yours, Anatomy's [font=Courier New]ocbp-default.ini[/font] stands in, and its collision file is read only then.
 
 === STICKY: How the Anatomy Engine works inside (part 2) ===
 [b]How the Anatomy Engine works inside, part 2: hooks, faces, aim, lips[/b]
 
 [b]5. Hooks that read the game first[/b]
-The engine patches exactly two places in Fallout4.exe 1.10.163, both only after checking the bytes it expects:
+Since 1.1.0 one DLL serves 1.10.163, next-gen and the Anniversary Edition. Every address comes from Runtime Database by id (1.10.163 from its built-in table, the others from its [font=Courier New]f4rd-runtime.bin[/font]), and a call is repointed only where Runtime Database finds a call from the right function to the right target. Three places are patched:
 [list]
-[*][b]The face merge[/b] (+0x6689D0). Its first bytes must match a stored prologue, and its one caller (+0x6860FA) must be a [font=Courier New]CALL rel32[/font] that lands on it. Only then is that call repointed, through F4SE's branch trampoline. The patch is read back: the call must now reach a [font=Courier New]jmp [rip][/font] stub holding the engine's address. The merge's own code is never modified.
-[*][b]The eye update[/b] (+0x9C0410), called from two sites (+0xD38B13, +0xD39681), is checked and repointed the same way.
+[*][b]The per-frame update[/b]: a branch on the entry of the game's per-frame reset, only if its 11 bytes are the ones read (the same on 1.10.163 and AE); the engine redoes the reset's two stores, then updates the actors. On AE, F4SE takes that function's call site for itself, so the entry is used instead.
+[*][b]The face merge[/b]: its call is repointed through F4SE's trampoline; on 1.10.163 the merge's first bytes must also match the ones read. The merge's own code is never modified.
+[*][b]The eye update[/b], called from two sites, the same way.
 [/list]
-Both installs run under a structured-exception guard. A fault turns that one feature off and writes where it happened to [font=Courier New]anatomy_ocbpc.log[/font]; the game keeps running. On any other game build the checks fail and the feature stays off. Steam and GOG 1.10.163 are byte-identical at these addresses.
+Every class member read directly is proven once first: skin transform slots must point at their bones' world transforms, and the face data, the eye's shader and its material must carry the class tables Runtime Database names. A mismatch, or a fault while installing (under a structured-exception guard), turns that one feature off and logs it in [font=Courier New]anatomy_ocbpc.log[/font]; the game keeps running.
 
 [b]6. Faces written after the merge[/b]
 The game merges a face as [font=Courier New]max(expression override, animation)[/font]. An override can open a jaw, but it can never close one the animation opened; upper eyelids are forced again after the merge. The engine runs just after that merge and composes, in order:
