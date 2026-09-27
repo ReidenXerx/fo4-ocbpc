@@ -33,6 +33,11 @@ extern bool maleOnly;
 extern bool npcOnly;
 extern bool detectArmor;
 extern bool useWhitelist;
+// fo4-anatomy (A-49): the bones Anatomy's own [Attach] names. A player's preset with useWhitelist=1 simulates only the
+// bones ITS [Whitelist] lists, which never name ours (a player's report, 2026-09-28: no genital movement at all), so
+// ours pass the per-bone whitelist; the actor must still pass the preset's race whitelist.
+#include <set>
+extern std::set<std::string> anatomyBones;
 
 extern int configReloadCount;
 extern config_t config;

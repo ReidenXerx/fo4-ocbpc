@@ -44,6 +44,7 @@ bool maleOnly = false;
 bool npcOnly = false;
 bool detectArmor = false;
 bool useWhitelist = false;
+std::set<std::string> anatomyBones;   // A-49, see config.h
 
 config_t config;
 config_t configArmor;
@@ -112,6 +113,8 @@ static void ReadBoneSections(INIReader& configReader, bool anatomy)
                 auto& boneName = valuesIter.first;
                 auto& attachName = valuesIter.second;
                 boneNames.push_back(boneName);
+                if (anatomy)
+                    anatomyBones.insert(boneName);
                 // Find specified bone section and insert map values into config
                 if (sections.find(attachName) != sections.end()) {
                     auto attachMapSection = configReader.Section(attachName);
@@ -129,6 +132,8 @@ static void ReadBoneSections(INIReader& configReader, bool anatomy)
                 auto &boneName = valuesIter.first;
                 auto &attachName = valuesIter.second;
                 boneNames.push_back(boneName);
+                if (anatomy)
+                    anatomyBones.insert(boneName);
                 // Find specified bone section and insert map values into configArmor
                 if (sections.find(attachName) != sections.end()) {
                     auto attachMapSection = configReader.Section(attachName);
@@ -213,6 +218,7 @@ bool LoadConfig() {
     auto useWhitelistOld = useWhitelist;
 
     boneNames.clear();
+    anatomyBones.clear();
     config.clear();
     configArmor.clear();
     configOverrides.clear();

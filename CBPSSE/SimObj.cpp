@@ -73,7 +73,7 @@ void SimObj::Update(Actor *actor) {
             }
         }
 
-        if (!useWhitelist || (IsBoneInWhitelist(actor, t.first) && useWhitelist) &&
+        if (!useWhitelist || ((IsBoneInWhitelist(actor, t.first) || anatomyBones.count(t.first)) && useWhitelist) &&
             !IsActorInPowerArmor(actor))
         {
             logger.Error("SimObj::Update - calling Thing::Update\n");
