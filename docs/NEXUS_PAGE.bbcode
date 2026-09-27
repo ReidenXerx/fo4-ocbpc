@@ -41,6 +41,7 @@ Anatomy's own config switches these on; without it, they stay off.
 [*][b]Lips that fit.[/b] Fallout 4 heads have no mouth bones, so the engine solves 15 measured mouth morphs every frame to rest the lips on whatever crosses them, and closes them between strokes.
 [*][b]A shape per man:[/b] a thinner shaft and a bigger head, scaled on his bones at run time. BodyTalk4's files are untouched.
 [/list]
+[i]In the next update: the genital bones stay attached on women outside your own cell, and settle back to rest after a ragdoll (built, not yet confirmed in game).[/i]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/aim.jpg[/img][/center]
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/lips.jpg[/img][/center]
@@ -61,11 +62,11 @@ Anatomy's own config switches these on; without it, they stay off.
 [size=5][b][color=#ffb547]Before you play[/color][/b][/size]
 
 [quote]
-[b]Fallout 4 1.10.163 with F4SE 0.6.23[/b], Steam or GOG. Not the next-gen update: on any other build every hook stays off and says so in the log.
+[b]Fallout 4 1.10.163 with F4SE 0.6.23[/b], Steam or GOG. Not the next-gen update: on any other build every hook stays off and says so in the log. [b]In the next update:[/b] one cbp.dll for 1.10.163 and the 1.11 Anniversary Edition (tested in game on AE); next-gen 1.10.984 is built but not yet tested.
 
-[b]Body, skeleton and physics preset.[/b] Anatomy is built for CBBE's own 3BBB body (the "CBBE Body Physics" set in BodySlide); other bodies aren't supported. Any skeleton works, 3BBB included: the genital bones are added at run time. Your ocbp.ini and collision file keep working unchanged; only [font=Courier New]cbp.dll[/font] must be this engine's.
+[b]Body, skeleton and physics preset.[/b] Anatomy is built for CBBE's own physics body (the "CBBE Body Physics" set in BodySlide); other bodies, 3BBB bodies included, aren't supported. Any skeleton works, 3BBB included: the genital bones are added at run time. Your ocbp.ini and collision file keep working unchanged; only [font=Courier New]cbp.dll[/font] must be this engine's.
 
-[b]With Anatomy, you need a physics preset:[/b] A physics preset for OCBP/OCBPC, one that provides [font=Courier New]Data\F4SE\Plugins\ocbp.ini[/font] (tested with MadKita's Actual Jiggle). Anatomy's genital physics sit on top of it; without one it isn't supported.
+[b]With Anatomy, you need a physics preset:[/b] A physics preset for OCBP/OCBPC, one that provides [font=Courier New]Data\F4SE\Plugins\ocbp.ini[/font] (tested with MadKita's Actual Jiggle). Anatomy's genital physics sit on top of it; without one it isn't supported. In the next update Anatomy brings its own, and this becomes optional.
 
 [b]It replaces cbp.dll.[/b] If OCBPC, Jiggle Physics or another mod also ships [font=Courier New]F4SE\Plugins\cbp.dll[/font], let this one win in your mod manager. Keep their configs: they are read as they are.
 
