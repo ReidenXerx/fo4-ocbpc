@@ -1,5 +1,5 @@
-=== STICKY: Every feature in fo4-ocbpc 1.1.0 ===
-[b]Every feature in fo4-ocbpc 1.1.0[/b]
+=== STICKY: Every feature in fo4-ocbpc 1.1.1 ===
+[b]Every feature in fo4-ocbpc 1.1.1[/b]
 [i]alone[/i] = works with just this DLL; [i]Anatomy[/i] = switched on by Anatomy's config; [i]Rapport[/i] = needs Rapport.
 [b]Runtimes[/b]: one DLL for 1.10.163 (F4SE 0.6.23) and the Anniversary Edition 1.11.x (its F4SE), with Runtime Database on every version; tested in game on 1.11.240, on 1.10.163 awaiting players' confirmation, next-gen 1.10.984 untested.
 
@@ -15,10 +15,12 @@
 [*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped; one that already has them is left alone. Cost: one comparison per skin.
 [*]Layered config: your ocbp.ini is read first, then Anatomy's; collision files are appended the same way. Installing Anatomy never overwrites your physics config.
 [*]With no ocbp.ini of yours, Anatomy's own default preset stands in, and its collision only with it ([i]Anatomy[/i]).
+[*]Anatomy's own bones pass a preset's [Whitelist] (useWhitelist=1 froze the genitals before 1.1.1); the preset's race whitelist still applies ([i]Anatomy[/i]).
 [*]Bones on every loaded actor, not only your cell's, put back at rest when OCBPC isn't simulating her ([i]Anatomy[/i]; built, not yet confirmed in game).
 [/list]
 [b]Aim and shape[/b] ([i]Anatomy[/i], AAF scenes only)
 [list]
+[*]Needs the men's skeleton from ZeX (Penis_00..05 in one chain); on any other the aim stays off and says so in the log.
 [*]Turns toward the opening the animation meant: a new lock turns at most 35°, is kept up to 45°, and an entry is allowed up to 75° off the way in. A short shaft stretches at most 10%.
 [*]Bends along a measured canal path; the throat path follows head and neck; a curled hand is a target of its own.
 [*]Exact per-frame bend, no lag on a fast pull-out; switching openings crossfades.
