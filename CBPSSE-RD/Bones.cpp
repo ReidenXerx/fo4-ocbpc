@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <new>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -218,9 +219,17 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				NiNode* parentNode = G::AsNode(p->second);
 				if (!parentNode)
 					continue;
-				NiNode* made = new NiNode(0);   // the game's heap (F4_HEAP_REDEFINE_NEW); its children vtable by REL::ID
-				if (!made)
+				// A-53: the game's heap, zeroed, then constructed. CommonLibF4RD's NiRefObject() never sets refCount (nor
+				// NiAVObject() its worldBound), so a plain `new NiNode(0)` started with whatever the heap held there. The
+				// owner's AE diag build (2026-09-29) caught it: counts of 2139095041 and 1075650562 at creation, and one
+				// node (AnatAnus_L_Stretch) that came in at 0xFFFFFFFF, reached 0 inside AttachChild's own smart-pointer
+				// copy and was deleted on the spot, with the body's skin then pointed at it -- the skinning job crashes
+				// in NPC scenes and around sleep/redress. The game's own NiNode constructor leaves the count at 0.
+				void* mem = RE::aligned_alloc(alignof(NiNode), sizeof(NiNode));
+				if (!mem)
 					continue;
+				std::memset(mem, 0, sizeof(NiNode));
+				NiNode* made = ::new (mem) NiNode(0);   // its children vtable by REL::ID
 				made->name = def.name.c_str();
 				G::Local(made).pos = def.local;
 				InitWorld(made, parentNode, def.local);
