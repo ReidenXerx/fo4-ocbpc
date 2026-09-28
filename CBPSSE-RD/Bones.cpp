@@ -138,7 +138,20 @@ void LoadBonesConfig(INIReader& reader)
 	Note(key, "[bones] table: %d node(s) from [Bones]: %s\n", (int)table.size(), names.c_str());
 }
 
-bool EnsureAnatomyBones(Actor* actor)
+// fo4-anatomy (A-51): true when this node hangs, parent by parent, from the actor's live 3D root. A body being
+// swapped (a mod unequipping 30 slots in a loop, the owner's AE crash 2026-09-29) has a skin still bound to nodes that
+// are about to go, or already gone; those are skipped this frame and tried again on the next.
+static bool Reaches(NiAVObject* node, NiAVObject* root)
+{
+	for (int hops = 0; node && hops < 256; hops++) {
+		if (node == root)
+			return true;
+		node = G::Parent(node);
+	}
+	return false;
+}
+
+static bool EnsureAnatomyBonesImpl(Actor* actor)
 {
 	if (table.empty() || !actor || !G::Root(actor) || !G::Root(actor))
 		return false;
@@ -184,6 +197,8 @@ bool EnsureAnatomyBones(Actor* actor)
 			Note(key, "[bones] %08X: a skin of %u bones with Pelvis_skin; %d of them ours, %d empty entries\n",
 				actor->formID, count, oursCount, nulls);
 		}
+		if (pelvis && !Reaches(pelvis, G::Root(actor)))
+			return;                                  // A-51: bound to nodes that are not the live skeleton's
 		if (!pelvis || !namesOurs) {
 			done[skin] = Done{ G::SkinBones(skin).entries, count, kNone, nullptr };
 			return;
@@ -316,6 +331,36 @@ static float RestOurBones(Actor* actor)
 	return worst;
 }
 
+// A-51: a fault while her 3D changes under us skips that actor for this frame, logged once, instead of taking the
+// game down (the frame runs inside the game's job system, so another job can be rebuilding a body meanwhile).
+static void NoteFault(Actor* actor, const char* what)
+{
+	char key[80];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|fault|%s|%08X", what, actor ? actor->formID : 0);
+	Note(key, "[bones] %08X: a fault in %s was caught; the actor is skipped this frame (her 3D was changing)\n",
+		actor ? actor->formID : 0, what);
+}
+
+bool EnsureAnatomyBones(Actor* actor)
+{
+	__try {
+		return EnsureAnatomyBonesImpl(actor);
+	} __except (1) {
+		NoteFault(actor, "EnsureAnatomyBones");
+		return false;
+	}
+}
+
+static float RestOurBonesGuarded(Actor* actor)
+{
+	__try {
+		return RestOurBones(actor);
+	} __except (1) {
+		NoteFault(actor, "RestOurBones");
+		return 0.0f;
+	}
+}
+
 void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated)
 {
 	if (table.empty() || budget <= 0)
@@ -339,7 +384,7 @@ void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated)
 		EnsureAnatomyBones(actor);
 		if (std::find(simulated.begin(), simulated.end(), id) != simulated.end())
 			continue;                                // OCBPC moves these bones this frame
-		float off = RestOurBones(actor);
+		float off = RestOurBonesGuarded(actor);
 		if (off > 0.5f) {                            // once per actor and size: the owner's theory, measured
 			char key[64];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|rest|%08X|%d", id, (int)off);
