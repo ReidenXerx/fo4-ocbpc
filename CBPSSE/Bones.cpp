@@ -152,7 +152,7 @@ static bool Reaches(NiAVObject* node, NiAVObject* root)
 	for (int hops = 0; node && hops < 256; hops++) {
 		if (node == root)
 			return true;
-		node = G::Parent(node);
+		node = node->m_parent;
 	}
 	return false;
 }
@@ -172,7 +172,8 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		auto seen = done.find(skin);
 		if (seen != done.end() && seen->second.entries == skin->bones.entries && seen->second.count == count &&
 				(seen->second.index == kNone ||
-				 (seen->second.index < count && skin->bones.entries[seen->second.index] == seen->second.node)))
+				 (seen->second.index < count && skin->bones.entries[seen->second.index] == seen->second.node &&
+				  Reaches(seen->second.node, actor->unkF0->rootNode))))   // A-52: still on the live skeleton
 			return;
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
@@ -198,7 +199,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			Note(key, "[bones] %08X: a skin of %u bones with Pelvis_skin; %d of them ours, %d empty entries\n",
 				actor->formID, count, oursCount, nulls);
 		}
-		if (pelvis && !Reaches(pelvis, G::Root(actor)))
+		if (pelvis && !Reaches(pelvis, actor->unkF0->rootNode))
 			return;                                  // A-51: bound to nodes that are not the live skeleton's
 		if (!pelvis || !namesOurs) {
 			done[skin] = Done{ skin->bones.entries, count, kNone, nullptr };
@@ -225,6 +226,12 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				made->m_localTransform.pos = def.local;
 				InitWorld(made, parentNode, def.local);
 				parentNode->AttachChild(made, true);
+				// A-52: our own reference, never given back. The owner's AE crashes (2026-09-29, a mod unequipping and
+				// re-equipping 30 slots in a loop): a node of ours was freed while body skins still pointed at it, and
+				// the game's skinning job walked into it. (BSSkin::Instance's destructor does not release bones, AE
+				// +16D91E0: the game's own equip/unequip bone bookkeeping removed it.) Held, a detached node stays valid
+				// memory; a few dozen bytes per node for the session.
+				InterlockedIncrement(&made->m_uiRefCount);
 				found = made;
 				created++;
 			}

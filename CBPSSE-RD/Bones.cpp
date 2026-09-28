@@ -171,7 +171,8 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		auto seen = done.find(skin);
 		if (seen != done.end() && seen->second.entries == G::SkinBones(skin).entries && seen->second.count == count &&
 				(seen->second.index == kNone ||
-				 (seen->second.index < count && G::SkinBones(skin).entries[seen->second.index] == seen->second.node)))
+				 (seen->second.index < count && G::SkinBones(skin).entries[seen->second.index] == seen->second.node &&
+				  Reaches(seen->second.node, G::Root(actor)))))   // A-52: our node still on the live skeleton
 			return;
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
@@ -224,6 +225,12 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				G::Local(made).pos = def.local;
 				InitWorld(made, parentNode, def.local);
 				parentNode->AttachChild(made, true);
+				// A-52: our own reference, never given back. The owner's AE crashes (2026-09-29, a mod unequipping and
+				// re-equipping 30 slots in a loop): a node of ours was freed while body skins still pointed at it, and
+				// the game's skinning job walked into it. (BSSkin::Instance's destructor does not release bones, AE
+				// +16D91E0: the game's own equip/unequip bone bookkeeping removed it.) Held, a detached node stays valid
+				// memory; a few dozen bytes per node for the session.
+				made->IncRefCount();
 				found = made;
 				created++;
 			}
