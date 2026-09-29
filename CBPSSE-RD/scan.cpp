@@ -332,6 +332,9 @@ void UpdateActors() {
     //logger.error("Updating %d entities\n", actorEntries.size());
     G::Once("scan|entries|" + std::to_string(actorEntries.size() > 1), "diag: actor entries {} (cell {})",
         actorEntries.size(), (void*)curCell);
+    // fo4-anatomy (A-57): what the physics costs per frame, to put numbers on a 3BBB body against CBBE's
+    double physUs = 0.0;
+    size_t physActors = 0, physBones = 0;
     for (auto &a : actorEntries) {
         EnsureAnatomyBones(a.actor);   // fo4-anatomy (A-21): our bones exist before OCBPC looks them up by name
         auto objIterator = actors.find(a.id);
@@ -349,7 +352,11 @@ void UpdateActors() {
                 else {
                     simObj.UpdateConfig(a.actor, boneNames, config);
                 }
+                const auto t0 = std::chrono::steady_clock::now();
                 simObj.Update(a.actor);
+                physUs += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+                physActors++;
+                physBones += simObj.things.size();
             }
             else {
                 if (IsActorTorsoArmorEquipped(a.actor) && detectArmor) {
@@ -359,6 +366,25 @@ void UpdateActors() {
                 else {
                     simObj.Bind(a.actor, boneNames, config);
                 }
+            }
+        }
+    }
+    {
+        // every 1800 frames (~30 s at 60 fps): the physics' average and worst cost per frame, and what it moved
+        static size_t frames = 0, actorSum = 0, boneSum = 0;
+        static double usSum = 0.0, usWorst = 0.0;
+        if (physActors > 0) {
+            frames++;
+            actorSum += physActors;
+            boneSum += physBones;
+            usSum += physUs;
+            usWorst = (std::max)(usWorst, physUs);
+            if (frames >= 1800) {
+                spdlog::info("physics: {:.0f} us per frame on average, worst {:.0f} us, over {} frames; {:.1f} actors and "
+                             "{:.0f} bones simulated per frame", usSum / frames, usWorst, frames,
+                             (double)actorSum / frames, (double)boneSum / frames);
+                frames = actorSum = boneSum = 0;
+                usSum = usWorst = 0.0;
             }
         }
     }
