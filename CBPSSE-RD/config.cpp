@@ -44,6 +44,7 @@ bool maleOnly = false;
 bool npcOnly = false;
 bool detectArmor = false;
 bool useWhitelist = false;
+bool contactConstraint = true;
 std::set<std::string> anatomyBones;   // A-49, see config.h
 
 config_t config;
@@ -269,6 +270,7 @@ bool LoadConfig() {
                     (useWhitelist ^ useWhitelistOld);
 
     detectArmor = configReader.GetBoolean("General", "detectArmor", false);
+    contactConstraint = configReader.GetBoolean("General", "contactConstraint", true);
     configReloadCount = configReader.GetInteger("Tuning", "rate", 0);
 
     // fo4-anatomy: [Props], [Mouth] and [Bones] come from our own ini when it is there

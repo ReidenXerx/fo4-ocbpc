@@ -11,6 +11,8 @@
 #include "TubeCollide.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include "Utility.hpp"
 
 constexpr auto DEG_TO_RAD = 3.14159265 / 180;
@@ -221,6 +223,10 @@ NiAVObject* Thing::IsActorValid(Actor* actor) {
 void Thing::Update(Actor *actor) {
 
 	bool collisionsOn = true;
+	// fo4-anatomy (A-55): a body bone (breasts, butt, belly, thighs) meets a collider as a contact: the spring always
+	// runs, then the bone is held on the collider's surface. Our genital bones ("Anat...") keep OCBPC's push, which
+	// the lips and the anus were tuned on.
+	const bool contact = contactConstraint && std::strncmp(boneName.c_str(), "Anat", 4) != 0;
 
     /*LARGE_INTEGER startingTime, endingTime, elapsedMicroseconds;
     LARGE_INTEGER frequency;
@@ -346,7 +352,7 @@ void Thing::Update(Actor *actor) {
 	std::vector<long> thingIdList;
 	std::vector<long> hashIdList;
     //logger.Info("Collisions on: %d, hashSize: %d\n", collisionsOn, hashSize);
-	if (collisionsOn && hashSize>0)
+	if (collisionsOn && hashSize>0 && !contact)
 	{
 		//logger.Info("Before Collision Stuff Start\n");
 		// Collision Stuff Start
@@ -519,7 +525,65 @@ void Thing::Update(Actor *actor) {
             deltaT -= timeTick;
         } while (deltaT >= timeTick);
 
-        if (collisionsOn && hashSize > 0)
+        if (contact && collisionsOn && hashSize > 0)
+        {
+            // fo4-anatomy (A-55): where the spring would put the bone, shown; out of every collider, the push turned
+            // back into the spring's own units (the inverse of the shown-offset transform below), only the velocity
+            // INTO the collider removed and a little friction along it. No kick: a steady press holds still.
+            NiPoint3 cand = newPos + posDelta;
+            NiMatrix43 rotLin;
+            rotLin.SetEulerAngles(rotateLinearX * DEG_TO_RAD, rotateLinearY * DEG_TO_RAD, rotateLinearZ * DEG_TO_RAD);
+            const NiMatrix43 parentRot = G::World(G::Parent(obj)).rot;
+            const NiMatrix43 skelRot = G::Local(skeletonObj).rot;
+            const NiPoint3 origLocal = origLocalPos[boneName.c_str()][actor->formID];
+            auto shownWorld = [&](const NiPoint3& internal) {
+                NiPoint3 d = internal - target;
+                d.x = clamp(d.x, -maxOffsetX, maxOffsetX);
+                d.y = clamp(d.y, -maxOffsetY, maxOffsetY);
+                d.z = clamp(d.z - gravityCorrection, -maxOffsetZ, maxOffsetZ) + gravityCorrection;
+                NiPoint3 l = skelRot * d;
+                l.x *= linearX;
+                l.y *= linearY;
+                l.z *= linearZ;
+                l = (rotLin * parentRot) * (skelRot.Transpose() * l);
+                return G::World(G::Parent(obj)).pos + parentRot.Transpose() * (origLocal + l);
+            };
+            const NiPoint3 at = shownWorld(cand);
+            NiPoint3 pushWorld = zeroVector;
+            bool touched = false;
+            for (int pass = 0; pass < 4; pass++) {         // several spheres at once settle in a few passes
+                for (auto& s : thingCollisionSpheres)
+                    s.worldPos = at + pushWorld + (objRotation * s.offset);
+                NiPoint3 p = zeroVector;
+                if (!ContactPush(actor, p))
+                    break;
+                touched = true;
+                pushWorld += p;
+            }
+            if (touched) {
+                NiPoint3 w = parentRot.Transpose() * (rotLin.Transpose() * (parentRot * pushWorld));
+                NiPoint3 s = skelRot * w;
+                s.x = linearX > 1e-4f ? s.x / linearX : 0.0f;
+                s.y = linearY > 1e-4f ? s.y / linearY : 0.0f;
+                s.z = linearZ > 1e-4f ? s.z / linearZ : 0.0f;
+                const NiPoint3 dInternal = skelRot.Transpose() * s;
+                cand += dInternal;
+                const float len = std::sqrt(dInternal.x * dInternal.x + dInternal.y * dInternal.y + dInternal.z * dInternal.z);
+                if (len > 1e-6f) {
+                    const NiPoint3 n = dInternal * (1.0f / len);
+                    float vn = velocity.x * n.x + velocity.y * n.y + velocity.z * n.z;
+                    if (vn < 0.0f) {
+                        velocity -= n * vn;
+                        vn = 0.0f;
+                    }
+                    const float keep = std::exp(-8.0f * (float)originalDeltaT / 1000.0f);
+                    velocity = n * vn + (velocity - n * vn) * keep;
+                }
+                collisionOnLastFrame = true;
+            }
+            newPos = cand;
+        }
+        else if (collisionsOn && hashSize > 0)
         {
             //LOG("Before Maybe Collision Stuff Start");
             NiPoint3 maybePos = newPos + posDelta;
@@ -658,12 +722,11 @@ void Thing::Update(Actor *actor) {
         // move the bones based on the supplied weightings
         // Convert the world translations into local coordinates
 
+        // fo4-anatomy (A-55): rotateLinear on EVERY frame. OCBPC skipped it on a collision frame, so with a preset's
+        // rotateLinear (OCBPC 0.3's [Butt] rotateLinearZ=90) a bone flickering in and out of contact swung its
+        // offset between two directions frame after frame: a twitch under any hand.
         NiMatrix43 invRot;
-
-        if (IsThereCollision) {
-            invRot = G::World(G::Parent(obj)).rot;
-        }
-        else {
+        {
             NiMatrix43 rotateLinear;
             rotateLinear.SetEulerAngles(rotateLinearX* DEG_TO_RAD,
                                         rotateLinearY* DEG_TO_RAD,
@@ -741,4 +804,47 @@ void Thing::Update(Actor *actor) {
     elapsedMicroseconds.QuadPart /= frequency.QuadPart;
     _MESSAGE("Thing.update() Update Time = %lld ns\n", elapsedMicroseconds.QuadPart);*/
 
+}
+
+// fo4-anatomy (A-55): every collider touching this bone's spheres where they stand now, each once, the penis tubes as
+// tubes (the same filters as Update's passes), summed as one push in world units.
+bool Thing::ContactPush(Actor* actor, NiPoint3& push)
+{
+    push = zeroVector;
+    std::vector<long> ids;
+    for (auto& s : thingCollisionSpheres)
+        for (long id : GetHashIdsFromPos(s.worldPos, s.radius, hashSize))
+            if (std::find(ids.begin(), ids.end(), id) == ids.end())
+                ids.push_back(id);
+    bool hit = false;
+    std::vector<NiAVObject*> seen;
+    for (long id : ids) {
+        auto part = partitions.find(id);
+        if (part == partitions.end())
+            continue;
+        for (auto& col : part->second.partitionCollisions) {
+            if (col.colliderActor == actor && std::strcmp(col.colliderNodeName.c_str(), boneName.c_str()) == 0)
+                continue;
+            if (col.isProp && !PropReaches(boneName.c_str()))
+                continue;
+            if (std::find(seen.begin(), seen.end(), col.CollisionObject) != seen.end())
+                continue;
+            seen.push_back(col.CollisionObject);
+            if (IsTubeMember(col.colliderActor, col.colliderNodeName))
+                continue;
+            callCount++;
+            bool colliding = false;
+            NiPoint3 d = col.CheckCollision(colliding, thingCollisionSpheres, timeTick, 16, maxOffsetX, false);
+            if (colliding) {
+                hit = true;
+                push += d;
+            }
+        }
+    }
+    NiPoint3 tube = zeroVector;
+    if (TubePush(actor, boneName.c_str(), thingCollisionSpheres, tube)) {
+        hit = true;
+        push += tube;
+    }
+    return hit;
 }

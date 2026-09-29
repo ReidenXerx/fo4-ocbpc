@@ -95,4 +95,8 @@ public:
 
 
 	std::vector<Sphere> CreateThingCollisionSpheres(Actor * actor, std::string nodeName, float nodescale);
+
+	// fo4-anatomy (A-55): the summed push of every collider (and penis tube) on thingCollisionSpheres where they
+	// stand now, in world units; false when nothing touches them
+	bool ContactPush(Actor* actor, NiPoint3& push);
 };

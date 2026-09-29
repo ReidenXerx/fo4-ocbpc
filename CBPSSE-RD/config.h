@@ -33,6 +33,8 @@ extern bool maleOnly;
 extern bool npcOnly;
 extern bool detectArmor;
 extern bool useWhitelist;
+// fo4-anatomy (A-55): [General] contactConstraint, on unless 0: a collider holds a body bone on its surface
+extern bool contactConstraint;
 // fo4-anatomy (A-49): the bones Anatomy's own [Attach] names. A player's preset with useWhitelist=1 simulates only the
 // bones ITS [Whitelist] lists, which never name ours (a player's report, 2026-09-28: no genital movement at all), so
 // ours pass the per-bone whitelist; the actor must still pass the preset's race whitelist.
