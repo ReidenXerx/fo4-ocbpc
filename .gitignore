@@ -273,3 +273,22 @@ x64_v141/
 build-rd/
 tools/rd/.cache/
 __pycache__/
+
+# bearing — generated local state (safe to remove via bearing-uninstall)
+.bearing/.gitnexus-*
+.bearing/.bearing-*
+.bearing/.task-core.md
+.bearing/task-cores/
+*.bearing-backup
+.bearing/manifest.json
+.bearing/hooks.local.json
+.gitnexus/
+.tmp-agent/
+.bearing/gitnexus-api-profile.json
+docs/ARCHITECTURE.gitnexus.md
+.e2e/node_modules/
+.e2e/shots/
+.e2e/storage*.json
+.claude/skills/*
+!.claude/skills/gitnexus-area-*/
+# --- end bearing ---
