@@ -32,6 +32,10 @@ static const char* kDefaultPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-default.
 // a hand pushed ButtFat as far as that preset allows and tore a flat facet into the cheek.
 static bool usingDefaultPreset = false;
 static const char* kDefaultCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt";
+// A-57: written by the builder for the body it built (CBBE or 3BBB); preferred over the shipped default when present
+static const char* kBodyPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-body.ini";
+static const char* kBodyCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-body.txt";
+static const char* defaultCollision = kDefaultCollision;
 
 
 //#define DEBUG 0
@@ -234,10 +238,21 @@ bool LoadConfig() {
     {
         INIReader theirs(presetPath);
         if (theirs.ParseError() < 0) {
+            // A-57: the builder writes the preset for the body it built (CBBE's or 3BBB's bones); the shipped default
+            // (CBBE) serves until the builder has run
+            INIReader body(kBodyPreset);
             INIReader ours(kDefaultPreset);
-            if (ours.ParseError() >= 0) {
+            if (body.ParseError() >= 0) {
+                presetPath = kBodyPreset;
+                usingDefaultPreset = true;
+                defaultCollision = kBodyCollision;
+                AnatomyLogLine("config|default", "[config] no ocbp.ini of the player's: Anatomy's preset for the built "
+                    "body (F4SE\\Plugins\\Anatomy\\ocbp-body.ini)\n");
+            }
+            else if (ours.ParseError() >= 0) {
                 presetPath = kDefaultPreset;
                 usingDefaultPreset = true;
+                defaultCollision = kDefaultCollision;
                 AnatomyLogLine("config|default", "[config] no ocbp.ini of the player's: Anatomy's default preset "
                     "(F4SE\\Plugins\\Anatomy\\ocbp-default.ini)\n");
             }
@@ -484,10 +499,10 @@ void LoadCollisionConfig()
     ColliderNodesList.clear();
 
     bool theirs = ParseCollisionFile("Data\\F4SE\\Plugins\\OCBPCollisionConfig.txt");
-    if (!theirs && usingDefaultPreset && ParseCollisionFile(kDefaultCollision)) {   // fo4-anatomy (A-46, A-47): ours, with our preset only
+    if (!theirs && usingDefaultPreset && ParseCollisionFile(defaultCollision)) {   // fo4-anatomy (A-46, A-47): ours, with our preset only
         theirs = true;
-        AnatomyLogLine("config|defaultcollision", "[config] no OCBPCollisionConfig.txt of the player's: Anatomy's "
-            "default (F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-default.txt)\n");
+        AnatomyLogLine("config|defaultcollision", (std::string("[config] no OCBPCollisionConfig.txt of the player's: "
+            "Anatomy's (") + defaultCollision + ")\n").c_str());
     }
     bool ours = ParseCollisionFile("Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig.txt");
     if (theirs || ours)
