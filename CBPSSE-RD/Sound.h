@@ -38,4 +38,9 @@ namespace Sound
 	// and Rapport's events (RFAE). Only while the override is on.
 	void Update();
 	std::uint32_t PlayedCount();          // the engine's own sounds played (the health check)
+
+	// RFAP (Rapport, any thread): an SNDR at the actor's head, played on the scan thread's next Update; flags bit 0
+	// stops this actor's previous RFAP sound first
+	void QueueVoice(UInt32 formID, UInt32 soundFormID, float volume, UInt32 flags);
+	std::uint32_t VoicedCount();          // Rapport's voices played (the health check)
 }

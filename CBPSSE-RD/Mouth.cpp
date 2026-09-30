@@ -1074,6 +1074,14 @@ static void FaceMessage(F4SE::MessagingInterface::Message* msg)
 		}
 		return;
 	}
+	if (msg->type == FaceAuthority::kSoundPlay) {   // A-67: Rapport's voice at an actor's head
+		if (msg->data && msg->dataLen >= sizeof(FaceAuthority::SoundPlayMessage)) {
+			const auto* m = static_cast<const FaceAuthority::SoundPlayMessage*>(msg->data);
+			if (m->version >= 1)
+				Sound::QueueVoice(m->formID, m->soundFormID, m->volume, m->flags);
+		}
+		return;
+	}
 	FaceAuthority::Decoded d = FaceAuthority::Decode(msg->type, msg->data, msg->dataLen);
 	char key[96];
 	if (d.refused) {
@@ -1168,7 +1176,7 @@ void SayFaceHello()
 		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
 		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) |
 		(Sound::Hooked() ? FaceAuthority::kFeatureSoundOverride : 0u) |
-		(Sound::CanPlay() ? FaceAuthority::kFeatureSoundEvents : 0u) };
+		(Sound::CanPlay() ? FaceAuthority::kFeatureSoundEvents | FaceAuthority::kFeatureSoundPlay : 0u) };
 	// to everyone, never by name (ListenForFaces): Rapport listens to every sender and keeps "OCBPC plugin"'s
 	bool heard = messaging->Dispatch(FaceAuthority::kHello, &hello, sizeof(hello), nullptr);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"

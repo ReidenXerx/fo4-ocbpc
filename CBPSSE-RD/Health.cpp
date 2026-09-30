@@ -319,7 +319,7 @@ namespace
 		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
 		       << (Sound::Override() ? "ON" : "off") << " (set by " << Sound::OverrideSource()
 		       << "); pack sounds muted so far " << Sound::MutedCount() << ", the engine's own played "
-		       << Sound::PlayedCount() << "\n";
+		       << Sound::PlayedCount() << ", Rapport's voices played " << Sound::VoicedCount() << "\n";
 	}
 
 	// the game's message box (MessageMenuManager::Create), resolved safely: nothing shown on a runtime without the ids

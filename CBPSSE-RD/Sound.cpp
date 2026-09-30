@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <unordered_map>
+#include <vector>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
@@ -330,14 +331,95 @@ namespace
 		RE::NiAVObject* n = root->GetObjectByName(pelvis);
 		return n ? n : root;
 	}
+
+	RE::NiAVObject* HeadOf(Actor* a)
+	{
+		RE::NiAVObject* root = G::Root(a);
+		if (!root)
+			return nullptr;
+		static RE::BSFixedString head("Head");   // node names match case-insensitively (the string pool)
+		RE::NiAVObject* n = root->GetObjectByName(head);
+		return n ? n : root;
+	}
+
+	// RFAP (Rapport's voices): queued on Rapport's thread, played on the scan thread, which owns actorEntries
+	struct VoiceRequest
+	{
+		UInt32 formID;
+		UInt32 soundFormID;
+		float volume;
+		UInt32 flags;
+	};
+	std::mutex voiceLock;
+	std::vector<VoiceRequest> voiceQueue;
+	std::unordered_map<UInt32, std::uint32_t> lastVoice;   // actor -> its last RFAP handle id (the scan thread's)
+	std::atomic<std::uint32_t> voiced{ 0 };
+
+	void PlayVoices()
+	{
+		std::vector<VoiceRequest> pending;
+		{
+			std::lock_guard<std::mutex> l(voiceLock);
+			pending.swap(voiceQueue);
+		}
+		for (const VoiceRequest& r : pending) {
+			Actor* a = nullptr;
+			for (auto& e : actorEntries)
+				if (e.actor && e.actor->formID == r.formID) {
+					a = e.actor;
+					break;
+				}
+			char key[64];
+			if (!a) {
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|voice|noactor|%08X", r.formID);
+				Note(key, "[sound] Rapport asked a voice for %08X, which the engine does not track (not loaded or "
+					"not a body it simulates): nothing plays\n", r.formID);
+				continue;
+			}
+			RE::TESForm* sndr = RE::TESForm::GetFormByID(r.soundFormID);
+			if (!sndr || sndr->GetFormType() != RE::ENUM_FORM_ID::kSNDR) {
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|voice|nosndr|%08X", r.soundFormID);
+				Note(key, "[sound] Rapport asked for %08X, which is not a sound descriptor (SNDR): nothing plays\n",
+					r.soundFormID);
+				continue;
+			}
+			if (r.flags & 1u) {
+				auto it = lastVoice.find(r.formID);
+				if (it != lastVoice.end())
+					Sound::Stop(it->second);
+			}
+			const std::uint32_t id = Sound::PlayAt(sndr, HeadOf(a), r.volume);
+			if (id == 0xFFFFFFFF) {
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|voice|failed|%08X", r.soundFormID);
+				Note(key, "[sound] Rapport's %08X for %08X did not play (the audio manager refused it)\n",
+					r.soundFormID, r.formID);
+				continue;
+			}
+			lastVoice[r.formID] = id;
+			voiced.fetch_add(1, std::memory_order_relaxed);
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|voice|played|%08X", r.soundFormID);
+			Note(key, "[sound] Rapport's voice %08X played at %08X's head (volume %.2f%s)\n", r.soundFormID, r.formID,
+				r.volume, (r.flags & 1u) ? ", the previous one cut" : "");
+		}
+	}
 }
 
 namespace Sound
 {
 	std::uint32_t PlayedCount() { return played.load(); }
+	std::uint32_t VoicedCount() { return voiced.load(); }
+
+	void QueueVoice(UInt32 formID, UInt32 soundFormID, float volume, UInt32 flags)
+	{
+		std::lock_guard<std::mutex> l(voiceLock);
+		if (voiceQueue.size() < 64)   // a runaway sender cannot grow it without bound
+			voiceQueue.push_back({ formID, soundFormID, volume, flags });
+	}
 
 	void Update()
 	{
+		if (canPlay)
+			PlayVoices();   // override on or off: Rapport voices its actors either way
 		if (!canPlay || !overrideOn.load(std::memory_order_relaxed)) {
 			tracks.clear();
 			return;

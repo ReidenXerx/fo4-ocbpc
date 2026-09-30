@@ -67,6 +67,18 @@ namespace FaceAuthority
 		float depth;
 		float speed;
 	};
+	// 'RFAP' Rapport -> engine (A-67, hello bit 12): play an SNDR (full runtime form id) at the actor's head, following
+	// it; flags bit 0 = stop this actor's previous RFAP sound first (a climax moan replaces a breath). Played on the
+	// scan thread's next frame, override on or off; an actor the engine does not track plays nothing.
+	constexpr std::uint32_t kSoundPlay = 0x52464150;
+	struct SoundPlayMessage
+	{
+		std::uint32_t version;
+		std::uint32_t formID;
+		std::uint32_t soundFormID;
+		float volume;
+		std::uint32_t flags;
+	};
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -85,6 +97,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kFeatureEyeRoll = 1u << 9;       // RFAG flags bit 0: the eyes roll up (no target)
 	constexpr std::uint32_t kFeatureSoundOverride = 1u << 10;   // RFAU is applied: the SoundPlay mute is hooked (A-67)
 	constexpr std::uint32_t kFeatureSoundEvents = 1u << 11;     // RFAE is sent while the override is on (A-67)
+	constexpr std::uint32_t kFeatureSoundPlay = 1u << 12;       // RFAP is played at the actor's head (A-67)
 	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
 	                                                         // in her vagina or anus, and for him by his own
 	                                                         // depth in any opening (needs [Aim] on)
