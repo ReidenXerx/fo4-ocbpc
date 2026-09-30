@@ -1167,7 +1167,8 @@ void SayFaceHello()
 		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
 		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
 		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) |
-		(Sound::Hooked() ? FaceAuthority::kFeatureSoundOverride : 0u) };
+		(Sound::Hooked() ? FaceAuthority::kFeatureSoundOverride : 0u) |
+		(Sound::CanPlay() ? FaceAuthority::kFeatureSoundEvents : 0u) };
 	// to everyone, never by name (ListenForFaces): Rapport listens to every sender and keeps "OCBPC plugin"'s
 	bool heard = messaging->Dispatch(FaceAuthority::kHello, &hello, sizeof(hello), nullptr);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"

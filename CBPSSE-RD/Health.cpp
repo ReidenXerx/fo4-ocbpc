@@ -318,7 +318,8 @@ namespace
 		r.text << "\nSex sounds: the packs' SoundPlay mute " << (Sound::Hooked() ? "hooked" : "NOT hooked (this build)")
 		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
 		       << (Sound::Override() ? "ON" : "off") << " (set by " << Sound::OverrideSource()
-		       << "); pack sounds muted so far " << Sound::MutedCount() << "\n";
+		       << "); pack sounds muted so far " << Sound::MutedCount() << ", the engine's own played "
+		       << Sound::PlayedCount() << "\n";
 	}
 
 	// the game's message box (MessageMenuManager::Create), resolved safely: nothing shown on a runtime without the ids

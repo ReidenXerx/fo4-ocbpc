@@ -3,12 +3,17 @@
 // permission for F4SE stated in README.md.
 #include "Sound.h"
 
+#include "ActorEntry.h"
+#include "ActorUtils.h"
 #include "Aim.h"
 #include "CollisionHub.h"
+#include "FaceAuthority.h"
 #include "Hook.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <atomic>
+#include <unordered_map>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
@@ -24,6 +29,7 @@ namespace
 	constexpr Hook::IdPair kSetVolume{ 422259, 2267057 };
 	constexpr Hook::IdPair kSetFrequency{ 940583, 2267059 };        // by elimination: the other float setter
 	constexpr Hook::IdPair kFollow{ 1179144, 2267066 };             // SetObjectToFollow(NiAVObject*)
+	constexpr Hook::IdPair kGetByName{ 196484, 2267104 };           // (manager, handle*, EDID, distance, flags, extra)
 	// ---- the mute: the SoundPlay branch's descriptor lookup inside the sound-event handler ----
 	constexpr Hook::IdPair kEventHandler{ 936308, 2193468 };
 	constexpr Hook::IdPair kResolveSoundPlay{ 1061737, 2193485 };
@@ -43,7 +49,10 @@ namespace
 	using HandleFloatFn = bool (*)(Handle*, float);
 	using FollowFn = void (*)(Handle*, RE::NiAVObject*);
 	using ResolveFn = void* (*)(RE::TESObjectREFR* ref, RE::BSFixedString* sound);
+	using ByNameFn = bool (*)(void* manager, Handle* out, const char* edid, float distance, std::uint32_t flags, void* extra);
 
+	ByNameFn getByName = nullptr;
+	std::atomic<std::uint32_t> played{ 0 };
 	ManagerFn getManager = nullptr;
 	BuildFn build = nullptr;
 	HandleFn play = nullptr, stop = nullptr;
@@ -109,8 +118,9 @@ namespace
 		// the audio calls: resolve all or none (a half-resolved set plays nothing)
 		const auto rMgr = Hook::Resolve(kAudioManager), rBuild = Hook::Resolve(kBuildFromDescriptor),
 			rPlay = Hook::Resolve(kPlay), rStop = Hook::Resolve(kStop), rVol = Hook::Resolve(kSetVolume),
-			rFreq = Hook::Resolve(kSetFrequency), rFollow = Hook::Resolve(kFollow);
-		if (rMgr && rBuild && rPlay && rStop && rVol && rFreq && rFollow) {
+			rFreq = Hook::Resolve(kSetFrequency), rFollow = Hook::Resolve(kFollow), rByName = Hook::Resolve(kGetByName);
+		if (rMgr && rBuild && rPlay && rStop && rVol && rFreq && rFollow && rByName) {
+			getByName = reinterpret_cast<ByNameFn>(*rByName);
 			getManager = reinterpret_cast<ManagerFn>(*rMgr);
 			build = reinterpret_cast<BuildFn>(*rBuild);
 			play = reinterpret_cast<HandleFn>(*rPlay);
@@ -236,5 +246,161 @@ namespace Sound
 		h.id = id;
 		h.state = 1;
 		stop(&h);
+	}
+}
+
+// ---- the engine's own sounds (A-67 v1, the owner 2026-10-01: "we need make working pipeline", the sounds are
+// tuned later). Her side drives them: the depth Aim measured for her this frame (a shaft past her vagina's or anus's
+// entrance); his depth mirrors hers and would double every sound. Played by EDID (Anatomy.esp's SNDRs) at her pelvis,
+// following it.
+namespace
+{
+	constexpr float kEnter = 0.3f;          // depth past the entrance that counts as inside
+	constexpr float kTurn = 0.2f;           // a fall this far below the stroke's deepest point ends the stroke
+	constexpr float kMinStroke = 1.0f;      // a stroke shallower than this makes no sound (a jiggle, not a thrust)
+	constexpr float kHardSpeed = 60.0f;     // units per second: above this a stroke is a hard impact (RFAE 3)
+	constexpr ULONGLONG kMinGapMs = 120;    // two stroke sounds never closer than this
+	constexpr ULONGLONG kThrustEventMs = 250;   // RFAE 2 at most this often per actor (Rapport's ask)
+	constexpr ULONGLONG kOutMs = 400;       // empty this long = penetration ended
+	const char* kSlap = "AnatomySoundSlap";
+	const char* kSquelch = "AnatomySoundSquelch";
+	const char* kThrust = "AnatomySoundThrust";
+
+	struct Track
+	{
+		bool inside = false;
+		bool rising = false;
+		float depth = 0.0f;
+		float trough = 0.0f;
+		float peak = 0.0f;
+		ULONGLONG troughAt = 0;
+		ULONGLONG lastStroke = 0;
+		ULONGLONG lastThrustEvent = 0;
+		ULONGLONG emptySince = 0;
+	};
+	std::unordered_map<UInt32, Track> tracks;   // the scan thread's own
+	std::uint32_t rng = 0x9E3779B9u;
+
+	float Jitter()   // 0.95 .. 1.05: the same clip never plays at quite the same pitch twice
+	{
+		rng = rng * 1664525u + 1013904223u;
+		return 0.95f + 0.1f * (float)((rng >> 8) & 0xFFFF) / 65535.0f;
+	}
+
+	bool PlayByName(const char* edid, RE::NiAVObject* node, float volume, float frequency)
+	{
+		if (!canPlay || !node)
+			return false;
+		void* manager = getManager();
+		if (!manager)
+			return false;
+		Handle h;
+		getByName(manager, &h, edid, 0.0f, 0x10, nullptr);
+		if (h.id == 0xFFFFFFFF) {
+			Note(std::string("sound|noedid|") + edid, "[sound] the game has no sound %s (is Anatomy.esp active and "
+				"current?): nothing plays for it\n", edid);
+			return false;
+		}
+		follow(&h, node);
+		setVolume(&h, volume);
+		setFrequency(&h, frequency);
+		if (!play(&h))
+			return false;
+		played.fetch_add(1, std::memory_order_relaxed);
+		Note(std::string("sound|played|") + edid, "[sound] the engine played %s (volume %.2f, pitch %.2f)\n", edid,
+			volume, frequency);
+		return true;
+	}
+
+	void SendEvent(UInt32 formID, UInt32 kind, float depth, float speed)
+	{
+		auto* messaging = F4SE::GetMessagingInterface();
+		if (!messaging)
+			return;
+		FaceAuthority::SoundEventMessage m{ 1, formID, AimPartner(formID), kind, depth, speed };
+		messaging->Dispatch(FaceAuthority::kSoundEvent, &m, sizeof(m), nullptr);   // to everyone, Rapport keeps ours
+	}
+
+	RE::NiAVObject* PelvisOf(Actor* a)
+	{
+		RE::NiAVObject* root = G::Root(a);
+		if (!root)
+			return nullptr;
+		static RE::BSFixedString pelvis("Pelvis");
+		RE::NiAVObject* n = root->GetObjectByName(pelvis);
+		return n ? n : root;
+	}
+}
+
+namespace Sound
+{
+	std::uint32_t PlayedCount() { return played.load(); }
+
+	void Update()
+	{
+		if (!canPlay || !overrideOn.load(std::memory_order_relaxed)) {
+			tracks.clear();
+			return;
+		}
+		const ULONGLONG now = GetTickCount64();
+		for (auto& e : actorEntries) {
+			Actor* a = e.actor;
+			if (!a || actorUtils::IsActorMale(a) || !AimSeesScene(a->formID))
+				continue;
+			const float d = AimDepth(a->formID);
+			Track& t = tracks[a->formID];
+			if (!t.inside) {
+				if (d > kEnter) {   // penetration began
+					t.inside = true;
+					t.rising = true;
+					t.trough = d;
+					t.troughAt = now;
+					t.emptySince = 0;
+					PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
+					SendEvent(a->formID, 1, d, 0.0f);
+				}
+				t.depth = d;
+				continue;
+			}
+			if (d <= 0.05f) {       // empty: ended once it stays so
+				if (!t.emptySince)
+					t.emptySince = now;
+				else if (now - t.emptySince > kOutMs) {
+					t.inside = false;
+					SendEvent(a->formID, 4, 0.0f, 0.0f);
+				}
+				t.depth = d;
+				continue;
+			}
+			t.emptySince = 0;
+			if (d > t.depth) {
+				if (!t.rising) {    // a new stroke starts at the shallowest point
+					t.rising = true;
+					t.trough = t.depth;
+					t.troughAt = now;
+				}
+				t.peak = d;
+			}
+			else if (t.rising && d < t.peak - kTurn) {   // the deepest point just passed: the thrust
+				t.rising = false;
+				const float stroke = t.peak - t.trough;
+				if (stroke >= kMinStroke && now - t.lastStroke >= kMinGapMs) {
+					t.lastStroke = now;
+					const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
+					const float speed = stroke / secs;
+					const float volume = (std::min)(1.0f, 0.35f + speed / 80.0f);
+					RE::NiAVObject* pelvis = PelvisOf(a);
+					PlayByName(kSlap, pelvis, volume, Jitter());
+					PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
+					if (now - t.lastThrustEvent >= kThrustEventMs) {
+						t.lastThrustEvent = now;
+						SendEvent(a->formID, 2, t.peak, speed);
+					}
+					if (speed > kHardSpeed)
+						SendEvent(a->formID, 3, t.peak, speed);
+				}
+			}
+			t.depth = d;
+		}
 	}
 }

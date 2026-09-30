@@ -63,6 +63,7 @@ namespace
 	// AAF's busy actors, from Anatomy:Arousal's tick (AnatomyAim.SetBusy); old news counts as none
 	std::mutex busyLock;
 	std::unordered_map<UInt32, float> depths;      // AimDepth: this frame's (the scan thread's own, like UpdateMouths)
+	std::unordered_map<UInt32, UInt32> partners;   // AimPartner: who the depth is with this frame (A-67's events)
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -484,6 +485,7 @@ void ResetAims()
 {
 	held.clear();
 	depths.clear();
+	partners.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -492,6 +494,7 @@ void ResetAims()
 void UpdateAims()
 {
 	depths.clear();
+	partners.clear();
 	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
 	FaceAuthority::Knobs knobs;
 	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
@@ -732,8 +735,11 @@ void UpdateAims()
 						d -= mouthLead;                   // its entrance sits mouthLead in front of her lips
 					d = (std::max)(0.0f, d);
 					depths[a->formID] = (std::max)(depths[a->formID], d);
-					if (t.kind != AimSolve::kMouth)       // a mouth's own depth is the contact mouth's (Mouth.cpp)
+					partners[a->formID] = t.owner;
+					if (t.kind != AimSolve::kMouth) {     // a mouth's own depth is the contact mouth's (Mouth.cpp)
 						depths[t.owner] = (std::max)(depths[t.owner], d);
+						partners[t.owner] = a->formID;
+					}
 					break;
 				}
 			}
@@ -765,6 +771,12 @@ float AimDepth(unsigned int formID)
 {
 	auto it = depths.find(formID);
 	return it != depths.end() ? it->second : 0.0f;
+}
+
+unsigned int AimPartner(unsigned int formID)
+{
+	auto it = partners.find(formID);
+	return it != partners.end() ? it->second : 0u;
 }
 
 bool AimSeesScene(unsigned int formID)

@@ -38,6 +38,7 @@
 #include "Bones.h"
 #include "Mouth.h"
 #include "Aim.h"
+#include "Sound.h"
 #include "TubeCollide.h"
 #include "Utility.hpp"
 
@@ -233,6 +234,7 @@ void UpdateActors() {
         //SaveLastColliderPositions();
 
         UpdateAims();     // fo4-anatomy (A-28): every shaft onto its opening, before the colliders are built from it
+        Sound::Update();  // fo4-anatomy (A-67): the engine's own sex sounds and Rapport's events, from those depths
 
         otherColliders.clear();
 

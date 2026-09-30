@@ -33,4 +33,9 @@ namespace Sound
 	void Stop(std::uint32_t id);
 
 	std::uint32_t MutedCount();           // SoundPlay events dropped since the game started (the health check)
+
+	// scan.cpp, each frame after UpdateAims (the scan thread): the engine's own sounds from the depths Aim measured,
+	// and Rapport's events (RFAE). Only while the override is on.
+	void Update();
+	std::uint32_t PlayedCount();          // the engine's own sounds played (the health check)
 }

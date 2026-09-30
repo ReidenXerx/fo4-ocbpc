@@ -53,6 +53,20 @@ namespace FaceAuthority
 		std::uint32_t version;
 		std::uint32_t flags;
 	};
+	// 'RFAE' engine -> Rapport (A-67, hello bit 11): the moments Rapport times its voices on. kind 1 penetration
+	// began, 2 a thrust (the deepest point of a stroke; at most one per 250 ms per actor), 3 a hard impact (a stroke
+	// above a speed threshold), 4 penetration ended. formID = the receiver, partner = the one in her (0 unknown);
+	// depth in game units past the entrance, speed in units per second. Sent only while the override is on.
+	constexpr std::uint32_t kSoundEvent = 0x52464145;
+	struct SoundEventMessage
+	{
+		std::uint32_t version;
+		std::uint32_t formID;
+		std::uint32_t partner;
+		std::uint32_t kind;
+		float depth;
+		float speed;
+	};
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -70,6 +84,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kFeatureEasedFaces = 1u << 8;    // an RFAS for an actor already held eases (250 ms)
 	constexpr std::uint32_t kFeatureEyeRoll = 1u << 9;       // RFAG flags bit 0: the eyes roll up (no target)
 	constexpr std::uint32_t kFeatureSoundOverride = 1u << 10;   // RFAU is applied: the SoundPlay mute is hooked (A-67)
+	constexpr std::uint32_t kFeatureSoundEvents = 1u << 11;     // RFAE is sent while the override is on (A-67)
 	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
 	                                                         // in her vagina or anus, and for him by his own
 	                                                         // depth in any opening (needs [Aim] on)
