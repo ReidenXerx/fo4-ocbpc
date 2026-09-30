@@ -263,6 +263,7 @@ namespace
 	constexpr ULONGLONG kMinGapMs = 120;    // two stroke sounds never closer than this
 	constexpr ULONGLONG kThrustEventMs = 250;   // RFAE 2 at most this often per actor (Rapport's ask)
 	constexpr ULONGLONG kOutMs = 400;       // empty this long = penetration ended
+	constexpr ULONGLONG kMaxStrokeMs = 3000;   // a longer gap is a pause, not a stroke: its period reads 0
 	const char* kSlap = "AnatomySoundSlap";
 	const char* kSquelch = "AnatomySoundSquelch";
 	const char* kThrust = "AnatomySoundThrust";
@@ -313,12 +314,12 @@ namespace
 		return true;
 	}
 
-	void SendEvent(UInt32 formID, UInt32 kind, float depth, float speed)
+	void SendEvent(UInt32 formID, UInt32 kind, float depth, float speed, UInt32 strokeMs = 0)
 	{
 		auto* messaging = F4SE::GetMessagingInterface();
 		if (!messaging)
 			return;
-		FaceAuthority::SoundEventMessage m{ 1, formID, AimPartner(formID), kind, depth, speed };
+		FaceAuthority::SoundEventMessage m{ 2, formID, AimPartner(formID), kind, depth, speed, strokeMs };
 		messaging->Dispatch(FaceAuthority::kSoundEvent, &m, sizeof(m), nullptr);   // to everyone, Rapport keeps ours
 	}
 
@@ -471,6 +472,10 @@ namespace Sound
 				t.rising = false;
 				const float stroke = t.peak - t.trough;
 				if (stroke >= kMinStroke && now - t.lastStroke >= kMinGapMs) {
+					// the stroke period: deepest point to deepest point (Rapport fits a moan's length inside it);
+					// 0 for the first stroke, or after a pause longer than any real stroke
+					const ULONGLONG gap = now - t.lastStroke;
+					const UInt32 strokeMs = (t.lastStroke && gap <= kMaxStrokeMs) ? (UInt32)gap : 0;
 					t.lastStroke = now;
 					const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
 					const float speed = stroke / secs;
@@ -482,10 +487,10 @@ namespace Sound
 					}
 					if (now - t.lastThrustEvent >= kThrustEventMs) {
 						t.lastThrustEvent = now;
-						SendEvent(a->formID, 2, t.peak, speed);
+						SendEvent(a->formID, 2, t.peak, speed, strokeMs);
 					}
 					if (speed > kHardSpeed)
-						SendEvent(a->formID, 3, t.peak, speed);
+						SendEvent(a->formID, 3, t.peak, speed, strokeMs);
 				}
 			}
 			t.depth = d;

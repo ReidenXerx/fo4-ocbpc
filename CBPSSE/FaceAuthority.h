@@ -68,6 +68,9 @@ namespace FaceAuthority
 		std::uint32_t kind;
 		float depth;
 		float speed;
+		std::uint32_t strokeMs;   // version 2: kinds 2 and 3, the last full stroke's period (deepest point to deepest
+		                          // point) in ms, measured every stroke (not clipped by the 250 ms event limit); 0
+		                          // unknown (the first stroke, or after a pause over 3 s). 28 bytes; v1 senders sent 24
 	};
 	// 'RFAP' Rapport -> engine (A-67, hello bit 12): play an SNDR (full runtime form id) at the actor's head, following
 	// it; flags bit 0 = stop this actor's previous RFAP sound first (a climax moan replaces a breath). Played on the
