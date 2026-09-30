@@ -338,13 +338,59 @@ namespace
 		return true;
 	}
 
-	// The pose is walked root -> nodes[1] -> nodes[2] ...: true only if the skeleton hangs them that way.
+	// The pose is walked root -> nodes[1] -> nodes[2] ...: true if each hangs BELOW the previous. A skeleton may
+	// put nodes between them (an erection mod's, another skeleton's _OFFSET nodes: asu, 2026-09-30, every man said
+	// "do not hang one from the next"); their transforms are folded into the link (Gap) and the chain is aimed.
 	bool Linear(const std::vector<NiAVObject*>& nodes)
 	{
-		for (size_t k = 1; k < nodes.size(); k++)
-			if (G::Parent(nodes[k]) != nodes[k - 1])
+		for (size_t k = 1; k < nodes.size(); k++) {
+			NiAVObject* x = G::Parent(nodes[k]);
+			int hops = 0;
+			while (x && x != nodes[k - 1] && hops++ < 16)
+				x = G::Parent(x);
+			if (x != nodes[k - 1])
 				return false;
+		}
 		return true;
+	}
+
+	// The transform of the nodes strictly between `upper` and `lower` (lower's parent up to upper's child), as one:
+	// a point in lower's parent frame reaches upper's frame as p + r * (s * v). Identity when lower hangs from upper.
+	struct Gap
+	{
+		AimSolve::M3 r;
+		NiPoint3 p{ 0.0f, 0.0f, 0.0f };
+		float s = 1.0f;
+	};
+
+	Gap GapBetween(NiAVObject* upper, NiAVObject* lower)
+	{
+		Gap g;
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				g.r.m[i][j] = i == j ? 1.0f : 0.0f;
+		int hops = 0;
+		for (NiAVObject* x = G::Parent(lower); x && x != upper && hops++ < 16; x = G::Parent(x)) {
+			const NiTransform& l = G::Local(x);
+			AimSolve::M3 rx = Actual(l.rot);
+			NiPoint3 q;                                   // rx * (scale * g.p)
+			q.x = (rx.m[0][0] * g.p.x + rx.m[0][1] * g.p.y + rx.m[0][2] * g.p.z) * l.scale;
+			q.y = (rx.m[1][0] * g.p.x + rx.m[1][1] * g.p.y + rx.m[1][2] * g.p.z) * l.scale;
+			q.z = (rx.m[2][0] * g.p.x + rx.m[2][1] * g.p.y + rx.m[2][2] * g.p.z) * l.scale;
+			g.p = l.pos + q;
+			g.r = Mul(rx, g.r);
+			g.s *= l.scale;
+		}
+		return g;
+	}
+
+	AimSolve::M3 Transposed(const AimSolve::M3& a)
+	{
+		AimSolve::M3 t;
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				t.m[i][j] = a.m[j][i];
+		return t;
 	}
 
 	void PutBack(Held& h, const std::vector<NiAVObject*>& nodes)
@@ -560,14 +606,24 @@ void UpdateAims()
 		c.root = WorldPoint(parent, G::Local(nodes[0]).pos);
 		c.locals.resize(n);
 		c.offsets.assign(n, V3{});
+		// nodes a skeleton puts between the chain's own (identity for a clean chain such as ZeX's)
+		std::vector<Gap> gaps(n);
+		for (size_t i = 1; i < n; i++)
+			gaps[i] = GapBetween(nodes[i - 1], nodes[i]);
 		// the animation's scales, not the shape's: the shape keeps every joint where the animation put it
 		float scale = parent.scale * h.baseScale[0];
 		for (size_t i = 0; i < n; i++) {
 			const NiMatrix43& rot = i + 1 < n ? h.baseRot[i] : G::Local(nodes[i]).rot;
-			c.locals[i] = AimSolve::FromMatrix(Actual(rot));
+			c.locals[i] = AimSolve::FromMatrix(i > 0 ? Mul(gaps[i].r, Actual(rot)) : Actual(rot));
 			if (i > 0) {
-				c.offsets[i] = AimSolve::Scale(ToV3(h.basePos[i - 1]), scale);
-				scale *= h.baseScale[i];
+				const NiPoint3& bp = h.basePos[i - 1];      // node i in the gap's frame -> in node i-1's frame
+				const AimSolve::M3& gr = gaps[i].r;
+				NiPoint3 eff;
+				eff.x = gaps[i].p.x + gaps[i].s * (gr.m[0][0] * bp.x + gr.m[0][1] * bp.y + gr.m[0][2] * bp.z);
+				eff.y = gaps[i].p.y + gaps[i].s * (gr.m[1][0] * bp.x + gr.m[1][1] * bp.y + gr.m[1][2] * bp.z);
+				eff.z = gaps[i].p.z + gaps[i].s * (gr.m[2][0] * bp.x + gr.m[2][1] * bp.y + gr.m[2][2] * bp.z);
+				c.offsets[i] = AimSolve::Scale(ToV3(eff), scale);
+				scale *= gaps[i].s * h.baseScale[i];
 			}
 		}
 
@@ -644,8 +700,12 @@ void UpdateAims()
 			h.wrotePos.resize(n - 1);
 			h.wroteScale.resize(n);
 			for (size_t i = 0; i + 1 < n; i++) {
-				G::Local(nodes[i]).rot = r.active ? Stored(Mul(AimSolve::ToMatrix(r.local[i]), Actual(h.baseRot[i])))
-					: h.baseRot[i];
+				// the solver turns the link's effective local (gap x own); the node's own local takes that turn
+				// seen through the gap: G^T D G (D itself for a clean chain)
+				AimSolve::M3 d = AimSolve::ToMatrix(r.local[i]);
+				if (i > 0)
+					d = Mul(Transposed(gaps[i].r), Mul(d, gaps[i].r));
+				G::Local(nodes[i]).rot = r.active ? Stored(Mul(d, Actual(h.baseRot[i]))) : h.baseRot[i];
 				h.wroteRot[i] = G::Local(nodes[i]).rot;
 			}
 			for (size_t k = 1; k < n; k++) {
