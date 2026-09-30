@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <mutex>
 #include <string>
 
 namespace
@@ -56,6 +57,8 @@ namespace
 	std::atomic<std::uint32_t> muted{ 0 };
 	bool hooked = false;
 	bool canPlay = false;
+	std::mutex sourceLock;
+	std::string source = "none (no word from Rapport)";   // who last set the override
 	DWORD faultCode = 0;
 	void* faultAt = nullptr;
 
@@ -74,13 +77,28 @@ namespace
 	// A pack's "SoundPlay.<SNDR>" for an actor in a scene, while the override is on: no descriptor, so the handler
 	// plays nothing. Everything else goes through untouched. The handler may run off the main thread: only the
 	// override flag (atomic), the form's own bytes and Aim's scene list (under its lock) are read here.
+	// The test's evidence (the owner, 2026-10-01: "u have all logs we need?"): one cbp.log line per distinct pack
+	// sound muted, and per distinct one that played in a scene while the override was off (proof the hook is reached).
+	void NoteSound(bool mutedIt, RE::TESObjectREFR* ref, RE::BSFixedString* sound)
+	{
+		const char* name = sound && sound->c_str() ? sound->c_str() : "?";
+		std::string key = std::string(mutedIt ? "sound|muted|" : "sound|passed|") + name;
+		if (AnatomyLogSeen(key))
+			return;
+		Note(key, mutedIt ? "[sound] muted %s for %08X (in a scene, override on)\n"
+			: "[sound] %s for %08X played (in a scene, override off)\n", name, ref->formID);
+	}
+
 	void* HookResolve(RE::TESObjectREFR* ref, RE::BSFixedString* sound)
 	{
-		if (overrideOn.load(std::memory_order_relaxed) && ref &&
-			*reinterpret_cast<const std::uint8_t*>(reinterpret_cast<const char*>(ref) + 0x1A) == 0x41 &&   // an actor,
-			AimSeesScene(ref->formID)) {                                                                     // the game's own test
-			muted.fetch_add(1, std::memory_order_relaxed);
-			return nullptr;
+		if (ref && *reinterpret_cast<const std::uint8_t*>(reinterpret_cast<const char*>(ref) + 0x1A) == 0x41 &&   // an actor
+			AimSeesScene(ref->formID)) {                                                   // (the game's own test), in a scene
+			if (overrideOn.load(std::memory_order_relaxed)) {
+				muted.fetch_add(1, std::memory_order_relaxed);
+				NoteSound(true, ref, sound);
+				return nullptr;
+			}
+			NoteSound(false, ref, sound);
 		}
 		return origResolve(ref, sound);
 	}
@@ -162,6 +180,10 @@ namespace Sound
 		if (force == 0 || force == 1)
 			on = force == 1;                           // a test's [Sound] force wins over Rapport
 		bool was = overrideOn.exchange(on);
+		{
+			std::lock_guard<std::mutex> l(sourceLock);
+			source = who ? who : "?";
+		}
 		std::string key = std::string("sound|override|") + (on ? "1|" : "0|") + (who ? who : "?");
 		if (was != on || !AnatomyLogSeen(key))
 			Note(key, "[sound] the override is %s (%s)%s\n", on ? "ON" : "off", who ? who : "?",
@@ -171,6 +193,11 @@ namespace Sound
 	bool Override() { return overrideOn.load(); }
 	bool CanPlay() { return canPlay; }
 	bool Hooked() { return hooked; }
+	std::string OverrideSource()
+	{
+		std::lock_guard<std::mutex> l(sourceLock);
+		return source;
+	}
 	std::uint32_t MutedCount() { return muted.load(); }
 
 	std::uint32_t PlayAt(RE::TESForm* sndr, RE::NiAVObject* node, float volume, float frequency)

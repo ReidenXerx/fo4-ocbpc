@@ -6,6 +6,7 @@
 #include "ActorEntry.h"
 #include "ActorUtils.h"
 #include "Aim.h"
+#include "Sound.h"
 #include "Bones.h"
 #include "Game.h"
 #include "Hook.h"
@@ -313,6 +314,11 @@ namespace
 				"Make ZeX's skeleton.nif (Meshes\\Actors\\Character\\CharacterAssets\\skeleton.nif) win over other skeleton mods.");
 		r.text << "  aim: " << (AimOn() ? "on" : "off") << ", chain " << AimChainText() << "; men simulated " << men
 		       << ", with a working chain " << menChained << "\n";
+		// the sex sounds (A-67): the mute, the engine's own audio calls, Rapport's override and what it muted
+		r.text << "\nSex sounds: the packs' SoundPlay mute " << (Sound::Hooked() ? "hooked" : "NOT hooked (this build)")
+		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
+		       << (Sound::Override() ? "ON" : "off") << " (set by " << Sound::OverrideSource()
+		       << "); pack sounds muted so far " << Sound::MutedCount() << "\n";
 	}
 
 	// the game's message box (MessageMenuManager::Create), resolved safely: nothing shown on a runtime without the ids

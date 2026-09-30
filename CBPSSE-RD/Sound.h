@@ -15,6 +15,8 @@
 
 #include "Game.h"
 
+#include <string>
+
 namespace Sound
 {
 	void LoadConfig(INIReader& reader);   // ocbp.ini [Sound]
@@ -23,6 +25,7 @@ namespace Sound
 	bool Override();
 	bool CanPlay();                       // the audio calls resolved for this build
 	bool Hooked();                        // the SoundPlay mute is in place (the hello's bit 10)
+	std::string OverrideSource();         // who set the override last (Rapport, [Sound] force), for the health check
 
 	// A sound descriptor (SNDR) played at a node that it then follows; volume and frequency 1 = as authored.
 	// Returns the handle's id (for Stop), or 0xFFFFFFFF when nothing plays.
