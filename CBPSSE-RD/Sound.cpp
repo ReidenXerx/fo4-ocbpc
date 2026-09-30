@@ -427,8 +427,11 @@ namespace Sound
 		const ULONGLONG now = GetTickCount64();
 		for (auto& e : actorEntries) {
 			Actor* a = e.actor;
-			if (!a || actorUtils::IsActorMale(a) || !AimSeesScene(a->formID))
+			if (!a || !AimSeesScene(a->formID))
 				continue;
+			// her side plays the body sounds; his (his own shaft's depth: vagina, anus or a mouth) only tells
+			// Rapport, which voices both partners - his depth mirrors hers and would double every sound
+			const bool body = !actorUtils::IsActorMale(a);
 			const float d = AimDepth(a->formID);
 			Track& t = tracks[a->formID];
 			if (!t.inside) {
@@ -438,7 +441,8 @@ namespace Sound
 					t.trough = d;
 					t.troughAt = now;
 					t.emptySince = 0;
-					PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
+					if (body)
+						PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
 					SendEvent(a->formID, 1, d, 0.0f);
 				}
 				t.depth = d;
@@ -471,9 +475,11 @@ namespace Sound
 					const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
 					const float speed = stroke / secs;
 					const float volume = (std::min)(1.0f, 0.35f + speed / 80.0f);
-					RE::NiAVObject* pelvis = PelvisOf(a);
-					PlayByName(kSlap, pelvis, volume, Jitter());
-					PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
+					if (body) {
+						RE::NiAVObject* pelvis = PelvisOf(a);
+						PlayByName(kSlap, pelvis, volume, Jitter());
+						PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
+					}
 					if (now - t.lastThrustEvent >= kThrustEventMs) {
 						t.lastThrustEvent = now;
 						SendEvent(a->formID, 2, t.peak, speed);

@@ -55,8 +55,10 @@ namespace FaceAuthority
 	};
 	// 'RFAE' engine -> Rapport (A-67, hello bit 11): the moments Rapport times its voices on. kind 1 penetration
 	// began, 2 a thrust (the deepest point of a stroke; at most one per 250 ms per actor), 3 a hard impact (a stroke
-	// above a speed threshold), 4 penetration ended. formID = the receiver, partner = the one in her (0 unknown);
-	// depth in game units past the entrance, speed in units per second. Sent only while the override is on.
+	// above a speed threshold), 4 penetration ended. Sent for BOTH partners: formID = the actor, partner = the other
+	// (0 unknown); her depth is a shaft in her vagina or anus, his is his own shaft's in a vagina, anus or MOUTH (so
+	// oral on him reaches Rapport for him only). Depth in game units past the entrance, speed in units per second.
+	// Sent only while the override is on.
 	constexpr std::uint32_t kSoundEvent = 0x52464145;
 	struct SoundEventMessage
 	{
