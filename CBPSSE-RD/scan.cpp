@@ -29,6 +29,7 @@
 #include "ActorEntry.h"
 #include "Game.h"
 #include "ActorUtils.h"
+#include "Health.h"
 #include "log.h"
 #include "Thing.h"
 #include "config.h"
@@ -332,6 +333,7 @@ void UpdateActors() {
     //logger.error("Updating %d entities\n", actorEntries.size());
     G::Once("scan|entries|" + std::to_string(actorEntries.size() > 1), "diag: actor entries {} (cell {})",
         actorEntries.size(), (void*)curCell);
+    Health::Tick();   // fo4-anatomy: the health check after a save load (Health.h)
     // fo4-anatomy (A-57): what the physics costs per frame, to put numbers on a 3BBB body against CBBE's
     double physUs = 0.0;
     size_t physActors = 0, physBones = 0;

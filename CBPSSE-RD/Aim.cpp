@@ -777,3 +777,30 @@ bool RegisterAimFuncs(RE::BSScript::IVirtualMachine* vm)
 	vm->BindNativeMethod("AnatomyAim"sv, "SetBusy"sv, SetBusy, true);   // true: NoWait, as the classic flag
 	return true;
 }
+
+// The health check (Health.cpp): -1 no chain in [Aim]; 0 a bone of it is missing from the actor's skeleton; 1 its
+// bones do not hang one below the next; 2 aimed; 3 aimed, with nodes between its bones folded into the links.
+int AimChainState(Actor* a)
+{
+	if (chainNames.size() < 2)
+		return -1;
+	std::vector<NiAVObject*> nodes;
+	if (!FindChain(a, nodes))
+		return 0;
+	if (!Linear(nodes))
+		return 1;
+	for (size_t k = 1; k < nodes.size(); k++)
+		if (G::Parent(nodes[k]) != nodes[k - 1])
+			return 3;
+	return 2;
+}
+
+bool AimOn()
+{
+	return enabled;
+}
+
+std::string AimChainText()
+{
+	return chainNames.size() < 2 ? std::string("-") : chainNames.front() + " ... " + chainNames.back();
+}

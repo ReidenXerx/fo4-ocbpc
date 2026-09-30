@@ -5,6 +5,7 @@
 #include "Aim.h"
 #include "Bones.h"
 #include "Eyes.h"
+#include "Health.h"
 #include "Hook.h"
 #include "Mouth.h"
 #include "PapyrusOCBP.h"
@@ -80,6 +81,7 @@ namespace
 			// again: a face Rapport sent while the load ran (after PreLoadGame's release) would outlive the save
 			ReleaseAllFaces("a save finished loading");
 			StartFaceAuthorityTest();
+			Health::OnGameLoaded();   // fo4-anatomy: the health check, a few seconds from now (Health.h)
 			break;
 		default:
 			break;

@@ -36,6 +36,13 @@ static const char* kDefaultCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollis
 static const char* kBodyPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-body.ini";
 static const char* kBodyCollision = "Data\\F4SE\\Plugins\\Anatomy\\OCBPCollisionConfig-body.txt";
 static const char* defaultCollision = kDefaultCollision;
+static std::string presetInUse;
+
+const std::string& PresetInUse(bool& anatomys)
+{
+    anatomys = usingDefaultPreset;
+    return presetInUse;
+}
 
 
 //#define DEBUG 0
@@ -258,6 +265,7 @@ bool LoadConfig() {
             }
         }
     }
+    presetInUse = presetPath;   // the health check (Health.cpp)
     INIReader configReader(presetPath);
     if (configReader.ParseError() < 0) {
         logger.Error("Can't load 'ocbp.ini'\n");

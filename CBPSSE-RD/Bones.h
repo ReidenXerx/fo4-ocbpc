@@ -32,3 +32,11 @@ void WatchLoadedActors();                      // once, at kMessage_GameDataRead
 // actor not simulated this frame has our bones put back where [Bones] rests them (identity rotation).
 // `simulated` holds the form ids OCBPC updates this frame (actorEntries).
 void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated);
+// The health check (Health.cpp): the shapes under an actor's 3D, and how many skin entries of those bound to
+// Pelvis_skin name our bones. False when her 3D faulted while it was read.
+struct BodyView
+{
+	std::vector<std::string> shapes;
+	int ours = 0;
+};
+bool DescribeBody(Actor* actor, BodyView& out);

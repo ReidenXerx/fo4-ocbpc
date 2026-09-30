@@ -409,3 +409,40 @@ void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated)
 		}
 	}
 }
+
+static void DescribeBodyImpl(Actor* actor, BodyView& out)
+{
+	if (!actor || !G::Root(actor))
+		return;
+	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
+		const char* name = G::Name(geo);
+		out.shapes.push_back(name ? name : "?");
+		Layout::CheckSkin(geo);
+		if (Layout::Skin() != Layout::State::kGood)
+			return;
+		G::SkinInstance* skin = G::Skin(geo);
+		if (!skin || !G::SkinBones(skin).entries)
+			return;
+		for (UInt32 i = 0; i < G::SkinBones(skin).count; i++) {
+			NiNode* b = G::SkinBones(skin).entries[i];
+			if (b && IsOurs(G::Name(b)))
+				out.ours++;
+		}
+	});
+}
+
+static bool DescribeBodyGuarded(Actor* actor, BodyView* out)
+{
+	__try {
+		DescribeBodyImpl(actor, *out);
+		return true;
+	} __except (1) {
+		NoteFault(actor, "DescribeBody");
+		return false;
+	}
+}
+
+bool DescribeBody(Actor* actor, BodyView& out)
+{
+	return DescribeBodyGuarded(actor, &out);
+}

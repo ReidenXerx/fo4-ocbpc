@@ -25,3 +25,8 @@ bool AimSeesScene(unsigned int formID);    // in an AAF scene, per Anatomy:Arous
 // vagina or anus (a mouth's is the contact mouth's own); for him, his own in whatever he is locked on
 // (a mouth measured from her lips). For the deep face (A-29), both actors. UpdateAims fills it.
 float AimDepth(unsigned int formID);
+// The health check (Health.cpp): the actor's chain as UpdateAims would find it (-1 none configured, 0 missing,
+// 1 not hanging one from the next, 2 aimed, 3 aimed with nodes between); [Aim] enabled; "first ... last".
+int AimChainState(Actor* a);
+bool AimOn();
+std::string AimChainText();
