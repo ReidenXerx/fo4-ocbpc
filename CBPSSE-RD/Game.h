@@ -79,7 +79,10 @@ namespace G
 		buffer = RefName(a_ref);
 		return buffer.c_str();
 	}
-	inline bool NameIs(const NiAVObject* a_obj, const char* a_name) { return a_obj && std::strcmp(a_obj->name.c_str(), a_name) == 0; }
+	// Without case, as the classic build's BSFixedString == and the game's own lookups: a node name reads back in the case the
+	// engine interned FIRST ("Skeleton.nif" in some games), and a case-sensitive miss on the skeleton root stopped every
+	// bone's physics (two OG players, 2026-09-30: nothing moved at all)
+	inline bool NameIs(const NiAVObject* a_obj, const char* a_name) { return a_obj && _stricmp(a_obj->name.c_str(), a_name) == 0; }
 	// a diagnostic line in cbp.log, once per key (the Runtime Database build's first runs on a new runtime)
 	template <class... Args>
 	void Once(const std::string& a_key, spdlog::format_string_t<Args...> a_fmt, Args&&... a_args)
