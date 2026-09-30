@@ -125,18 +125,23 @@ namespace
 			Note("sound|off", "[sound] [Sound] enabled=0: the packs' sounds are never muted\n");
 			return;
 		}
-		const auto site = Hook::CallSite(kEventHandler, kResolveSoundPlay, "[sound] the SoundPlay descriptor's call");
+		// two calls on both runtimes (measured 2026-10-01): the SoundPlay branch (the name straight from the event) and
+		// the one that splits a longer tag (SoundPlayAt's name.position); both resolve a sound for this reference
+		const auto sites = Hook::CallSites(kEventHandler, kResolveSoundPlay, "[sound] the SoundPlay descriptor's calls", 2);
 		const auto target = Hook::Resolve(kResolveSoundPlay);
-		if (!site || !target) {
-			Note("sound|build", "[sound] this game build is not proven for the SoundPlay mute (call %d, lookup %d): the "
-				"packs' sounds play as they are\n", (int)site.has_value(), (int)target.has_value());
+		if (sites.empty() || !target) {
+			Note("sound|build", "[sound] this game build is not proven for the SoundPlay mute (calls %d, lookup %d): the "
+				"packs' sounds play as they are\n", (int)sites.size(), (int)target.has_value());
 			return;
 		}
-		origResolve = reinterpret_cast<ResolveFn>(Hook::WriteCall(*site, reinterpret_cast<uintptr_t>(&HookResolve)));
-		hooked = reinterpret_cast<uintptr_t>(origResolve) == *target;
-		Note("sound|on", hooked ? "[sound] the SoundPlay descriptor's call hooked (its code untouched): the packs' sounds "
-			"are muted in scenes while the override is on (Rapport's MCM; off until Rapport says so)\n"
-			: "[sound] the hooked call did not return the descriptor lookup: nothing is muted\n");
+		bool reaches = true;
+		for (const auto site : sites)
+			reaches = Hook::WriteCall(site, reinterpret_cast<uintptr_t>(&HookResolve)) == *target && reaches;
+		origResolve = reinterpret_cast<ResolveFn>(*target);
+		hooked = reaches;
+		Note("sound|on", hooked ? "[sound] the SoundPlay descriptor's 2 calls hooked (their code untouched): the packs' "
+			"sounds are muted in scenes while the override is on (Rapport's MCM; off until Rapport says so)\n"
+			: "[sound] a hooked call did not return the descriptor lookup: the mute may miss some sounds\n");
 	}
 
 	int Filter(EXCEPTION_POINTERS* e)

@@ -87,6 +87,34 @@ namespace Hook
 		return site;
 	}
 
+	std::vector<std::uintptr_t> CallSites(const IdPair& a_owner, const IdPair& a_target, const char* a_what,
+		std::size_t a_expected)
+	{
+		const auto version = REL::Module::get().version().string();
+		if (!Known(a_owner) || !Known(a_target)) {
+			rdlog::warn("{}: no proven id for Fallout 4 {} yet: off on this runtime", a_what, version);
+			return {};
+		}
+		const auto sites = REL::resolve_callsites(Id(a_owner), Id(a_target));
+		if (sites.rvas.size() != a_expected) {
+			rdlog::warn("{}: {} call site(s) on {}, {} measured ({}): off", a_what, sites.rvas.size(), version, a_expected,
+				REL::id_resolve_status_text(sites.status));
+			return {};
+		}
+		const auto target = Resolve(a_target);
+		std::vector<std::uintptr_t> out;
+		for (const auto rva : sites.rvas) {
+			const auto site = REL::Module::get().base() + rva;
+			const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
+			if (!target || bytes[0] != 0xE8 || site + 5 + *reinterpret_cast<const std::int32_t*>(bytes + 1) != *target) {
+				rdlog::warn("{}: the call at +{:X} is not a direct call to the target on {}: off", a_what, rva, version);
+				return {};
+			}
+			out.push_back(site);
+		}
+		return out;
+	}
+
 	std::uintptr_t WriteCall(std::uintptr_t a_site, std::uintptr_t a_fn)
 	{
 		// ONCE: AllocTrampoline replaces the trampoline region on every call (CommonLibF4RD src/F4SE/API.cpp), which

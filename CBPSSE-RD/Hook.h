@@ -1,4 +1,6 @@
 #pragma once
+
+#include <vector>
 // fo4-anatomy: the Runtime Database build's hooks (Hook.cpp). Each installs only where its Address Library ids are
 // proven for the running executable, and says in cbp.log what it did.
 
@@ -18,6 +20,10 @@ namespace Hook
 	// The one direct call to `target` inside `owner` (REL::resolve_callsites, then the E8/rel32 check), or nothing,
 	// with a cbp.log line saying why, prefixed with `a_what`.
 	[[nodiscard]] std::optional<std::uintptr_t> CallSite(const IdPair& a_owner, const IdPair& a_target, const char* a_what);
+	// Every direct call to `target` inside `owner`, when there are exactly `a_expected` (the count measured on the
+	// executables) and each passes the E8/rel32 check; else none, with a cbp.log line why.
+	[[nodiscard]] std::vector<std::uintptr_t> CallSites(const IdPair& a_owner, const IdPair& a_target, const char* a_what,
+		std::size_t a_expected);
 	// Points a call at `a_fn` through F4SE's trampoline; returns the function it called before.
 	std::uintptr_t WriteCall(std::uintptr_t a_site, std::uintptr_t a_fn);
 
