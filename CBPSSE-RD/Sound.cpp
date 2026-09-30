@@ -56,6 +56,7 @@ namespace
 	std::atomic<bool> overrideOn{ false };
 	std::atomic<std::uint32_t> muted{ 0 };
 	bool hooked = false;
+	bool installed = false;       // Install ran (the ini's force is read before it: no "not hooked" note that early)
 	bool canPlay = false;
 	std::mutex sourceLock;
 	std::string source = "none (no word from Rapport)";   // who last set the override
@@ -178,6 +179,7 @@ namespace Sound
 		if (!InstallGuarded())
 			Note("sound|fault", "[sound] a fault while installing (code %08X at %p) was caught: no sound work this "
 				"session\n", faultCode, faultAt);
+		installed = true;
 	}
 
 	void SetOverride(bool on, const char* who)
@@ -192,7 +194,7 @@ namespace Sound
 		std::string key = std::string("sound|override|") + (on ? "1|" : "0|") + (who ? who : "?");
 		if (was != on || !AnatomyLogSeen(key))
 			Note(key, "[sound] the override is %s (%s)%s\n", on ? "ON" : "off", who ? who : "?",
-				on && !hooked ? ", but the mute is not hooked: the packs' sounds still play" : "");
+				on && installed && !hooked ? ", but the mute is not hooked: the packs' sounds still play" : "");
 	}
 
 	bool Override() { return overrideOn.load(); }
