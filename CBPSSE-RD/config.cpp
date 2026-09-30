@@ -24,6 +24,7 @@
 #include <unordered_map>
 
 #include "CollisionHub.h"
+#include "Sound.h"
 
 // fo4-anatomy (A-46): Anatomy's own default preset and collision, for a player who has none (tools/default_preset.py)
 static const char* kDefaultPreset = "Data\\F4SE\\Plugins\\Anatomy\\ocbp-default.ini";
@@ -385,6 +386,7 @@ bool LoadConfig() {
     LoadAimConfig(extrasSections.count("Aim") ? anatomyExtras : configReader);
     LoadEyeConfig(extrasSections.count("Eyes") ? anatomyExtras : configReader);
     LoadTubeConfig(extrasSections.count("Tube") ? anatomyExtras : configReader);
+    Sound::LoadConfig(extrasSections.count("Sound") ? anatomyExtras : configReader);   // A-67
 
     return reloadActors;
 }

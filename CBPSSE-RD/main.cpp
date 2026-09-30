@@ -9,6 +9,7 @@
 #include "Hook.h"
 #include "Mouth.h"
 #include "PapyrusOCBP.h"
+#include "Sound.h"
 #include "config.h"
 
 namespace
@@ -124,6 +125,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 	// glances first, then the mouth (phase 2 of the port: not yet on this build)
 	InstallEyeHook();
 	InstallMouthHook();
+	Sound::Install();   // A-67: the SoundPlay mute and the engine's own audio calls
 	// last, after the hooks (the classic build's reason: a listener registered before a fault in Load would be
 	// called in a DLL that is gone)
 	if (auto* messaging = F4SE::GetMessagingInterface(); !messaging || !messaging->RegisterListener(MessageHandler)) {

@@ -12,6 +12,7 @@
 #include "log.h"
 
 #include "FaceAuthority.h"
+#include "Sound.h"
 #include "FaceCompose.h"
 #include "LipFit.h"
 #include "Glans.h"
@@ -1065,6 +1066,14 @@ static void FaceMessage(F4SE::MessagingInterface::Message* msg)
 	if (_stricmp(msg->sender, kRapport) != 0 && !(testConfigured && _stricmp(msg->sender, kSelf) == 0))
 		return;
 	const char* who = msg->sender ? msg->sender : "?";
+	if (msg->type == FaceAuthority::kSoundOverride) {   // A-67: Rapport's MCM switches the sex-sound override
+		if (msg->data && msg->dataLen >= sizeof(FaceAuthority::SoundOverrideMessage)) {
+			const auto* m = static_cast<const FaceAuthority::SoundOverrideMessage*>(msg->data);
+			if (m->version >= 1)
+				Sound::SetOverride((m->flags & 1u) != 0, who);
+		}
+		return;
+	}
 	FaceAuthority::Decoded d = FaceAuthority::Decode(msg->type, msg->data, msg->dataLen);
 	char key[96];
 	if (d.refused) {
@@ -1157,7 +1166,8 @@ void SayFaceHello()
 		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
 		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
 		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
-		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) };
+		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) |
+		(Sound::Hooked() ? FaceAuthority::kFeatureSoundOverride : 0u) };
 	// to everyone, never by name (ListenForFaces): Rapport listens to every sender and keeps "OCBPC plugin"'s
 	bool heard = messaging->Dispatch(FaceAuthority::kHello, &hello, sizeof(hello), nullptr);
 	Note("face|hello", heard ? "[face] hello sent: Rapport's faces are applied here\n"

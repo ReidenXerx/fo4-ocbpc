@@ -44,6 +44,15 @@ namespace FaceAuthority
 	constexpr std::uint32_t kKnobs = 0x5246414B;    // 'RFAK': the fork's knobs from Rapport's MCM ("Bodies & faces")
 	constexpr std::uint32_t kGlance = 0x52464147;   // 'RFAG': one actor looks into another's eyes for a while
 	constexpr std::uint32_t kGlanceFace = 0x52464158;   // 'RFAX': the face that glance wears (sent just before it)
+	// 'RFAU' { u32 version; u32 flags; } Rapport's MCM switches the sex-sound override (fo4-anatomy A-67, agreed
+	// with Rapport 2026-09-30): flags bit 0 = on (the packs' SoundPlay sounds muted for actors in a scene; the
+	// engine's own body sounds). Sent in reply to the hello, at every load and on an MCM change. None heard = off.
+	constexpr std::uint32_t kSoundOverride = 0x52464155;
+	struct SoundOverrideMessage
+	{
+		std::uint32_t version;
+		std::uint32_t flags;
+	};
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -60,6 +69,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kFeatureGlanceFace = 1u << 7;    // RFAX: a glance may wear a face (eased in and out)
 	constexpr std::uint32_t kFeatureEasedFaces = 1u << 8;    // an RFAS for an actor already held eases (250 ms)
 	constexpr std::uint32_t kFeatureEyeRoll = 1u << 9;       // RFAG flags bit 0: the eyes roll up (no target)
+	constexpr std::uint32_t kFeatureSoundOverride = 1u << 10;   // RFAU is applied: the SoundPlay mute is hooked (A-67)
 	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
 	                                                         // in her vagina or anus, and for him by his own
 	                                                         // depth in any opening (needs [Aim] on)
