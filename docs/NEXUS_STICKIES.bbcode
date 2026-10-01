@@ -1,52 +1,61 @@
-=== STICKY: Every feature in fo4-ocbpc 1.1.1 ===
-[b]Every feature in fo4-ocbpc 1.1.1[/b]
+=== STICKY: Every feature in fo4-ocbpc 1.2.0 ===
+[b]Every feature in fo4-ocbpc 1.2.0[/b]
 [i]alone[/i] = works with just this DLL; [i]Anatomy[/i] = switched on by Anatomy's config; [i]Rapport[/i] = needs Rapport.
-[b]Runtimes[/b]: one DLL for 1.10.163 (F4SE 0.6.23) and the Anniversary Edition 1.11.x (its F4SE), with Runtime Database on every version; tested in game on 1.11.240, on 1.10.163 awaiting players' confirmation, next-gen 1.10.984 untested.
+[b]Runtimes[/b]: one DLL for 1.10.163 (F4SE 0.6.23) and the Anniversary Edition 1.11.x (its F4SE), with Runtime Database on every version. [b]New[/b] marks 1.2.0.
 
 [b]Collision[/b]
 [list]
 [*]Each collider pushes once per frame, for every OCBPC config ([i]alone[/i]).
 [*]A penis collides as one continuous tube with a measured head profile ([i]Anatomy[/i]). Thrust wobble on the real mesh: anus 0.69 → 0.21, vagina 0.26 → 0.13.
-[*]Held props are colliders ([i]Anatomy[/i]): what an animation hangs on a hand becomes collision along its length, limited to the bones you name. A mug at the chest pushes nothing; weapons are excluded.
+[*]Held props collide along their length, on the bones you name ([i]Anatomy[/i]); weapons and a mug at the chest do not.
 [*]A penis never pushes its own owner.
+[*][b]New:[/b] contact without jitter: tight contact acts as a constraint, so nothing shakes when it squeezes ([i]Anatomy[/i]).
+[/list]
+[b]Sex sounds[/b] ([b]new[/b], [i]Anatomy[/i], AAF scenes)
+[list]
+[*]The packs' own body sounds are muted in scenes through a hook on the game's sound call (measured on 228 sound records of 9 packs); without Rapport only body sounds are muted and the packs' voices stay.
+[*]Our own set (Anatomy.esp, 9 kinds, 37 clips) plays from each stroke's real depth and speed, per opening: strokes, slaps, closed-mouth sounds, licks, fingers, hands, toys.
+[*]Every moment goes to Rapport, which voices the moans. On by default; Rapport's MCM switches it.
+[/list]
+[b]Skirt physics[/b] ([b]new[/b], [i]Anatomy[/i])
+[list]
+[*]A ring of 60 skirt bones (12 around × 5 down) under the pelvis, on an actor whose garment is weighted to them (Anatomy Tailor's "Skirt physics"). Each frame they swing, keep their length, and the thighs and calves push them aside; a snapped AAF pose sends cloth to its own side of the leg.
+[*]Legs through a long coat, crouch/sit/stride: 24/38/14 % → 5/17/2 %.
 [/list]
 [b]Bones and config[/b]
 [list]
-[*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped; one that already has them is left alone. Cost: one comparison per skin.
-[*]Layered config: your ocbp.ini is read first, then Anatomy's; collision files are appended the same way. Installing Anatomy never overwrites your physics config.
+[*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped.
+[*]Layered config: your ocbp.ini first, then Anatomy's; collision files are appended. Anatomy never overwrites your config.
 [*]With no ocbp.ini of yours, Anatomy's own default preset stands in, and its collision only with it ([i]Anatomy[/i]).
 [*]Anatomy's own bones pass a preset's [Whitelist] (useWhitelist=1 froze the genitals before 1.1.1); the preset's race whitelist still applies ([i]Anatomy[/i]).
-[*]Bones on every loaded actor, not only your cell's, put back at rest when OCBPC isn't simulating her ([i]Anatomy[/i]; built, not yet confirmed in game).
+[*]Bones on every loaded actor, not only your cell's, put back at rest when OCBPC isn't simulating her ([i]Anatomy[/i]).
+[*][b]New:[/b] a man left out only by a preset's femaleOnly is simulated for Anatomy's bones alone; his other physics stays as the preset says ([i]Anatomy[/i]).
+[*][b]New:[/b] Anatomy's own preset follows the body the AnatomyBuilder built (CBBE or 3BBB) ([i]Anatomy[/i]).
+[*][b]New:[/b] a health check about 10 s after every load: Anatomy_Health.txt names the engine, preset, body and every simulated actor; a box only on a real problem ([i]alone[/i]).
 [/list]
 [b]Aim and shape[/b] ([i]Anatomy[/i], AAF scenes only)
 [list]
-[*]Needs the men's skeleton from ZeX (Penis_00..05 in one chain); on any other the aim stays off and says so in the log.
+[*]Needs the men's skeleton from ZeX (Penis_00..05 in one chain; [b]new:[/b] nodes between its bones are allowed); on any other the aim stays off and says so in the log.
+[*][b]New:[/b] a man on Anatomy's men's body is a target too: his anus.
 [*]Turns toward the opening the animation meant: a new lock turns at most 35°, is kept up to 45°, and an entry is allowed up to 75° off the way in. A short shaft stretches at most 10%.
 [*]Bends along a measured canal path; the throat path follows head and neck; a curled hand is a target of its own.
-[*]Exact per-frame bend, no lag on a fast pull-out; switching openings crossfades.
 [*]A thinner shaft (×0.85) and a bigger head (×1.2 to 1.25, fixed per man), scaled on his bones.
 [/list]
 [b]The mouth[/b] ([i]Anatomy[/i])
 [list]
 [*]Opens to what is at the lips, over the animation's own face, and hands back when nothing is there.
 [*]Lips fit the cross-section inside: 15 measured morphs solved every frame at 7 points. Corners open around a wide shaft and hug a narrow one. Lips follow at 60/50 per second.
-[*]Reads the real width, head included. Brows, cheeks and nose react to contact, depth and speed.
+[*]Brows, cheeks and nose react to contact, depth and speed.
 [/list]
 [b]Faces[/b] ([i]Rapport[/i])
 [list]
 [*]Rapport's face is written after the engine's merge, so it can close eyes and a jaw the animation opened ([i]alone[/i] on the engine side). Blinks still work.
-[*]Lip sync is kept for exactly the line being spoken; faces ease in and out over 250 ms.
-[*]Glances into the partner's eyes for 4-7 s, a face for the glance, and eye rolls (needs Anatomy's [i]glances=1[/i]; eye rolls are built, not yet seen in game).
-[*]Brows draw in as oral depth grows.
+[*]Lip sync is kept for the line being spoken; faces ease in and out over 250 ms.
+[*]Glances into the partner's eyes for 4-7 s now and then, a face for the glance, and eye rolls (needs Anatomy's [i]glances=1[/i]).
+[*]Brows draw in with depth.
 [/list]
-[b]Stability[/b]
-[list]
-[*]Every address comes from Runtime Database; every hook and every class the engine reads directly is checked first, and whatever doesn't prove out stays off, logged. The game's own functions are never modified.
-[*]A fault while installing the eye or mouth hook turns only that feature off.
-[*]No DetourXS: every hook goes through F4SE's trampoline; F4SE is never named a plugin (AE kills the game over it); a log a relaunched game cannot wipe; the discovery log for modders is off by default.
-[*]Offline test suites, each proven by planted faults: aim (22 cases), face (51 checks), lips (17), tube (8).
-[/list]
-[b]Not yet confirmed in game:[/b] 1.1.0 on 1.10.163 and next-gen, bones kept outside your cell, toys as one tube, big-toy and fist stretch, Rapport's MCM knobs for the engine, and brows following vaginal and anal depth. Tell us what you see.
+[b]Stability[/b]: every address comes from Runtime Database; every hook and every class read directly is checked first, and whatever does not prove out stays off, logged; a fault while installing the eye or mouth hook turns only that feature off. No DetourXS: hooks go through F4SE's trampoline. Offline test suites proven by planted faults: aim 22 cases, face 51, lips 17, tube 8.
+Tell us what you see in the Bugs tab, with Anatomy_Health.txt.
 
 === STICKY: fo4-ocbpc settings, for modders ===
 [b]fo4-ocbpc settings, for modders[/b]
@@ -55,13 +64,15 @@ Two ini files are read, yours first: [i]Data\F4SE\Plugins\ocbp.ini[/i], then [i]
 [list]
 [*][b][Attach], bone sections, [Override:*], [Whitelist][/b]: OCBPC's physics, as always.
 [*][b][Props][/b]: held props as colliders (nodes, radius, spacing, maxLength, minBound, targets). Off unless [i]nodes[/i] is set.
-[*][b][Bones][/b]: run-time bones, [i]name=parent,x,y,z[/i] under Pelvis_skin. Only what is listed.
+[*][b][Bones][/b]: run-time bones, [i]name=parent,x,y,z[/i] under Pelvis_skin. Only what is listed. [b][BonesMale][/b]: the same nodes' rest on a man where his body differs.
 [*][b][Tube][/b]: penis chains, and props with [i]props=1[/i], as one tube; skin, glans, glansProfile. Off unless [i]enabled=1[/i].
 [*][b][Aim][/b]: the chain, the openings and their paths, the throat, angles and reach. Off unless [i]enabled=1[/i].
 [*][b][Shape][/b]: shaft, headMin, headMax. Off unless [i]enabled=1[/i].
 [*][b][Mouth][/b]: the contact mouth, the lip table, corners, glans, face reaction terms. Off unless [i]enabled=1[/i].
 [*][b][Face][/b]: authority (Rapport's faces) and react. On by default.
 [*][b][Eyes][/b]: the eye hook, on by default; [i]glances=1[/i] tells Rapport glances work (off unless set); uMax, vMin, vMax, rollMax, axes.
+[*][b][Sound][/b]: [i]enabled[/i] (on), [i]force[/i] (-1: Rapport's MCM decides; 0 never; 1 always mute). The override is on by default.
+[*][b][Skirt][/b]: the skirt solver (columns, levels, prefix, damping, stiffness per level, maxStep, gravity, hold, stretch, squash, spread, hintUp, deep, cross, away); [b][SkirtClear][/b] / [b][SkirtClearMale][/b]: each skirt node's clearance from the four leg capsules. On when the sections are there.
 [*][b][Log][/b]: [i]discover=1[/i] lists genital- or toy-looking nodes on nearby actors. It walks their scene graphs every 2 s, so it is off unless you set it.
 [/list]
-Every key's default, clamp and meaning is in the header comment of its source file (Mouth.h, Aim.h, Eyes.h, Bones.h, TubeCollide.h, FaceAuthority.h) and config.cpp, in [url=https://github.com/ReidenXerx/fo4-ocbpc]the repository[/url]. [i]probe=[/i] and [i]test=[/i] keys are for development and log heavily.
+Every key's default, clamp and meaning is in the header comment of its source file (Mouth.h, Aim.h, Eyes.h, Bones.h, TubeCollide.h, FaceAuthority.h, Sound.h, Skirt.h) and config.cpp, in [url=https://github.com/ReidenXerx/fo4-ocbpc]the repository[/url]. [i]probe=[/i] and [i]test=[/i] keys are for development and log heavily.
