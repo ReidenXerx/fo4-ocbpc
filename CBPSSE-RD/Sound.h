@@ -4,8 +4,9 @@
 #pragma once
 // The owner's roadmap item 3: the body sounds of a scene come from what this engine measures, not from the packs'
 // hand-placed ones, and the packs' own sounds (bodies AND voices, all "SoundPlay.<SNDR>" annotations in their .hkx)
-// are muted for actors in a scene while the override is on. Rapport's MCM switches the override (RFAU); with no
-// word from Rapport it stays OFF, so an old Rapport, or none, never silences anything.
+// are muted for actors in a scene while the override is on. The override is ON by default (the owner 2026-10-01:
+// everything on by default); Rapport's MCM switches it (RFAU). Without Rapport loaded only the packs' BODY sounds are
+// muted and their voices play (nothing would replace them).
 //
 // CommonLibF4RD has no audio API: the handle calls below were found 2026-09-30 from the Papyrus Sound natives and
 // matched on AE (their ids and how, fo4-anatomy docs/decisions.md A-67). The mute is a call-site hook in the
@@ -32,6 +33,7 @@ namespace Sound
 	std::uint32_t PlayAt(RE::TESForm* sndr, RE::NiAVObject* follow, float volume = 1.0f, float frequency = 1.0f);
 	void Stop(std::uint32_t id);
 
+	bool RapportLoaded();                 // without Rapport only the packs' body sounds are muted, their voices play
 	std::uint32_t MutedCount();           // SoundPlay events dropped since the game started (the health check)
 
 	// scan.cpp, each frame after UpdateAims (the scan thread): the engine's own sounds from the depths Aim measured,

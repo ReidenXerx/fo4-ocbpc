@@ -17,6 +17,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <cmath>
+#include <cctype>
 #include <vector>
 #include <cstdarg>
 #include <cstdio>
@@ -66,13 +67,13 @@ namespace
 
 	bool enabled = true;          // [Sound] enabled: install the mute hook at all
 	int force = -1;               // [Sound] force: -1 Rapport decides, 0/1 a test without Rapport
-	std::atomic<bool> overrideOn{ false };
+	std::atomic<bool> overrideOn{ true };   // the owner 2026-10-01: everything on by default; Rapport's MCM or [Sound] force turn it off
 	std::atomic<std::uint32_t> muted{ 0 };
 	bool hooked = false;
 	bool installed = false;       // Install ran (the ini's force is read before it: no "not hooked" note that early)
 	bool canPlay = false;
 	std::mutex sourceLock;
-	std::string source = "none (no word from Rapport)";   // who last set the override
+	std::string source = "on by default";   // who last set the override
 	DWORD faultCode = 0;
 	void* faultAt = nullptr;
 
@@ -100,14 +101,50 @@ namespace
 		if (AnatomyLogSeen(key))
 			return;
 		Note(key, mutedIt ? "[sound] muted %s for %08X (in a scene, override on)\n"
-			: "[sound] %s for %08X played (in a scene, override off)\n", name, ref->formID);
+			: "[sound] %s for %08X played (in a scene: the override is off, or a voice kept because Rapport is not "
+			"loaded)\n", name, ref->formID);
+	}
+
+	// Rapport loaded: it voices both partners, so the packs' voices go too. Without it (the owner 2026-10-01: "On, bodies
+	// only") only a pack's BODY sounds are muted and its voices play: nothing would replace them.
+	bool RapportHere()
+	{
+		static std::atomic<int> here{ -1 };
+		int h = here.load(std::memory_order_relaxed);
+		if (h < 0) {
+			h = GetModuleHandleA("Rapport.dll") ? 1 : 0;
+			here.store(h, std::memory_order_relaxed);
+		}
+		return h == 1;
+	}
+
+	// A pack's body sound by its SNDR's name (measured 2026-10-01 on 228 SNDRs of 9 packs: categories mix voices and
+	// bodies, names do not): ALBodySlapping, BP70SoundOral/Penetrate, DR_Gray_Squish, DR_blowjob, ZOut4SFX_ThrustHigh...
+	// A voice word wins (DR_anal_fuck is a gasp, BP70VoiceFemaleVanillaKiss a voice).
+	bool IsBodySound(const char* name)
+	{
+		if (!name)
+			return false;
+		std::string n(name);
+		for (auto& ch : n)
+			ch = (char)std::tolower((unsigned char)ch);
+		for (const char* v : { "voice", "moan", "orgasm", "breath", "gasp", "grunt", "scream", "yes", "please", "god",
+			"cum", "fuck", "pussy", "kiss", "talk", "line" })
+			if (n.find(v) != std::string::npos)
+				return false;
+		for (const char* b : { "slap", "spank", "squish", "squelch", "slurp", "suck", "oral", "blowjob", "thrust",
+			"penetrat", "splash", "wet", "fap", "clap" })
+			if (n.find(b) != std::string::npos)
+				return true;
+		return false;
 	}
 
 	void* HookResolve(RE::TESObjectREFR* ref, RE::BSFixedString* sound)
 	{
 		if (ref && *reinterpret_cast<const std::uint8_t*>(reinterpret_cast<const char*>(ref) + 0x1A) == 0x41 &&   // an actor
 			AimSeesScene(ref->formID)) {                                                   // (the game's own test), in a scene
-			if (overrideOn.load(std::memory_order_relaxed)) {
+			if (overrideOn.load(std::memory_order_relaxed) &&
+				(RapportHere() || IsBodySound(sound && sound->c_str() ? sound->c_str() : nullptr))) {
 				muted.fetch_add(1, std::memory_order_relaxed);
 				NoteSound(true, ref, sound);
 				return nullptr;
@@ -220,6 +257,7 @@ namespace Sound
 		return source;
 	}
 	std::uint32_t MutedCount() { return muted.load(); }
+	bool RapportLoaded() { return RapportHere(); }
 
 	std::uint32_t PlayAt(RE::TESForm* sndr, RE::NiAVObject* node, float volume, float frequency)
 	{

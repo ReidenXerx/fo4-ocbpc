@@ -318,7 +318,9 @@ namespace
 		r.text << "\nSex sounds: the packs' SoundPlay mute " << (Sound::Hooked() ? "hooked" : "NOT hooked (this build)")
 		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
 		       << (Sound::Override() ? "ON" : "off") << " (set by " << Sound::OverrideSource()
-		       << "); pack sounds muted so far " << Sound::MutedCount() << ", the engine's own played "
+		       << "); Rapport " << (Sound::RapportLoaded() ? "loaded (the packs' voices are muted too: Rapport voices both "
+		          "partners)" : "not loaded (only the packs' body sounds are muted: their voices play)")
+		       << "; pack sounds muted so far " << Sound::MutedCount() << ", the engine's own played "
 		       << Sound::PlayedCount() << ", Rapport's voices played " << Sound::VoicedCount() << "\n";
 	}
 
