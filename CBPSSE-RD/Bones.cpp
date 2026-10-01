@@ -100,7 +100,9 @@ void LoadBonesConfig(INIReader& reader)
 	ours.clear();
 	maleLocal.clear();
 	std::vector<BoneDef> pending;
-	for (auto& entry : reader.Section("Bones")) {
+	// Section() throws on a section the file lacks (the engine without Anatomy's ini: no [Bones] anywhere)
+	const auto haveBones = reader.Sections().count("Bones") > 0;
+	for (auto& entry : haveBones ? reader.Section("Bones") : std::unordered_map<std::string, std::string>()) {
 		std::vector<std::string> parts;
 		std::stringstream in(entry.second);
 		std::string part;
@@ -136,7 +138,9 @@ void LoadBonesConfig(INIReader& reader)
 	for (auto& orphan : pending)
 		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin nor one of ours; "
 			"skipped\n", orphan.name.c_str(), orphan.parent.c_str());
-	for (auto& entry : reader.Section("BonesMale")) {   // name=parent,x,y,z: only the offset is a man's own
+	// Section() throws on a section the file lacks: an older Anatomy ini has no [BonesMale]
+	const auto haveMale = reader.Sections().count("BonesMale") > 0;
+	for (auto& entry : haveMale ? reader.Section("BonesMale") : std::unordered_map<std::string, std::string>()) {   // name=parent,x,y,z: only the offset is a man's own
 		std::vector<std::string> parts;
 		std::stringstream in(entry.second);
 		std::string part;
@@ -166,6 +170,18 @@ static NiPoint3 RestOf(const BoneDef& def, bool male)
 			return it->second;
 	}
 	return def.local;
+}
+
+bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest)
+{
+	const std::string want = Lower(name);
+	for (auto& def : table) {
+		if (Lower(def.name) == want) {
+			rest = RestOf(def, male);
+			return true;
+		}
+	}
+	return false;
 }
 
 // fo4-anatomy (A-51): true when this node hangs, parent by parent, from the actor's live 3D root. A body being

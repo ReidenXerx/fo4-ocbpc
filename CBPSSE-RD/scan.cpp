@@ -29,6 +29,7 @@
 #include "ActorEntry.h"
 #include "Game.h"
 #include "ActorUtils.h"
+#include "Skirt.h"
 #include "Health.h"
 #include "log.h"
 #include "Thing.h"
@@ -377,6 +378,7 @@ void UpdateActors() {
                 }
             }
         }
+        UpdateSkirt(a.actor);   // fo4-anatomy (roadmap 5): the skirt nodes, after the body's own physics
     }
     {
         // every 1800 frames (~30 s at 60 fps): the physics' average and worst cost per frame, and what it moved

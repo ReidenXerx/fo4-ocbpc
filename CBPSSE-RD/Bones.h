@@ -16,6 +16,8 @@
 
 #include "Game.h"
 void LoadBonesConfig(INIReader& reader);
+// where a node of ours rests under its parent on this sex ([BonesMale] on a man, else [Bones]); false: not ours
+bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest);
 // true when nodes were created for this actor this frame
 bool EnsureAnatomyBones(Actor* actor);
 

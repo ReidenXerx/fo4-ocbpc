@@ -2,6 +2,7 @@
 // The original OpenCBP_FO4 / OCBPC code is under the MIT licence (LICENSE); these changes
 // are under the GNU General Public License, version 3 (COPYING), with the additional
 // permission for F4SE stated in README.md.
+#include "Skirt.h"
 #include "config.h"
 #include "Game.h"
 #include "INIReader.h"
@@ -385,6 +386,7 @@ bool LoadConfig() {
     LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
     LoadAimConfig(extrasSections.count("Aim") ? anatomyExtras : configReader);
     LoadEyeConfig(extrasSections.count("Eyes") ? anatomyExtras : configReader);
+    LoadSkirtConfig(extrasSections.count("Skirt") ? anatomyExtras : configReader);   // roadmap 5
     LoadTubeConfig(extrasSections.count("Tube") ? anatomyExtras : configReader);
     Sound::LoadConfig(extrasSections.count("Sound") ? anatomyExtras : configReader);   // A-67
 
