@@ -431,7 +431,7 @@ namespace
 				t.troughAt = now;
 				t.emptySince = 0;
 				if (c.sounds)
-					c.mouth ? PlayByName(kSlurp, HeadOf(a), 0.7f, Jitter()) : PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
+					c.mouth ? PlayByName(kSlurp, HeadOf(a), 1.0f, Jitter()) : PlayByName(kSquelch, PelvisOf(a), 1.0f, Jitter());
 				SendEvent(c.formID, c.partner, 1, d, 0.0f, 0, c.flags);
 			}
 			t.depth = d;
@@ -467,14 +467,14 @@ namespace
 				t.lastStroke = now;
 				const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
 				const float speed = stroke / secs;
-				const float volume = (std::min)(1.0f, 0.35f + speed / 80.0f);
+				const float volume = (std::min)(1.0f, 0.75f + speed / 120.0f);
 				if (c.sounds) {
 					if (c.mouth)
-						PlayByName(kSuck, HeadOf(a), volume * 0.8f, Jitter());
+						PlayByName(kSuck, HeadOf(a), volume, Jitter());
 					else {
 						RE::NiAVObject* pelvis = PelvisOf(a);
 						PlayByName(kSlap, pelvis, volume, Jitter());
-						PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
+						PlayByName(kThrust, pelvis, volume * 0.9f, Jitter());
 					}
 				}
 				const UInt32 flags = c.flags | (t.peak >= deep ? FaceAuthority::kSoundEventDeep : 0u);
