@@ -113,6 +113,16 @@ bool actorUtils::IsActorTrackable(Actor* actor) {
            (!useWhitelist || (inRaceWhitelist && useWhitelist));
 }
 
+// fo4-anatomy (A-69): a body preset's femaleOnly (CBBE 3BBB's, MadKita's) is about ITS bones: breasts and butts.
+// A man on our men's body still needs our anus bones simulated, so he is tracked for those alone (SimObj::anatomyOnly).
+bool actorUtils::IsActorTrackableForAnatomy(Actor* actor) {
+    if (!IsActorValid(actor))
+        return false;
+    bool inRaceWhitelist = find(raceWhitelist.begin(), raceWhitelist.end(), actorUtils::GetActorRaceEID(actor)) != raceWhitelist.end();
+    return (!playerOnly || actor->formID == 0x14) && (!npcOnly || actor->formID != 0x14) &&
+           (!useWhitelist || inRaceWhitelist);
+}
+
 bool actorUtils::IsActorValid(Actor* actor) {
     if (!actor) {
         logger.Info("IsActorValid: actor is null\n");

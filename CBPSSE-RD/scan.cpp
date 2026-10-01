@@ -205,9 +205,14 @@ void UpdateActors() {
 
                     // Find if actors is already being tracked
                     auto soIt = actors.find(actor->formID);
-                    if (soIt == actors.end() && IsActorTrackable(actor)) {
+                    // fo4-anatomy (A-69): left out only by the preset's sex filter -> tracked for our bones alone
+                    const bool full = soIt == actors.end() && IsActorTrackable(actor);
+                    const bool ours = soIt == actors.end() && !full && !anatomyBones.empty() &&
+                                      actorUtils::IsActorTrackableForAnatomy(actor);
+                    if (full || ours) {
                         // Make SimObj and place new element in Things
                         auto obj = SimObj(actor, config);
+                        obj.anatomyOnly = ours;
                         if (IsActorValid(actor)) {
                             actors.emplace(actor->formID, obj);
                             actorEntries.emplace_back(ActorEntry{ actor->formID, actor });

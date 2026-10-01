@@ -40,6 +40,9 @@ namespace
 	// its part down the neck in Neck's, so it bends where her neck bends (her head thrown back swung a
 	// HEAD-only path forward out of her throat: the owner's x-ray, 2026-09-25).
 	NiPoint3 vaginaAt, vaginaIn, anusAt, anusIn;
+	bool anusMale = false;                        // A-69: a man's anus ([Aim] anusM, anusInM, anusPathM)
+	NiPoint3 anusAtM, anusInM;
+	std::vector<NiPoint3> anusPathM;
 	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM, throatNeckF, throatNeckM;
 	bool vagina = false, anus = false, mouths = true;
 	// The shaft enters a mouth this far BELOW the line where her lips meet: centred on that line its upper
@@ -250,10 +253,12 @@ namespace
 	// Our openings on a woman with our bones: entrance, inward axis and path from her Pelvis_skin.
 	void AddAnatomyTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
-		if ((!vagina && !anus) || actorUtils::IsActorMale(a))
+		const bool male = actorUtils::IsActorMale(a);
+		if (male ? !anusMale : (!vagina && !anus))
 			return;
 		NiAVObject* pelvis = Find(G::Root(a), kPelvis);
-		if (!pelvis || !Find(pelvis, anatomyBone))
+		// one of ours: her vulva bone, or on a man (A-69) his anus bones (our men's body names them)
+		if (!pelvis || !Find(pelvis, male ? "AnatAnus_F" : anatomyBone.c_str()))
 			return;                                   // not one of ours: no opening to aim at
 		const NiTransform& t = G::World(pelvis);
 		NiMatrix43 toWorld = t.rot.Transpose();
@@ -267,6 +272,10 @@ namespace
 			g.inScene = inScene;
 			out.push_back(g);
 		};
+		if (male) {
+			add(AimSolve::kAnus, anusAtM, anusInM, anusPathM);   // a man: his anus only
+			return;
+		}
 		if (vagina)
 			add(AimSolve::kVagina, vaginaAt, vaginaIn, vaginaPath);
 		if (anus)
@@ -453,6 +462,8 @@ void LoadAimConfig(INIReader& reader)
 	anus = ReadPoint(reader, "anus", anusAt) && ReadPoint(reader, "anusIn", anusIn);
 	vaginaPath = ReadPath(reader, "vaginaPath");
 	anusPath = ReadPath(reader, "anusPath");
+	anusMale = ReadPoint(reader, "anusM", anusAtM) && ReadPoint(reader, "anusInM", anusInM);
+	anusPathM = ReadPath(reader, "anusPathM");
 	throatF = ReadPath(reader, "throatF");
 	throatM = ReadPath(reader, "throatM");
 	throatNeckF = ReadPath(reader, "throatNeckF");

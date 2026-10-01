@@ -7,6 +7,7 @@
 #include "Hook.h"
 #include "CollisionHub.h"
 #include "log.h"
+#include "ActorUtils.h"
 
 
 #include <algorithm>
@@ -31,6 +32,9 @@ namespace
 	};
 	std::vector<BoneDef> table;                      // parents before children (sorted at load)
 	std::unordered_set<std::string> ours;           // lowercase names, for the skin scan
+	// A-69: [BonesMale] the same nodes on a man where his body differs (the anus: BodyTalk's is lower and further
+	// back than the women's); lowercase name -> offset under its parent
+	std::unordered_map<std::string, NiPoint3> maleLocal;
 	const char* kPelvis = "Pelvis_skin";
 	// a skin already pointed at our nodes: one of its entries and the node it must still hold. A
 	// re-equipped body is a NEW skin (possibly at a reused address), which fails this check.
@@ -94,6 +98,7 @@ void LoadBonesConfig(INIReader& reader)
 {
 	table.clear();
 	ours.clear();
+	maleLocal.clear();
 	std::vector<BoneDef> pending;
 	for (auto& entry : reader.Section("Bones")) {
 		std::vector<std::string> parts;
@@ -131,12 +136,36 @@ void LoadBonesConfig(INIReader& reader)
 	for (auto& orphan : pending)
 		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin nor one of ours; "
 			"skipped\n", orphan.name.c_str(), orphan.parent.c_str());
+	for (auto& entry : reader.Section("BonesMale")) {   // name=parent,x,y,z: only the offset is a man's own
+		std::vector<std::string> parts;
+		std::stringstream in(entry.second);
+		std::string part;
+		while (std::getline(in, part, ','))
+			parts.push_back(part);
+		if (parts.size() != 4 || !ours.count(Lower(entry.first)))
+			continue;
+		maleLocal[Lower(entry.first)] = NiPoint3(strtof(parts[1].c_str(), nullptr), strtof(parts[2].c_str(), nullptr),
+			strtof(parts[3].c_str(), nullptr));
+	}
 	std::string names;
 	for (auto& def : table)
 		names += (names.empty() ? "" : ", ") + def.name;
 	char key[48];
 	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|table|%d", (int)table.size());
 	Note(key, "[bones] table: %d node(s) from [Bones]: %s\n", (int)table.size(), names.c_str());
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|male|%d", (int)maleLocal.size());
+	Note(key, "[bones] %d of them rest elsewhere on a man ([BonesMale])\n", (int)maleLocal.size());
+}
+
+// where a node of ours rests on this actor: [BonesMale]'s offset on a man when it has one, [Bones]' otherwise
+static NiPoint3 RestOf(const BoneDef& def, bool male)
+{
+	if (male) {
+		auto it = maleLocal.find(Lower(def.name));
+		if (it != maleLocal.end())
+			return it->second;
+	}
+	return def.local;
 }
 
 // fo4-anatomy (A-51): true when this node hangs, parent by parent, from the actor's live 3D root. A body being
@@ -157,6 +186,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 	if (table.empty() || !actor || !G::Root(actor) || !G::Root(actor))
 		return false;
 	int created = 0, repointed = 0;
+	const bool male = actorUtils::IsActorMale(actor);
 	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
 		G::Once("bones|geo", "diag: first geometry visited: '{}' on {:08X}", G::Name(geo), actor->formID);
 		// Runtime Database: the skin's members are 1.10.163's measurements, proven on this runtime first (Layout.cpp)
@@ -231,8 +261,9 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				std::memset(mem, 0, sizeof(NiNode));
 				NiNode* made = ::new (mem) NiNode(0);   // its children vtable by REL::ID
 				made->name = def.name.c_str();
-				G::Local(made).pos = def.local;
-				InitWorld(made, parentNode, def.local);
+				const NiPoint3 rest = RestOf(def, male);
+				G::Local(made).pos = rest;
+				InitWorld(made, parentNode, rest);
 				parentNode->AttachChild(made, true);
 				// A-52: our own reference, never given back. The owner's AE crashes (2026-09-29, a mod unequipping and
 				// re-equipping 30 slots in a loop): a node of ours was freed while body skins still pointed at it, and
@@ -330,16 +361,18 @@ static float RestOurBones(Actor* actor)
 	if (!pelvis)
 		return -1.0f;
 	float worst = -1.0f;
+	const bool male = actorUtils::IsActorMale(actor);
 	for (auto& def : table) {
 		BSFixedString wanted(def.name.c_str());
 		NiAVObject* node = pelvis->GetObjectByName(wanted);
 		if (!node)
 			continue;
-		NiPoint3 off = G::Local(node).pos - def.local;
+		const NiPoint3 rest = RestOf(def, male);
+		NiPoint3 off = G::Local(node).pos - rest;
 		float d = sqrtf(off.x * off.x + off.y * off.y + off.z * off.z);
 		if (d > worst)
 			worst = d;
-		G::Local(node).pos = def.local;
+		G::Local(node).pos = rest;
 		for (int r = 0; r < 3; r++)
 			for (int c = 0; c < 4; c++)
 				G::Local(node).rot.data[r][c] = r == c ? 1.0f : 0.0f;

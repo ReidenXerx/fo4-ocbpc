@@ -17,6 +17,7 @@ class SimObj {
     bool bound = false;
 public:
     std::unordered_map<std::string, Thing> things;
+    bool anatomyOnly = false;   // fo4-anatomy (A-69): the preset's sex filter left him out; only our bones move
     SimObj(Actor *actor, config_t &config);
     SimObj() {}
     ~SimObj();
