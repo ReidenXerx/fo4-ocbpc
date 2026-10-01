@@ -67,6 +67,7 @@ namespace
 	std::unordered_map<UInt32, float> orals;       // AimOralDepth: a shaft in this actor's MOUTH (A-67's oral sounds)
 	std::unordered_map<UInt32, UInt32> oralPartners;   // AimOralPartner: whose shaft that is
 	std::unordered_map<UInt32, bool> inMouth;      // AimInMouth: this actor's own shaft is locked in a mouth
+	std::unordered_map<UInt32, bool> received;     // AimReceived: this actor's vagina or anus holds a shaft
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -492,6 +493,7 @@ void ResetAims()
 	orals.clear();
 	oralPartners.clear();
 	inMouth.clear();
+	received.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -504,6 +506,7 @@ void UpdateAims()
 	orals.clear();
 	oralPartners.clear();
 	inMouth.clear();
+	received.clear();
 	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
 	FaceAuthority::Knobs knobs;
 	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
@@ -748,6 +751,7 @@ void UpdateAims()
 					if (t.kind != AimSolve::kMouth) {     // a mouth's own depth is the contact mouth's (Mouth.cpp)
 						depths[t.owner] = (std::max)(depths[t.owner], d);
 						partners[t.owner] = a->formID;
+						received[t.owner] = true;
 					}
 					else {                                // kept apart for the sounds: the deep face keeps Mouth.cpp's
 						orals[t.owner] = (std::max)(orals[t.owner], d);
@@ -808,6 +812,11 @@ unsigned int AimOralPartner(unsigned int formID)
 bool AimInMouth(unsigned int formID)
 {
 	return inMouth.count(formID) != 0;
+}
+
+bool AimReceived(unsigned int formID)
+{
+	return received.count(formID) != 0;
 }
 
 bool AimSeesScene(unsigned int formID)

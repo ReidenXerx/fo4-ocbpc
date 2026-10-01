@@ -517,16 +517,18 @@ namespace Sound
 			if (!a || !AimSeesScene(a->formID))
 				continue;
 			const UInt32 id = a->formID;
-			const bool male = actorUtils::IsActorMale(a);
-			// channel 0, the genitals: hers is a shaft in her vagina or anus and plays the body sounds at her pelvis;
-			// his is his own shaft's depth (vagina, anus or a mouth) and only tells Rapport - it mirrors the
+			const bool entered = AimReceived(id);
+			// channel 0, the genitals: the one entered (a shaft in the vagina or anus, any sex) plays the body sounds at
+			// the pelvis; the shaft's owner's depth (vagina, anus or a mouth) only tells Rapport - it mirrors the
 			// receiver's, whose channel plays the sound, so none doubles
-			Channel genital{ id, AimPartner(id), AimDepth(id), male && AimInMouth(id) ? FaceAuthority::kSoundEventOral : 0u,
-				!male, false };
+			Channel genital{ id, AimPartner(id), AimDepth(id),
+				entered ? FaceAuthority::kSoundEventReceiver : (AimInMouth(id) ? FaceAuthority::kSoundEventOral : 0u),
+				entered, false };
 			Step(tracks[(std::uint64_t)id << 1], genital, a, now, deep);
 			// channel 1, the mouth: a shaft in this actor's mouth, sucking sounds at the head and oral events for
 			// the mouth's owner (Rapport's gags)
-			Channel mouth{ id, AimOralPartner(id), AimOralDepth(id), FaceAuthority::kSoundEventOral, true, true };
+			Channel mouth{ id, AimOralPartner(id), AimOralDepth(id),
+				FaceAuthority::kSoundEventOral | FaceAuthority::kSoundEventReceiver, true, true };
 			Step(tracks[((std::uint64_t)id << 1) | 1], mouth, a, now, deep);
 		}
 	}

@@ -77,6 +77,8 @@ namespace FaceAuthority
 	};
 	constexpr std::uint32_t kSoundEventOral = 1u << 0;
 	constexpr std::uint32_t kSoundEventDeep = 1u << 1;
+	constexpr std::uint32_t kSoundEventReceiver = 1u << 2;   // this actor's opening is the one entered (her
+	                                                         // mouth, vagina or anus); clear on the shaft's owner
 	// 'RFAP' Rapport -> engine (A-67, hello bit 12): play an SNDR (full runtime form id) at the actor's head, following
 	// it; flags bit 0 = stop this actor's previous RFAP sound first (a climax moan replaces a breath). Played on the
 	// scan thread's next frame, override on or off; an actor the engine does not track plays nothing.
