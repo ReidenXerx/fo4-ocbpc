@@ -71,7 +71,12 @@ namespace FaceAuthority
 		std::uint32_t strokeMs;   // version 2: kinds 2 and 3, the last full stroke's period (deepest point to deepest
 		                          // point) in ms, measured every stroke (not clipped by the 250 ms event limit); 0
 		                          // unknown (the first stroke, or after a pause over 3 s). 28 bytes; v1 senders sent 24
+		std::uint32_t flags;      // version 3 (32 bytes): bit 0 ORAL (a shaft in her mouth on her event; his own shaft
+		                          // in a mouth on his), bit 1 DEEP on kinds 2/3 (the stroke reached [Mouth] faceDepth,
+		                          // the full deep face; any opening). Kinds 2 (and its deep) at most every 250 ms
 	};
+	constexpr std::uint32_t kSoundEventOral = 1u << 0;
+	constexpr std::uint32_t kSoundEventDeep = 1u << 1;
 	// 'RFAP' Rapport -> engine (A-67, hello bit 12): play an SNDR (full runtime form id) at the actor's head, following
 	// it; flags bit 0 = stop this actor's previous RFAP sound first (a climax moan replaces a breath). Played on the
 	// scan thread's next frame, override on or off; an actor the engine does not track plays nothing.

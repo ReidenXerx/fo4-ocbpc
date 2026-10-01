@@ -22,6 +22,8 @@
 void LoadMouthConfig(INIReader& reader);
 void InstallMouthHook();
 void UpdateMouths();
+float MouthDeepDepth();                          // [Mouth] faceDepth: the depth of the full deep face (A-29), A-67's
+                                                 // "deep" stroke
 
 // The mouth [Mouth] places on this actor's HEAD (the line where her lips meet), the way the face looks
 // (out of the mouth) and, if asked, the head's up: what the aim (Aim.h, A-28) enters. False without a head.

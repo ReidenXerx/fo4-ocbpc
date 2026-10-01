@@ -64,6 +64,9 @@ namespace
 	std::mutex busyLock;
 	std::unordered_map<UInt32, float> depths;      // AimDepth: this frame's (the scan thread's own, like UpdateMouths)
 	std::unordered_map<UInt32, UInt32> partners;   // AimPartner: who the depth is with this frame (A-67's events)
+	std::unordered_map<UInt32, float> orals;       // AimOralDepth: a shaft in this actor's MOUTH (A-67's oral sounds)
+	std::unordered_map<UInt32, UInt32> oralPartners;   // AimOralPartner: whose shaft that is
+	std::unordered_map<UInt32, bool> inMouth;      // AimInMouth: this actor's own shaft is locked in a mouth
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -486,6 +489,9 @@ void ResetAims()
 	held.clear();
 	depths.clear();
 	partners.clear();
+	orals.clear();
+	oralPartners.clear();
+	inMouth.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -495,6 +501,9 @@ void UpdateAims()
 {
 	depths.clear();
 	partners.clear();
+	orals.clear();
+	oralPartners.clear();
+	inMouth.clear();
 	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
 	FaceAuthority::Knobs knobs;
 	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
@@ -740,6 +749,11 @@ void UpdateAims()
 						depths[t.owner] = (std::max)(depths[t.owner], d);
 						partners[t.owner] = a->formID;
 					}
+					else {                                // kept apart for the sounds: the deep face keeps Mouth.cpp's
+						orals[t.owner] = (std::max)(orals[t.owner], d);
+						oralPartners[t.owner] = a->formID;
+						inMouth[a->formID] = true;
+					}
 					break;
 				}
 			}
@@ -777,6 +791,23 @@ unsigned int AimPartner(unsigned int formID)
 {
 	auto it = partners.find(formID);
 	return it != partners.end() ? it->second : 0u;
+}
+
+float AimOralDepth(unsigned int formID)
+{
+	auto it = orals.find(formID);
+	return it != orals.end() ? it->second : 0.0f;
+}
+
+unsigned int AimOralPartner(unsigned int formID)
+{
+	auto it = oralPartners.find(formID);
+	return it != oralPartners.end() ? it->second : 0u;
+}
+
+bool AimInMouth(unsigned int formID)
+{
+	return inMouth.count(formID) != 0;
 }
 
 bool AimSeesScene(unsigned int formID)

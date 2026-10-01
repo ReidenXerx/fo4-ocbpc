@@ -1225,3 +1225,8 @@ void StartFaceAuthorityTest()
 	Note(key, "[face] self-test on: %08X's test face held 20 s of every 30, by our own messages through F4SE\n",
 		testConfigured);
 }
+
+float MouthDeepDepth()
+{
+	return faceDepth;
+}

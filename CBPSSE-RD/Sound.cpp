@@ -9,6 +9,7 @@
 #include "CollisionHub.h"
 #include "FaceAuthority.h"
 #include "Hook.h"
+#include "Mouth.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -267,6 +268,8 @@ namespace
 	const char* kSlap = "AnatomySoundSlap";
 	const char* kSquelch = "AnatomySoundSquelch";
 	const char* kThrust = "AnatomySoundThrust";
+	const char* kSlurp = "AnatomySoundSlurp";   // a shaft enters her mouth
+	const char* kSuck = "AnatomySoundSuck";     // each oral stroke
 
 	struct Track
 	{
@@ -280,7 +283,7 @@ namespace
 		ULONGLONG lastThrustEvent = 0;
 		ULONGLONG emptySince = 0;
 	};
-	std::unordered_map<UInt32, Track> tracks;   // the scan thread's own
+	std::unordered_map<std::uint64_t, Track> tracks;   // (formID, channel): the scan thread's own
 	std::uint32_t rng = 0x9E3779B9u;
 
 	float Jitter()   // 0.95 .. 1.05: the same clip never plays at quite the same pitch twice
@@ -314,12 +317,13 @@ namespace
 		return true;
 	}
 
-	void SendEvent(UInt32 formID, UInt32 kind, float depth, float speed, UInt32 strokeMs = 0)
+	void SendEvent(UInt32 formID, UInt32 partner, UInt32 kind, float depth, float speed, UInt32 strokeMs,
+		UInt32 flags)
 	{
 		auto* messaging = F4SE::GetMessagingInterface();
 		if (!messaging)
 			return;
-		FaceAuthority::SoundEventMessage m{ 2, formID, AimPartner(formID), kind, depth, speed, strokeMs };
+		FaceAuthority::SoundEventMessage m{ 3, formID, partner, kind, depth, speed, strokeMs, flags };
 		messaging->Dispatch(FaceAuthority::kSoundEvent, &m, sizeof(m), nullptr);   // to everyone, Rapport keeps ours
 	}
 
@@ -403,6 +407,87 @@ namespace
 				r.volume, (r.flags & 1u) ? ", the previous one cut" : "");
 		}
 	}
+
+	struct Channel
+	{
+		UInt32 formID;
+		UInt32 partner;
+		float depth;      // this frame's
+		UInt32 flags;     // RFAE's: oral
+		bool sounds;      // this channel plays the body sounds
+		bool mouth;       // at the head (slurp, suck) rather than the pelvis (squelch, slap, thrust)
+	};
+
+	// one channel's strokes: a stroke rises from its shallowest point and ends when the depth falls kTurn below its
+	// deepest; the deepest point is the thrust
+	void Step(Track& t, const Channel& c, Actor* a, ULONGLONG now, float deep)
+	{
+		const float d = c.depth;
+		if (!t.inside) {
+			if (d > kEnter) {   // penetration began
+				t.inside = true;
+				t.rising = true;
+				t.trough = d;
+				t.troughAt = now;
+				t.emptySince = 0;
+				if (c.sounds)
+					c.mouth ? PlayByName(kSlurp, HeadOf(a), 0.7f, Jitter()) : PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
+				SendEvent(c.formID, c.partner, 1, d, 0.0f, 0, c.flags);
+			}
+			t.depth = d;
+			return;
+		}
+		if (d <= 0.05f) {       // empty: ended once it stays so
+			if (!t.emptySince)
+				t.emptySince = now;
+			else if (now - t.emptySince > kOutMs) {
+				t.inside = false;
+				SendEvent(c.formID, c.partner, 4, 0.0f, 0.0f, 0, c.flags);
+			}
+			t.depth = d;
+			return;
+		}
+		t.emptySince = 0;
+		if (d > t.depth) {
+			if (!t.rising) {    // a new stroke starts at the shallowest point
+				t.rising = true;
+				t.trough = t.depth;
+				t.troughAt = now;
+			}
+			t.peak = d;
+		}
+		else if (t.rising && d < t.peak - kTurn) {   // the deepest point just passed: the thrust
+			t.rising = false;
+			const float stroke = t.peak - t.trough;
+			if (stroke >= kMinStroke && now - t.lastStroke >= kMinGapMs) {
+				// the stroke period: deepest point to deepest point (Rapport fits a moan's length inside it);
+				// 0 for the first stroke, or after a pause longer than any real stroke
+				const ULONGLONG gap = now - t.lastStroke;
+				const UInt32 strokeMs = (t.lastStroke && gap <= kMaxStrokeMs) ? (UInt32)gap : 0;
+				t.lastStroke = now;
+				const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
+				const float speed = stroke / secs;
+				const float volume = (std::min)(1.0f, 0.35f + speed / 80.0f);
+				if (c.sounds) {
+					if (c.mouth)
+						PlayByName(kSuck, HeadOf(a), volume * 0.8f, Jitter());
+					else {
+						RE::NiAVObject* pelvis = PelvisOf(a);
+						PlayByName(kSlap, pelvis, volume, Jitter());
+						PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
+					}
+				}
+				const UInt32 flags = c.flags | (t.peak >= deep ? FaceAuthority::kSoundEventDeep : 0u);
+				if (now - t.lastThrustEvent >= kThrustEventMs) {
+					t.lastThrustEvent = now;
+					SendEvent(c.formID, c.partner, 2, t.peak, speed, strokeMs, flags);
+				}
+				if (speed > kHardSpeed)
+					SendEvent(c.formID, c.partner, 3, t.peak, speed, strokeMs, flags);
+			}
+		}
+		t.depth = d;
+	}
 }
 
 namespace Sound
@@ -426,74 +511,23 @@ namespace Sound
 			return;
 		}
 		const ULONGLONG now = GetTickCount64();
+		const float deep = MouthDeepDepth();
 		for (auto& e : actorEntries) {
 			Actor* a = e.actor;
 			if (!a || !AimSeesScene(a->formID))
 				continue;
-			// her side plays the body sounds; his (his own shaft's depth: vagina, anus or a mouth) only tells
-			// Rapport, which voices both partners - his depth mirrors hers and would double every sound
-			const bool body = !actorUtils::IsActorMale(a);
-			const float d = AimDepth(a->formID);
-			Track& t = tracks[a->formID];
-			if (!t.inside) {
-				if (d > kEnter) {   // penetration began
-					t.inside = true;
-					t.rising = true;
-					t.trough = d;
-					t.troughAt = now;
-					t.emptySince = 0;
-					if (body)
-						PlayByName(kSquelch, PelvisOf(a), 0.8f, Jitter());
-					SendEvent(a->formID, 1, d, 0.0f);
-				}
-				t.depth = d;
-				continue;
-			}
-			if (d <= 0.05f) {       // empty: ended once it stays so
-				if (!t.emptySince)
-					t.emptySince = now;
-				else if (now - t.emptySince > kOutMs) {
-					t.inside = false;
-					SendEvent(a->formID, 4, 0.0f, 0.0f);
-				}
-				t.depth = d;
-				continue;
-			}
-			t.emptySince = 0;
-			if (d > t.depth) {
-				if (!t.rising) {    // a new stroke starts at the shallowest point
-					t.rising = true;
-					t.trough = t.depth;
-					t.troughAt = now;
-				}
-				t.peak = d;
-			}
-			else if (t.rising && d < t.peak - kTurn) {   // the deepest point just passed: the thrust
-				t.rising = false;
-				const float stroke = t.peak - t.trough;
-				if (stroke >= kMinStroke && now - t.lastStroke >= kMinGapMs) {
-					// the stroke period: deepest point to deepest point (Rapport fits a moan's length inside it);
-					// 0 for the first stroke, or after a pause longer than any real stroke
-					const ULONGLONG gap = now - t.lastStroke;
-					const UInt32 strokeMs = (t.lastStroke && gap <= kMaxStrokeMs) ? (UInt32)gap : 0;
-					t.lastStroke = now;
-					const float secs = (std::max)(0.05f, (float)(now - t.troughAt) / 1000.0f);
-					const float speed = stroke / secs;
-					const float volume = (std::min)(1.0f, 0.35f + speed / 80.0f);
-					if (body) {
-						RE::NiAVObject* pelvis = PelvisOf(a);
-						PlayByName(kSlap, pelvis, volume, Jitter());
-						PlayByName(kThrust, pelvis, volume * 0.8f, Jitter());
-					}
-					if (now - t.lastThrustEvent >= kThrustEventMs) {
-						t.lastThrustEvent = now;
-						SendEvent(a->formID, 2, t.peak, speed, strokeMs);
-					}
-					if (speed > kHardSpeed)
-						SendEvent(a->formID, 3, t.peak, speed, strokeMs);
-				}
-			}
-			t.depth = d;
+			const UInt32 id = a->formID;
+			const bool male = actorUtils::IsActorMale(a);
+			// channel 0, the genitals: hers is a shaft in her vagina or anus and plays the body sounds at her pelvis;
+			// his is his own shaft's depth (vagina, anus or a mouth) and only tells Rapport - it mirrors the
+			// receiver's, whose channel plays the sound, so none doubles
+			Channel genital{ id, AimPartner(id), AimDepth(id), male && AimInMouth(id) ? FaceAuthority::kSoundEventOral : 0u,
+				!male, false };
+			Step(tracks[(std::uint64_t)id << 1], genital, a, now, deep);
+			// channel 1, the mouth: a shaft in this actor's mouth, sucking sounds at the head and oral events for
+			// the mouth's owner (Rapport's gags)
+			Channel mouth{ id, AimOralPartner(id), AimOralDepth(id), FaceAuthority::kSoundEventOral, true, true };
+			Step(tracks[((std::uint64_t)id << 1) | 1], mouth, a, now, deep);
 		}
 	}
 }

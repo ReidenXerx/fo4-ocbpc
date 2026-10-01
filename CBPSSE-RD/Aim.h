@@ -26,6 +26,11 @@ bool AimSeesScene(unsigned int formID);    // in an AAF scene, per Anatomy:Arous
 // (a mouth measured from her lips). For the deep face (A-29), both actors. UpdateAims fills it.
 float AimDepth(unsigned int formID);
 unsigned int AimPartner(unsigned int formID);   // who that depth is with this frame (0: none), A-67
+// A-67's oral sounds: a shaft in THIS actor's mouth (units past the mouth's entrance, 0: none) and whose it is;
+// and whether this actor's own shaft is locked in a mouth (his AimDepth is then an oral one)
+float AimOralDepth(unsigned int formID);
+unsigned int AimOralPartner(unsigned int formID);
+bool AimInMouth(unsigned int formID);
 // The health check (Health.cpp): the actor's chain as UpdateAims would find it (-1 none configured, 0 missing,
 // 1 not hanging one from the next, 2 aimed, 3 aimed with nodes between); [Aim] enabled; "first ... last".
 int AimChainState(Actor* a);
