@@ -68,6 +68,10 @@ namespace
 	std::unordered_map<UInt32, UInt32> oralPartners;   // AimOralPartner: whose shaft that is
 	std::unordered_map<UInt32, bool> inMouth;      // AimInMouth: this actor's own shaft is locked in a mouth
 	std::unordered_map<UInt32, bool> received;     // AimReceived: this actor's vagina or anus holds a shaft
+	std::unordered_map<UInt32, int> depthKinds;    // AimDepthKind: which opening that depth is in (AimSolve::Kind)
+	std::unordered_map<UInt32, float> grips;       // AimGripDepth: this actor's shaft through a gripping hand
+	std::unordered_map<UInt32, UInt32> gripPartners;   // AimGripPartner: whose hand
+	std::vector<AimOpening> openings;              // AimOpenings: this frame's vaginas, anuses and mouths
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -494,6 +498,10 @@ void ResetAims()
 	oralPartners.clear();
 	inMouth.clear();
 	received.clear();
+	depthKinds.clear();
+	grips.clear();
+	gripPartners.clear();
+	openings.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -507,6 +515,10 @@ void UpdateAims()
 	oralPartners.clear();
 	inMouth.clear();
 	received.clear();
+	depthKinds.clear();
+	grips.clear();
+	gripPartners.clear();
+	openings.clear();
 	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
 	FaceAuthority::Knobs knobs;
 	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
@@ -554,6 +566,11 @@ void UpdateAims()
 					hands.push_back(AimSolve::Hand{ a->formID, ToV3(G::World(h).pos) });
 		}
 	}
+
+	for (const AimSolve::Target& t : targets)       // A-67's contacts (Sound.cpp): licking, fingers, toys
+		if (t.kind != AimSolve::kHand)
+			openings.push_back(AimOpening{ t.owner, t.kind, NiPoint3(t.point.x, t.point.y, t.point.z),
+				NiPoint3(t.in.x, t.in.y, t.in.z), t.inScene });
 
 	// every chain: the animation's pose, the corrections on top, written back
 	for (auto& e : actorEntries) {
@@ -737,6 +754,17 @@ void UpdateAims()
 			// it between the write and its else, which then hung off this if - so PutBack undid the write the
 			// same frame unless the shaft was locked in a vagina, anus or mouth: the shape showed only there,
 			// every release snapped instead of fading, and a grip never bent the shaft (release review)
+			if (r.locked && r.targetKind == AimSolve::kHand) {   // A-67: a handjob's stroke, the tip past the grip
+				for (const AimSolve::Target& t : targets) {
+					if (t.owner != r.targetOwner || t.kind != AimSolve::kHand)
+						continue;
+					V3 tip = ToV3(G::World(nodes.back()).pos);
+					float d = std::fabs(AimSolve::Dot(AimSolve::Sub(tip, t.point), t.in));   // entered either way
+					grips[a->formID] = (std::max)(grips[a->formID], d);
+					gripPartners[a->formID] = t.owner;
+					break;
+				}
+			}
 			if (r.locked && r.targetKind != AimSolve::kHand) {
 				for (const AimSolve::Target& t : targets) {
 					if (t.owner != r.targetOwner || t.kind != r.targetKind)
@@ -748,10 +776,12 @@ void UpdateAims()
 					d = (std::max)(0.0f, d);
 					depths[a->formID] = (std::max)(depths[a->formID], d);
 					partners[a->formID] = t.owner;
+					depthKinds[a->formID] = t.kind;
 					if (t.kind != AimSolve::kMouth) {     // a mouth's own depth is the contact mouth's (Mouth.cpp)
 						depths[t.owner] = (std::max)(depths[t.owner], d);
 						partners[t.owner] = a->formID;
 						received[t.owner] = true;
+						depthKinds[t.owner] = t.kind;
 					}
 					else {                                // kept apart for the sounds: the deep face keeps Mouth.cpp's
 						orals[t.owner] = (std::max)(orals[t.owner], d);
@@ -817,6 +847,29 @@ bool AimInMouth(unsigned int formID)
 bool AimReceived(unsigned int formID)
 {
 	return received.count(formID) != 0;
+}
+
+int AimDepthKind(unsigned int formID)
+{
+	auto it = depthKinds.find(formID);
+	return it != depthKinds.end() ? it->second : -1;
+}
+
+float AimGripDepth(unsigned int formID)
+{
+	auto it = grips.find(formID);
+	return it != grips.end() ? it->second : 0.0f;
+}
+
+unsigned int AimGripPartner(unsigned int formID)
+{
+	auto it = gripPartners.find(formID);
+	return it != gripPartners.end() ? it->second : 0u;
+}
+
+const std::vector<AimOpening>& AimOpenings()
+{
+	return openings;
 }
 
 bool AimSeesScene(unsigned int formID)

@@ -31,7 +31,21 @@ unsigned int AimPartner(unsigned int formID);   // who that depth is with this f
 float AimOralDepth(unsigned int formID);
 unsigned int AimOralPartner(unsigned int formID);
 bool AimInMouth(unsigned int formID);
-bool AimReceived(unsigned int formID);   // this actor's vagina or anus holds a shaft (its AimDepth is a received one)
+bool AimReceived(unsigned int formID);
+// A-67's contacts: which opening AimDepth is in (0 vagina, 1 anus, 2 mouth; -1 none); a shaft through a gripping
+// hand (a handjob: the tip past the grip, units) and whose hand; and this frame's openings (entrance and inward axis)
+int AimDepthKind(unsigned int formID);
+float AimGripDepth(unsigned int formID);
+unsigned int AimGripPartner(unsigned int formID);
+struct AimOpening
+{
+	unsigned int owner;
+	int kind;
+	NiPoint3 point;
+	NiPoint3 in;
+	bool inScene;
+};
+const std::vector<AimOpening>& AimOpenings();   // this actor's vagina or anus holds a shaft (its AimDepth is a received one)
 // The health check (Health.cpp): the actor's chain as UpdateAims would find it (-1 none configured, 0 missing,
 // 1 not hanging one from the next, 2 aimed, 3 aimed with nodes between); [Aim] enabled; "first ... last".
 int AimChainState(Actor* a);

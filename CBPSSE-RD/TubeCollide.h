@@ -25,3 +25,11 @@ bool IsTubeMember(const Actor* owner, const std::string& node);
 // The push the tubes give these spheres of `bone`: one per tube (its deepest), added over tubes. A penis
 // never pushes its own owner; a toy pushes only the [Props] targets, its holder's included (Tube::Reaches)
 bool TubePush(const Actor* self, const char* bone, const std::vector<Sphere>& spheres, NiPoint3& push);
+// A-67's contacts (Sound.cpp): every toy on a [Props] node this frame, its line of balls root to tip, and who holds it.
+// Read from the colliders directly, so it works whether [Tube] is on or off.
+struct PropLine
+{
+	const Actor* owner;
+	std::vector<NiPoint3> pts;
+};
+void PropLines(std::vector<PropLine>& out);

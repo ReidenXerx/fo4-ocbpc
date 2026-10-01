@@ -172,6 +172,19 @@ void BuildTubes()
 		(int)tubes.size());
 }
 
+void PropLines(std::vector<PropLine>& out)
+{
+	out.clear();
+	for (auto& c : otherColliders) {
+		if (!c.isProp || !c.colliderActor || c.collisionSpheres.empty())
+			continue;
+		PropLine line{ c.colliderActor, {} };
+		for (auto& s : c.collisionSpheres)
+			line.pts.push_back(s.worldPos);
+		out.push_back(std::move(line));
+	}
+}
+
 bool IsTubeMember(const Actor* owner, const std::string& node)
 {
 	for (auto& m : members)

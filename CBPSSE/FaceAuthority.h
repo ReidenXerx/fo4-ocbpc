@@ -77,6 +77,14 @@ namespace FaceAuthority
 	};
 	constexpr std::uint32_t kSoundEventOral = 1u << 0;
 	constexpr std::uint32_t kSoundEventDeep = 1u << 1;
+	// bits 3-7 (version 3, the owner 10-01: anal pain-pleasure, cunnilingus, hands, toys, masturbation): the opening is the
+	// ANUS; the contact is a mouth LICKING a vagina or anus (no shaft); a HAND (fingers or a fist inside or rubbing her, or
+	// a handjob on his shaft); a TOY in her; SELF: the actor does it to themselves (partner = the actor)
+	constexpr std::uint32_t kSoundEventAnal = 1u << 3;
+	constexpr std::uint32_t kSoundEventLick = 1u << 4;
+	constexpr std::uint32_t kSoundEventHand = 1u << 5;
+	constexpr std::uint32_t kSoundEventToy = 1u << 6;
+	constexpr std::uint32_t kSoundEventSelf = 1u << 7;
 	constexpr std::uint32_t kSoundEventReceiver = 1u << 2;   // this actor's opening is the one entered (her
 	                                                         // mouth, vagina or anus); clear on the shaft's owner
 	// 'RFAP' Rapport -> engine (A-67, hello bit 12): play an SNDR (full runtime form id) at the actor's head, following
