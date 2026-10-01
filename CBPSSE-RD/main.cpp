@@ -67,10 +67,12 @@ namespace
 			break;
 		case F4SE::MessagingInterface::kNewGame:
 			ReleaseAllFaces("a new game");   // nothing Rapport held survives into another game
+			Sound::Reset();   // fo4-anatomy (A-67): no moment or voice handle crosses into it
 			break;
 		case F4SE::MessagingInterface::kPreLoadGame:
 			ReleaseAllFaces("a save is loading");
 			ResetAims();   // fo4-anatomy (A-28): the new skeletons carry nothing we wrote
+			Sound::Reset();
 			break;
 		case F4SE::MessagingInterface::kPostLoad:
 			ListenForFaces(F4SE::GetMessagingInterface());   // every plugin is loaded, Rapport too

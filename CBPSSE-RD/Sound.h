@@ -43,4 +43,5 @@ namespace Sound
 	// stops this actor's previous RFAP sound first
 	void QueueVoice(UInt32 formID, UInt32 soundFormID, float volume, UInt32 flags);
 	std::uint32_t VoicedCount();          // Rapport's voices played (the health check)
+	void Reset();                         // a save is loading or a new game: the scan thread drops every moment and handle
 }

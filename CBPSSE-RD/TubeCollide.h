@@ -27,9 +27,10 @@ bool IsTubeMember(const Actor* owner, const std::string& node);
 bool TubePush(const Actor* self, const char* bone, const std::vector<Sphere>& spheres, NiPoint3& push);
 // A-67's contacts (Sound.cpp): every toy on a [Props] node this frame, its line of balls root to tip, and who holds it.
 // Read from the colliders directly, so it works whether [Tube] is on or off.
+// Only toys held by an actor in `live` (this frame's actors): a collider list rebuilt last frame may name one that is gone.
 struct PropLine
 {
-	const Actor* owner;
+	unsigned int owner;   // the holder's formID
 	std::vector<NiPoint3> pts;
 };
-void PropLines(std::vector<PropLine>& out);
+void PropLines(std::vector<PropLine>& out, const std::vector<const Actor*>& live);

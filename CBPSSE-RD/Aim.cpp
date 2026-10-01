@@ -68,6 +68,7 @@ namespace
 	std::unordered_map<UInt32, UInt32> oralPartners;   // AimOralPartner: whose shaft that is
 	std::unordered_map<UInt32, bool> inMouth;      // AimInMouth: this actor's own shaft is locked in a mouth
 	std::unordered_map<UInt32, bool> received;     // AimReceived: this actor's vagina or anus holds a shaft
+	std::unordered_map<UInt32, unsigned> receivedKinds;   // AimReceivedKinds: bit 0 her vagina, bit 1 her anus holds a shaft
 	std::unordered_map<UInt32, int> depthKinds;    // AimDepthKind: which opening that depth is in (AimSolve::Kind)
 	std::unordered_map<UInt32, float> grips;       // AimGripDepth: this actor's shaft through a gripping hand
 	std::unordered_map<UInt32, UInt32> gripPartners;   // AimGripPartner: whose hand
@@ -499,6 +500,7 @@ void ResetAims()
 	inMouth.clear();
 	received.clear();
 	depthKinds.clear();
+	receivedKinds.clear();
 	grips.clear();
 	gripPartners.clear();
 	openings.clear();
@@ -516,6 +518,7 @@ void UpdateAims()
 	inMouth.clear();
 	received.clear();
 	depthKinds.clear();
+	receivedKinds.clear();
 	grips.clear();
 	gripPartners.clear();
 	openings.clear();
@@ -781,6 +784,7 @@ void UpdateAims()
 						depths[t.owner] = (std::max)(depths[t.owner], d);
 						partners[t.owner] = a->formID;
 						received[t.owner] = true;
+						receivedKinds[t.owner] |= 1u << t.kind;
 						depthKinds[t.owner] = t.kind;
 					}
 					else {                                // kept apart for the sounds: the deep face keeps Mouth.cpp's
@@ -847,6 +851,12 @@ bool AimInMouth(unsigned int formID)
 bool AimReceived(unsigned int formID)
 {
 	return received.count(formID) != 0;
+}
+
+unsigned AimReceivedKinds(unsigned int formID)
+{
+	auto it = receivedKinds.find(formID);
+	return it != receivedKinds.end() ? it->second : 0u;
 }
 
 int AimDepthKind(unsigned int formID)

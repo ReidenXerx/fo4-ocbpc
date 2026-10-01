@@ -172,13 +172,15 @@ void BuildTubes()
 		(int)tubes.size());
 }
 
-void PropLines(std::vector<PropLine>& out)
+void PropLines(std::vector<PropLine>& out, const std::vector<const Actor*>& live)
 {
 	out.clear();
 	for (auto& c : otherColliders) {
 		if (!c.isProp || !c.colliderActor || c.collisionSpheres.empty())
 			continue;
-		PropLine line{ c.colliderActor, {} };
+		if (std::find(live.begin(), live.end(), c.colliderActor) == live.end())
+			continue;   // compared, never read: it may be gone
+		PropLine line{ c.colliderActor->formID, {} };
 		for (auto& s : c.collisionSpheres)
 			line.pts.push_back(s.worldPos);
 		out.push_back(std::move(line));

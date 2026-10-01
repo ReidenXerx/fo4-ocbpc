@@ -149,10 +149,10 @@ namespace
 				"packs' sounds play as they are\n", (int)sites.size(), (int)target.has_value());
 			return;
 		}
+		origResolve = reinterpret_cast<ResolveFn>(*target);   // set before any call reaches the hook
 		bool reaches = true;
 		for (const auto site : sites)
 			reaches = Hook::WriteCall(site, reinterpret_cast<uintptr_t>(&HookResolve)) == *target && reaches;
-		origResolve = reinterpret_cast<ResolveFn>(*target);
 		hooked = reaches;
 		Note("sound|on", hooked ? "[sound] the SoundPlay descriptor's 2 calls hooked (their code untouched): the packs' "
 			"sounds are muted in scenes while the override is on (Rapport's MCM; off until Rapport says so)\n"
@@ -253,10 +253,10 @@ namespace Sound
 	}
 }
 
-// ---- the engine's own sounds (A-67 v1, the owner 2026-10-01: "we need make working pipeline", the sounds are
-// tuned later). Her side drives them: the depth Aim measured for her this frame (a shaft past her vagina's or anus's
-// entrance); his depth mirrors hers and would double every sound. Played by EDID (Anatomy.esp's SNDRs) at her pelvis,
-// following it.
+// ---- the engine's own sounds (A-67; the owner 2026-10-01: "we need make working pipeline", tuned by his ear since).
+// Played by EDID (Anatomy.esp's SNDRs) at the pelvis or head, following it; events (RFAE) tell Rapport the moments.
+// Every event that begins (kind 1) ends (kind 4) with the SAME partner and flags, also when the actor leaves the scene,
+// unloads, the contact turns into something else, or the override goes off (the 2026-10-01 microscope).
 namespace
 {
 	constexpr float kEnter = 0.3f;          // depth past the entrance that counts as inside
@@ -264,19 +264,22 @@ namespace
 	constexpr float kMinStroke = 1.0f;      // a stroke shallower than this makes no sound (a jiggle, not a thrust)
 	constexpr float kHardSpeed = 60.0f;     // units per second: above this a stroke is a hard impact (RFAE 3)
 	constexpr ULONGLONG kMinGapMs = 120;    // two stroke sounds never closer than this
-	constexpr ULONGLONG kThrustEventMs = 250;   // RFAE 2 at most this often per actor (Rapport's ask)
+	constexpr ULONGLONG kThrustEventMs = 250;   // RFAE 2 (and 3) at most this often per track (Rapport's ask)
 	constexpr ULONGLONG kOutMs = 400;       // empty this long = penetration ended
 	constexpr ULONGLONG kMaxStrokeMs = 3000;   // a longer gap is a pause, not a stroke: its period reads 0
+	constexpr ULONGLONG kVoiceMaxAgeMs = 1500; // a Rapport voice still queued after this is late: dropped
 	const char* kSlap = "AnatomySoundSlap";
 	const char* kSquelch = "AnatomySoundSquelch";
 	const char* kThrust = "AnatomySoundThrust";
 	const char* kSlurp = "AnatomySoundSlurp";   // a shaft enters her mouth
 	const char* kSuck = "AnatomySoundSuck";     // each oral stroke: the closed mouth moving
-	const char* kLick = "AnatomySoundLick";       // a tongue on her (cunnilingus, anilingus): timed while the mouth is there
-	const char* kFinger = "AnatomySoundFinger";   // fingers in or on her
-	const char* kHandjob = "AnatomySoundHandjob"; // a hand stroking a shaft
+	const char* kLick = "AnatomySoundLick";     // a tongue on her (cunnilingus, anilingus): on a beat while it is there
+	const char* kFinger = "AnatomySoundFinger"; // fingers in or on her
+	const char* kHandjob = "AnatomySoundHandjob";   // a hand stroking a shaft
 	const char* kSiphon = "AnatomySoundSiphon"; // now and then on top: air slipping between lips and skin (the owner 10-01:
 	                                            // most of the sound is the closed mouth, the slurp is the accident)
+
+	enum class Kind { Genital, Mouth, Finger, Fist, Toy, Handjob };
 
 	struct Track
 	{
@@ -289,9 +292,16 @@ namespace
 		ULONGLONG lastStroke = 0;
 		ULONGLONG lastThrustEvent = 0;
 		ULONGLONG emptySince = 0;
+		UInt32 formID = 0;      // what began: the end repeats it
+		UInt32 partner = 0;
+		UInt32 flags = 0;
+		Kind kind = Kind::Genital;
+		std::uint32_t seen = 0; // the frame it was last stepped (a track not stepped is ended and dropped)
 	};
 	std::unordered_map<std::uint64_t, Track> tracks;   // (formID, channel): the scan thread's own
+	std::uint32_t frame = 0;
 	std::uint32_t rng = 0x9E3779B9u;
+	std::atomic<bool> resetWanted{ false };
 
 	bool Chance(std::uint32_t inN)   // true about once in inN calls
 	{
@@ -367,13 +377,14 @@ namespace
 		UInt32 soundFormID;
 		float volume;
 		UInt32 flags;
+		ULONGLONG at;
 	};
 	std::mutex voiceLock;
 	std::vector<VoiceRequest> voiceQueue;
 	std::unordered_map<UInt32, std::uint32_t> lastVoice;   // actor -> its last RFAP handle id (the scan thread's)
 	std::atomic<std::uint32_t> voiced{ 0 };
 
-	void PlayVoices()
+	void PlayVoices(ULONGLONG now)
 	{
 		std::vector<VoiceRequest> pending;
 		{
@@ -381,13 +392,18 @@ namespace
 			pending.swap(voiceQueue);
 		}
 		for (const VoiceRequest& r : pending) {
+			char key[64];
+			if (now - r.at > kVoiceMaxAgeMs) {   // the scan did not run for a while (a loading screen): too late now
+				Note("sound|voice|late", "[sound] a Rapport voice waited over 1.5 s to play (the engine's frame was not "
+					"running): dropped, the first time\n");
+				continue;
+			}
 			Actor* a = nullptr;
 			for (auto& e : actorEntries)
 				if (e.actor && e.actor->formID == r.formID) {
 					a = e.actor;
 					break;
 				}
-			char key[64];
 			if (!a) {
 				_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|voice|noactor|%08X", r.formID);
 				Note(key, "[sound] Rapport asked a voice for %08X, which the engine does not track (not loaded or "
@@ -421,7 +437,6 @@ namespace
 		}
 	}
 
-	enum class Kind { Genital, Mouth, Finger, Fist, Toy, Handjob };
 	struct Channel
 	{
 		UInt32 formID;
@@ -433,40 +448,66 @@ namespace
 		Kind kind = Kind::Genital;
 	};
 
+	void End(Track& t)
+	{
+		if (t.inside)
+			SendEvent(t.formID, t.partner, 4, 0.0f, 0.0f, 0, t.flags);
+		t.inside = false;
+		t.rising = false;
+		t.emptySince = 0;
+	}
+
+	void Begin(Track& t, const Channel& c, Actor* a, ULONGLONG now, bool sound)
+	{
+		const float d = c.depth;
+		t.inside = true;
+		t.rising = true;
+		t.trough = d;
+		t.peak = d;               // a stale peak from the last time would fire a phantom thrust at once
+		t.troughAt = now;
+		t.emptySince = 0;
+		t.lastStroke = 0;
+		t.lastThrustEvent = 0;
+		t.formID = c.formID;
+		t.partner = c.partner;
+		t.flags = c.flags;
+		t.kind = c.kind;
+		if (sound && c.sounds) {
+			if (c.mouth)
+				PlayByName(kSlurp, HeadOf(a), 1.0f, Jitter());
+			else if (c.kind == Kind::Genital || c.kind == Kind::Toy || c.kind == Kind::Fist)
+				PlayByName(kSquelch, PelvisOf(a), 1.0f, Jitter());   // fingers and a hand on a shaft slide in quietly
+		}
+		SendEvent(c.formID, c.partner, 1, d, 0.0f, 0, c.flags);
+	}
+
 	// one channel's strokes: a stroke rises from its shallowest point and ends when the depth falls kTurn below its
 	// deepest; the deepest point is the thrust
 	void Step(Track& t, const Channel& c, Actor* a, ULONGLONG now, float deep)
 	{
+		t.seen = frame;
 		const float d = c.depth;
 		if (!t.inside) {
-			if (d > kEnter) {   // penetration began
-				t.inside = true;
-				t.rising = true;
-				t.trough = d;
-				t.troughAt = now;
-				t.emptySince = 0;
-				if (c.sounds) {
-					if (c.mouth)
-						PlayByName(kSlurp, HeadOf(a), 1.0f, Jitter());
-					else if (c.kind == Kind::Genital || c.kind == Kind::Toy || c.kind == Kind::Fist)
-						PlayByName(kSquelch, PelvisOf(a), 1.0f, Jitter());   // fingers and a hand on a shaft slide in quietly
-				}
-				SendEvent(c.formID, c.partner, 1, d, 0.0f, 0, c.flags);
-			}
+			if (d > kEnter)
+				Begin(t, c, a, now, true);
 			t.depth = d;
 			return;
 		}
 		if (d <= 0.05f) {       // empty: ended once it stays so
 			if (!t.emptySince)
 				t.emptySince = now;
-			else if (now - t.emptySince > kOutMs) {
-				t.inside = false;
-				SendEvent(c.formID, c.partner, 4, 0.0f, 0.0f, 0, c.flags);
-			}
+			else if (now - t.emptySince > kOutMs)
+				End(t);
 			t.depth = d;
 			return;
 		}
 		t.emptySince = 0;
+		if (c.partner != t.partner || c.kind != t.kind || c.flags != t.flags) {   // someone or something else now
+			End(t);
+			Begin(t, c, a, now, false);
+			t.depth = d;
+			return;
+		}
 		if (d > t.depth) {
 			if (!t.rising) {    // a new stroke starts at the shallowest point
 				t.rising = true;
@@ -509,27 +550,24 @@ namespace
 					}
 				}
 				const UInt32 flags = c.flags | (t.peak >= deep ? FaceAuthority::kSoundEventDeep : 0u);
-				if (now - t.lastThrustEvent >= kThrustEventMs) {
+				if (now - t.lastThrustEvent >= kThrustEventMs) {   // the stroke and, when hard, its impact: one gate
 					t.lastThrustEvent = now;
 					SendEvent(c.formID, c.partner, 2, t.peak, speed, strokeMs, flags);
+					if (speed > kHardSpeed)
+						SendEvent(c.formID, c.partner, 3, t.peak, speed, strokeMs, flags);
 				}
-				if (speed > kHardSpeed)
-					SendEvent(c.formID, c.partner, 3, t.peak, speed, strokeMs, flags);
 			}
 		}
 		t.depth = d;
 	}
-}
 
-namespace
-{
 	// ---- contacts without a shaft (the owner 10-01): a mouth licking her, fingers or a fist in or on her, a toy in her, a
 	// hand on a shaft. Measured against Aim's openings (entrance + inward axis): depth = along the axis, aside = off it.
 	constexpr float kLickAside = 5.0f, kLickNear = -5.0f, kLickFar = 2.0f;   // the lips in front of / at her opening
 	constexpr float kHandAside = 3.0f, kInside = 0.3f;                         // a fingertip or a toy past the entrance
 	constexpr float kRubAside = 4.0f, kRubNear = -2.5f;                        // a fingertip on her, not in
-	constexpr float kFistDepth = 3.0f;                                         // fingers this deep: a fist, not a finger
-	const char* kTips[] = { "LArm_Finger23", "LArm_Finger33", "RArm_Finger23", "RArm_Finger33" };   // index, middle tips
+	constexpr float kFistDepth = 5.0f, kFistHold = 3.5f;   // fingers this deep: a fist; it stays one until shallower than hold
+	constexpr float kTipReach = 0.8f;   // the fingertip: past the last joint by this share of the last bone
 
 	void Axis(const AimOpening& o, const NiPoint3& p, float& depth, float& aside)
 	{
@@ -539,13 +577,39 @@ namespace
 		aside = std::sqrt(off.x * off.x + off.y * off.y + off.z * off.z);
 	}
 
-	RE::NiAVObject* Node(Actor* a, const char* name)
+	// this frame's fingertips of every actor in a scene: found once, not per opening
+	struct Hands
 	{
-		RE::NiAVObject* root = G::Root(a);
-		if (!root)
-			return nullptr;
-		RE::BSFixedString n(name);
-		return root->GetObjectByName(n);
+		UInt32 formID;
+		int count = 0;
+		NiPoint3 tip[4];
+	};
+	std::vector<Hands> hands;
+
+	void FindHands(const std::vector<Actor*>& inScene)
+	{
+		static RE::BSFixedString joints[4][2] = {   // index and middle finger, both hands: the last two joints
+			{ RE::BSFixedString("LArm_Finger22"), RE::BSFixedString("LArm_Finger23") },
+			{ RE::BSFixedString("LArm_Finger32"), RE::BSFixedString("LArm_Finger33") },
+			{ RE::BSFixedString("RArm_Finger22"), RE::BSFixedString("RArm_Finger23") },
+			{ RE::BSFixedString("RArm_Finger32"), RE::BSFixedString("RArm_Finger33") } };
+		hands.clear();
+		for (Actor* a : inScene) {
+			RE::NiAVObject* root = G::Root(a);
+			if (!root)
+				continue;
+			Hands h{ a->formID };
+			for (auto& j : joints) {
+				RE::NiAVObject* mid = root->GetObjectByName(j[0]);
+				RE::NiAVObject* last = root->GetObjectByName(j[1]);
+				if (!mid || !last)
+					continue;
+				const NiPoint3 p2 = G::World(mid).pos, p3 = G::World(last).pos;
+				h.tip[h.count++] = p3 + (p3 - p2) * kTipReach;
+			}
+			if (h.count)
+				hands.push_back(h);
+		}
 	}
 
 	enum class Touch { None, Lick, Rub, Finger, Fist, Toy };
@@ -563,7 +627,10 @@ namespace
 		ULONGLONG next = 0;
 		ULONGLONG last = 0;
 		ULONGLONG gone = 0;
+		UInt32 formID = 0;      // what began: the end repeats it
 		UInt32 partner = 0;
+		UInt32 flags = 0;
+		std::uint32_t seen = 0;
 	};
 	std::unordered_map<std::uint64_t, Beat> beats;
 	std::vector<PropLine> props;
@@ -580,20 +647,28 @@ namespace
 		}
 	}
 
+	void EndBeat(Beat& b)
+	{
+		if (b.touch != Touch::None) {
+			SendEvent(b.formID, b.partner, 4, 0.0f, 0.0f, 0, b.flags);
+			if (b.touch == Touch::Lick && b.partner && b.partner != b.formID)   // the licker's own: his mouth is free
+				SendEvent(b.partner, b.formID, 4, 0.0f, 0.0f, 0, FaceAuthority::kSoundEventLick |
+					(b.flags & FaceAuthority::kSoundEventAnal));
+		}
+		b = Beat{};
+	}
+
 	void Beats(std::uint64_t key, Actor* a, const AimOpening& o, const Contact& c, ULONGLONG now)
 	{
 		Beat& b = beats[key];
+		b.seen = frame;
 		const bool surface = c.touch == Touch::Lick || c.touch == Touch::Rub;
-		const UInt32 base = FaceAuthority::kSoundEventReceiver | (o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u) |
-			(c.partner == a->formID ? FaceAuthority::kSoundEventSelf : 0u);
-		if (b.touch != Touch::None && (!surface || b.touch != c.touch)) {   // it stopped or turned into something else
+		if (b.touch != Touch::None && (!surface || b.touch != c.touch || b.partner != c.partner)) {
 			if (!b.gone)
 				b.gone = now;
-			if (now - b.gone > kOutMs || (surface && b.touch != c.touch)) {
-				SendEvent(a->formID, b.partner, 4, 0.0f, 0.0f, 0, base | TouchFlag(b.touch));
-				if (b.partner && b.partner != a->formID)
-					SendEvent(b.partner, a->formID, 4, 0.0f, 0.0f, 0, TouchFlag(b.touch) | (o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u));
-				b = Beat{};
+			if (now - b.gone > kOutMs || surface) {   // gone long enough, or already something else on her
+				EndBeat(b);
+				b.seen = frame;
 			}
 			if (!surface)
 				return;
@@ -601,63 +676,58 @@ namespace
 		if (!surface)
 			return;
 		b.gone = 0;
-		const UInt32 flags = base | TouchFlag(c.touch);
 		if (b.touch == Touch::None) {
 			b.touch = c.touch;
+			b.formID = a->formID;
 			b.partner = c.partner;
+			b.flags = FaceAuthority::kSoundEventReceiver | (o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u) |
+				(c.partner == a->formID ? FaceAuthority::kSoundEventSelf : 0u) | TouchFlag(c.touch);
 			b.next = now;
-			SendEvent(a->formID, c.partner, 1, 0.0f, 0.0f, 0, flags);
-			if (c.partner && c.partner != a->formID)   // the licker's or rubber's own event: their mouth or hand is busy
-				SendEvent(c.partner, a->formID, 1, 0.0f, 0.0f, 0, TouchFlag(c.touch) | (o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u));
+			SendEvent(a->formID, c.partner, 1, 0.0f, 0.0f, 0, b.flags);
+			if (c.touch == Touch::Lick && c.partner && c.partner != a->formID)   // the licker's own: his mouth is busy
+				SendEvent(c.partner, a->formID, 1, 0.0f, 0.0f, 0, FaceAuthority::kSoundEventLick |
+					(o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u));
 		}
 		if (now < b.next)
 			return;
 		const UInt32 gap = b.last ? (UInt32)(now - b.last) : 0;
 		b.last = now;
 		const bool lick = c.touch == Touch::Lick;
-		b.next = now + (lick ? 450 : 380) + (ULONGLONG)(std::max)(0.0f, (Jitter() - 0.95f) * 4000.0f);   // 380..1050 ms, never even
+		b.next = now + (lick ? 450 : 380) + (ULONGLONG)(std::max)(0.0f, (Jitter() - 0.95f) * 4000.0f);   // lick 450-850, rub 380-780 ms
 		PlayByName(lick ? kLick : kFinger, PelvisOf(a), lick ? 0.9f : 0.7f, Jitter());
-		SendEvent(a->formID, c.partner, 2, 0.0f, 0.0f, gap <= kMaxStrokeMs ? gap : 0, flags);
+		SendEvent(a->formID, c.partner, 2, 0.0f, 0.0f, gap <= kMaxStrokeMs ? gap : 0, b.flags);
 	}
 
 	// the best contact on one of her openings this frame: a toy, then fingers inside (a fist when deep), then a mouth on
-	// it, then fingers on it
-	Contact Find(Actor* her, const AimOpening& o)
+	// it, then fingers on it. wasFist: this opening's track is a fist now (it stays one down to kFistHold)
+	Contact Find(Actor* her, const AimOpening& o, bool wasFist)
 	{
 		Contact best;
 		for (auto& line : props) {
-			if (!line.owner || line.pts.empty())
-				continue;
 			for (auto& p : line.pts) {
 				float d, aside;
 				Axis(o, p, d, aside);
 				if (aside < kHandAside && d > kInside && d > best.depth)
-					best = Contact{ Touch::Toy, d, line.owner->formID };
+					best = Contact{ Touch::Toy, d, line.owner };
 			}
 		}
 		if (best.touch == Touch::Toy)
 			return best;
 		Contact rub;
-		for (auto& e : actorEntries) {
-			Actor* b = e.actor;
-			if (!b || !AimSeesScene(b->formID))
-				continue;
-			for (const char* tip : kTips) {
-				RE::NiAVObject* n = Node(b, tip);
-				if (!n)
-					continue;
+		for (auto& h : hands) {
+			for (int k = 0; k < h.count; k++) {
 				float d, aside;
-				Axis(o, G::World(n).pos, d, aside);
+				Axis(o, h.tip[k], d, aside);
 				if (aside < kHandAside && d > kInside && d > best.depth)
-					best = Contact{ d > kFistDepth ? Touch::Fist : Touch::Finger, d, b->formID };
+					best = Contact{ (d > kFistDepth || (wasFist && d > kFistHold)) ? Touch::Fist : Touch::Finger, d, h.formID };
 				else if (aside < kRubAside && d > kRubNear && d <= kInside && rub.touch == Touch::None)
-					rub = Contact{ Touch::Rub, 0.0f, b->formID };
+					rub = Contact{ Touch::Rub, 0.0f, h.formID };
 			}
 		}
 		if (best.touch != Touch::None)
 			return best;
 		for (auto& m : AimOpenings()) {
-			if (m.kind != 2 || m.owner == her->formID)
+			if (m.kind != 2 || m.owner == her->formID || !m.inScene)
 				continue;
 			float d, aside;
 			Axis(o, m.point, d, aside);
@@ -665,6 +735,17 @@ namespace
 				return Contact{ Touch::Lick, 0.0f, m.owner };
 		}
 		return rub;
+	}
+
+	// everything open is closed with its end event (the override went off): Rapport never keeps a begun moment
+	void CloseAll()
+	{
+		for (auto& [key, t] : tracks)
+			End(t);
+		for (auto& [key, b] : beats)
+			EndBeat(b);
+		tracks.clear();
+		beats.clear();
 	}
 }
 
@@ -675,67 +756,115 @@ namespace Sound
 
 	void QueueVoice(UInt32 formID, UInt32 soundFormID, float volume, UInt32 flags)
 	{
+		if (!std::isfinite(volume))
+			return;
+		volume = (std::min)(2.0f, (std::max)(0.0f, volume));
 		std::lock_guard<std::mutex> l(voiceLock);
-		if (voiceQueue.size() < 64)   // a runaway sender cannot grow it without bound
-			voiceQueue.push_back({ formID, soundFormID, volume, flags });
+		if (voiceQueue.size() >= 64)   // a runaway sender cannot grow it without bound: the oldest goes
+			voiceQueue.erase(voiceQueue.begin());
+		voiceQueue.push_back({ formID, soundFormID, volume, flags, GetTickCount64() });
+	}
+
+	void Reset()
+	{
+		resetWanted.store(true);   // a save is loading: done on the scan thread's next frame
 	}
 
 	void Update()
 	{
-		if (canPlay)
-			PlayVoices();   // override on or off: Rapport voices its actors either way
-		if (!canPlay || !overrideOn.load(std::memory_order_relaxed)) {
+		const ULONGLONG now = GetTickCount64();
+		if (resetWanted.exchange(false)) {   // the last game's moments and handles mean nothing in this one
 			tracks.clear();
+			beats.clear();
+			lastVoice.clear();
+			std::lock_guard<std::mutex> l(voiceLock);
+			voiceQueue.clear();
+		}
+		if (canPlay)
+			PlayVoices(now);   // override on or off: Rapport voices its actors either way
+		if (!canPlay || !overrideOn.load(std::memory_order_relaxed)) {
+			if (!tracks.empty() || !beats.empty())
+				CloseAll();
 			return;
 		}
-		const ULONGLONG now = GetTickCount64();
+		frame++;
 		const float deep = MouthDeepDepth();
-		for (auto& e : actorEntries) {
-			Actor* a = e.actor;
-			if (!a || !AimSeesScene(a->formID))
-				continue;
+		std::vector<Actor*> inScene;
+		for (auto& e : actorEntries)
+			if (e.actor && AimSeesScene(e.actor->formID))
+				inScene.push_back(e.actor);
+		for (Actor* a : inScene) {
 			const UInt32 id = a->formID;
-			const bool entered = AimReceived(id);
+			const unsigned openings = AimReceivedKinds(id);   // bit 0 her vagina, bit 1 her anus holds a shaft
+			const bool entered = openings != 0;
+			const UInt32 partner = AimPartner(id);
 			// channel 0, the genitals: the one entered (a shaft in the vagina or anus, any sex) plays the body sounds at
 			// the pelvis; the shaft's owner's depth (vagina, anus or a mouth) only tells Rapport - it mirrors the
 			// receiver's, whose channel plays the sound, so none doubles
-			Channel genital{ id, AimPartner(id), AimDepth(id),
-				entered ? FaceAuthority::kSoundEventReceiver : (AimInMouth(id) ? FaceAuthority::kSoundEventOral : 0u),
-				entered, false };
-			genital.flags |= AimDepthKind(id) == 1 ? FaceAuthority::kSoundEventAnal : 0u;   // the owner: anal has its own voice
+			Channel genital{ id, partner, AimDepth(id),
+				(entered ? FaceAuthority::kSoundEventReceiver : (AimInMouth(id) ? FaceAuthority::kSoundEventOral : 0u)) |
+				((entered ? (openings & 2u) != 0 : AimDepthKind(id) == 1) ? FaceAuthority::kSoundEventAnal : 0u) |
+				(partner == id ? FaceAuthority::kSoundEventSelf : 0u), entered, false };
 			Step(tracks[(std::uint64_t)id << 3], genital, a, now, deep);
 			// channel 1, the mouth: a shaft in this actor's mouth, sucking sounds at the head and oral events for
-			// the mouth's owner (Rapport's gags)
-			Channel mouth{ id, AimOralPartner(id), AimOralDepth(id),
-				FaceAuthority::kSoundEventOral | FaceAuthority::kSoundEventReceiver, true, true };
+			// the mouth's owner (Rapport keeps a full mouth quiet)
+			const UInt32 sucked = AimOralPartner(id);
+			Channel mouth{ id, sucked, AimOralDepth(id), FaceAuthority::kSoundEventOral | FaceAuthority::kSoundEventReceiver |
+				(sucked == id ? FaceAuthority::kSoundEventSelf : 0u), true, true };
 			Step(tracks[((std::uint64_t)id << 3) | 1], mouth, a, now, deep);
-			// channel 2, a hand on his shaft: its strokes, at his pelvis (no opening: not a receiver)
+			// channel 2, a hand on his shaft: its strokes, at his pelvis; he is the one stimulated (RECEIVER)
 			const UInt32 hand = AimGripPartner(id);
-			Channel handjob{ id, hand, AimGripDepth(id), FaceAuthority::kSoundEventHand |
+			Channel handjob{ id, hand, AimGripDepth(id), FaceAuthority::kSoundEventHand | FaceAuthority::kSoundEventReceiver |
 				(hand == id ? FaceAuthority::kSoundEventSelf : 0u), true, false, Kind::Handjob };
 			Step(tracks[((std::uint64_t)id << 3) | 2], handjob, a, now, deep);
 		}
 		// channels 3 (vagina) and 4 (anus): what touches her without a shaft in that opening
-		PropLines(props);
+		std::vector<const Actor*> live;
+		for (auto& e : actorEntries)
+			if (e.actor)
+				live.push_back(e.actor);
+		PropLines(props, live);
+		FindHands(inScene);
 		for (const AimOpening& o : AimOpenings()) {
 			if (o.kind > 1 || !o.inScene)
 				continue;
 			Actor* her = nullptr;
-			for (auto& e : actorEntries)
-				if (e.actor && e.actor->formID == o.owner)
-					her = e.actor;
+			for (Actor* a : inScene)
+				if (a->formID == o.owner)
+					her = a;
 			if (!her)
 				continue;
-			const bool shaft = AimReceived(o.owner) && AimDepthKind(o.owner) == o.kind;
-			Contact c = shaft ? Contact{} : Find(her, o);
+			const bool shaft = (AimReceivedKinds(o.owner) & (1u << o.kind)) != 0;
 			const std::uint64_t key = ((std::uint64_t)o.owner << 3) | (3 + o.kind);
+			Track& t = tracks[key | 0x10000000000ull];
+			Contact c = shaft ? Contact{} : Find(her, o, t.inside && t.kind == Kind::Fist);
 			Beats(key, her, o, c, now);   // licking and rubbing
 			const bool inside = c.touch == Touch::Finger || c.touch == Touch::Fist || c.touch == Touch::Toy;
 			Channel in{ o.owner, c.partner, inside ? c.depth : 0.0f, FaceAuthority::kSoundEventReceiver |
 				(o.kind == 1 ? FaceAuthority::kSoundEventAnal : 0u) | (inside ? TouchFlag(c.touch) : 0u) |
 				(c.partner == o.owner ? FaceAuthority::kSoundEventSelf : 0u), true, false,
 				c.touch == Touch::Toy ? Kind::Toy : c.touch == Touch::Fist ? Kind::Fist : Kind::Finger };
-			Step(tracks[key | 0x10000000000ull], in, her, now, deep);
+			if (inside || t.inside)
+				Step(t, in, her, now, deep);
+			else
+				t.seen = frame;
+		}
+		// whatever was not stepped this frame (the actor left the scene, unloaded, her opening is gone): ended, dropped
+		for (auto it = tracks.begin(); it != tracks.end();) {
+			if (it->second.seen != frame) {
+				End(it->second);
+				it = tracks.erase(it);
+			}
+			else
+				++it;
+		}
+		for (auto it = beats.begin(); it != beats.end();) {
+			if (it->second.seen != frame) {
+				EndBeat(it->second);
+				it = beats.erase(it);
+			}
+			else
+				++it;
 		}
 	}
 }

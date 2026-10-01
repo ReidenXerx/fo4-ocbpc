@@ -34,6 +34,7 @@ bool AimInMouth(unsigned int formID);
 bool AimReceived(unsigned int formID);
 // A-67's contacts: which opening AimDepth is in (0 vagina, 1 anus, 2 mouth; -1 none); a shaft through a gripping
 // hand (a handjob: the tip past the grip, units) and whose hand; and this frame's openings (entrance and inward axis)
+unsigned AimReceivedKinds(unsigned int formID);   // which of her openings hold a shaft: bit 0 vagina, bit 1 anus (a double penetration: both)
 int AimDepthKind(unsigned int formID);
 float AimGripDepth(unsigned int formID);
 unsigned int AimGripPartner(unsigned int formID);
