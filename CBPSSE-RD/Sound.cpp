@@ -269,7 +269,9 @@ namespace
 	const char* kSquelch = "AnatomySoundSquelch";
 	const char* kThrust = "AnatomySoundThrust";
 	const char* kSlurp = "AnatomySoundSlurp";   // a shaft enters her mouth
-	const char* kSuck = "AnatomySoundSuck";     // each oral stroke
+	const char* kSuck = "AnatomySoundSuck";     // each oral stroke: the closed mouth moving
+	const char* kSiphon = "AnatomySoundSiphon"; // now and then on top: air slipping between lips and skin (the owner 10-01:
+	                                            // most of the sound is the closed mouth, the slurp is the accident)
 
 	struct Track
 	{
@@ -285,6 +287,12 @@ namespace
 	};
 	std::unordered_map<std::uint64_t, Track> tracks;   // (formID, channel): the scan thread's own
 	std::uint32_t rng = 0x9E3779B9u;
+
+	bool Chance(std::uint32_t inN)   // true about once in inN calls
+	{
+		rng = rng * 1664525u + 1013904223u;
+		return ((rng >> 8) % inN) == 0;
+	}
 
 	float Jitter()   // 0.95 .. 1.05: the same clip never plays at quite the same pitch twice
 	{
@@ -469,8 +477,12 @@ namespace
 				const float speed = stroke / secs;
 				const float volume = (std::min)(1.0f, 0.75f + speed / 120.0f);
 				if (c.sounds) {
-					if (c.mouth)
-						PlayByName(kSuck, HeadOf(a), volume, Jitter());
+					if (c.mouth) {
+						RE::NiAVObject* head = HeadOf(a);
+						PlayByName(kSuck, head, volume, Jitter());
+						if (Chance(speed > 30.0f ? 3 : 6))   // a fast mouth lets air in more often
+							PlayByName(kSiphon, head, volume * 0.9f, Jitter());
+					}
 					else {
 						RE::NiAVObject* pelvis = PelvisOf(a);
 						PlayByName(kSlap, pelvis, volume, Jitter());
