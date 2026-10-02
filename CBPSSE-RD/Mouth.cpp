@@ -351,12 +351,41 @@ namespace
 		published.swap(next);
 	}
 
+	// Ours wins in a scene (the owner, 2026-10-02): a held face blinks by OUR clock, never by the merged lids (an
+	// animation's eyelid keyframes and other mods' MFG ride in on them; FaceCompose replaces them by this). A
+	// natural blink every 2.5 to 6 s per actor, a quarter second long: closing 90 ms, shut 40 ms, opening 130 ms.
+	// The publish pass and RefreshHeldFaces (a cell change) both call it: locked.
+	float OwnBlink(UInt32 formID, std::uint64_t nowMs)
+	{
+		struct State
+		{
+			std::uint64_t start = 0;
+			std::uint32_t n = 0;
+		};
+		static std::unordered_map<UInt32, State> blinks;
+		static std::mutex blinkLock;
+		std::lock_guard<std::mutex> guard(blinkLock);
+		State& s = blinks[formID];
+		if (s.start == 0 || nowMs > s.start + 60000)    // first seen, or after a long pause (a load, a menu)
+			s.start = nowMs + 400 + formID % 2000;
+		while (nowMs >= s.start + 260) {
+			s.n++;
+			std::uint32_t h = (formID ^ (s.n * 2654435761u)) * 2246822519u;
+			s.start += 260 + 2500 + (h >> 8) % 3500;
+		}
+		if (nowMs < s.start)
+			return 0.0f;
+		const float t = (float)(nowMs - s.start);
+		return t < 90.0f ? t / 90.0f : (t < 130.0f ? 1.0f : 1.0f - (t - 130.0f) / 130.0f);
+	}
+
 	// A held face on an actor the mouth has nothing to do with: the mouth's share is all 0, so its writes
 	// leave Rapport's values as they are
-	Override HeldOnly(void* data, UInt32 formID, const FaceAuthority::Face& face)
+	Override HeldOnly(void* data, UInt32 formID, const FaceAuthority::Face& face, std::uint64_t nowMs)
 	{
 		Override o{ data, formID, {}, true, face };
 		o.mouth.lidMax = EyeLidMax(formID);
+		o.mouth.blink = OwnBlink(formID, nowMs);
 		return o;
 	}
 
@@ -1005,6 +1034,7 @@ void UpdateMouths()
 			if (rapport) {
 				o.held = true;
 				o.rapport = *rapport;
+				o.mouth.blink = OwnBlink(a->formID, clockMs);
 				heldDone[h->second] = true;
 				Applied(a->formID, "found by OCBPC's scan");
 			}
@@ -1024,7 +1054,7 @@ void UpdateMouths()
 				"in high process); it applies once there is one\n", formID);
 			continue;
 		}
-		next.push_back(HeldOnly(data, formID, held[i].second));
+		next.push_back(HeldOnly(data, formID, held[i].second, clockMs));
 		wearGlance(next.back());
 		Applied(formID, "looked up by form");
 		if (probe)
@@ -1208,7 +1238,7 @@ void RefreshHeldFaces()
 	if (authority)
 		for (auto& h : FaceAuthority::Snapshot(EyeClockMs()))
 			if (void* data = HeldFaceData(h.first))
-				next.push_back(HeldOnly(data, h.first, h.second));
+				next.push_back(HeldOnly(data, h.first, h.second, EyeClockMs()));
 	Publish(std::move(next), true);   // and the ledger forgets every face not in this list
 }
 

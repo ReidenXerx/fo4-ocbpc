@@ -69,6 +69,9 @@ namespace FaceCompose
 		float glanceWeight = 0.0f;
 		float lidMax = 1.0f;                        // a glance (RFAG): the upper lids (18/41) at most this
 		                                            // far down, last of all, over the blink too
+		float blink = -1.0f;                        // ours wins (the owner, 2026-10-02): a held face's own blink
+		                                            // 0..1 this frame (Mouth.cpp OwnBlink); the merged lids are
+		                                            // then never read. -1: the merged lids, as before
 	};
 
 	// The engine's own weights from the last merge we wrote over
