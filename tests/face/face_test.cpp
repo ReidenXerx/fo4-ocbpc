@@ -321,6 +321,53 @@ int main()
 			Near(w[49], 0.2f) && Near(w[17], 0.2f) && Near(w[18], 0.2f));
 	}
 
+	printf("ours wins in a scene: own lids and Rapport's speaking bit (the owner, 2026-10-02)\n");
+	{
+		Face r = RapportFace(0.2f, 0.35f);         // owns the whole table: lids 0.2, jaw 0.35
+		FaceCompose::Engine keep;
+		auto merged = [](float* w) {               // the merge: an animation's eyelids at 0.9, its jaw at 0.6
+			for (int i = 0; i < kMorphs; i++)
+				w[i] = 0.0f;
+			w[18] = w[41] = 0.9f;
+			w[2] = 0.6f;
+		};
+		float w[kMorphs];
+		FaceCompose::Mouth m;
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("before (no own blink): the animation's lids 0.9 still win over Rapport's 0.2", Near(w[18], 0.9f));
+		m.blink = 0.0f;                            // our blink, eyes open
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("own blink open: the lids are Rapport's 0.2, the animation's 0.9 never shows",
+			Near(w[18], 0.2f) && Near(w[41], 0.2f));
+		Check("the engine's own merged lids are still kept for the next merge", Near(keep.weight[18], 0.9f));
+		m.blink = 1.0f;                            // our blink, eyes shut
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &r, false, m, true);
+		Check("own blink shut: the eye closes over a held look (1.0)", Near(w[18], 1.0f) && Near(w[41], 1.0f));
+		m.blink = 0.0f;
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &r, true, m, true);   // the engine's lip state: a line plays
+		Check("a foreign line plays (engine lip state, no speaking bit): the jaw stays Rapport's 0.35",
+			Near(w[2], 0.35f));
+		Face talking = r;
+		talking.owned |= 1ull << kSpeakingBit;
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &talking, true, m, true);
+		Check("Rapport's own line (the speaking bit): the mouth is the line's lip sync (0.6)", Near(w[2], 0.6f));
+		m.blink = -1.0f;
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &r, true, m, true);
+		Check("without an own blink the old rule stands: the engine's lip state hands over the mouth (0.6)",
+			Near(w[2], 0.6f));
+		merged(w);
+		FaceCompose::Mouth free;
+		free.blink = 0.0f;
+		FaceCompose::AfterMerge(w, keep, nullptr, false, free, true);
+		Check("a face nobody holds keeps the engine's lids (0.9): the rule is for our scenes only", Near(w[18], 0.9f));
+	}
+
 	printf("the ledger: what the hook keeps between merges, and when it lets go\n");
 	{
 		FaceCompose::Ledger<int> L;

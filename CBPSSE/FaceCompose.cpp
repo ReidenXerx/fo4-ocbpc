@@ -19,15 +19,29 @@ namespace FaceCompose
 	{
 		std::memcpy(keep.weight, w, sizeof(keep.weight));
 		keep.has = true;
+		// Ours wins in a scene (the owner, 2026-10-02: "our expression system during sex is the main and overrides
+		// any other mod"). On a held face with its own blink: the merged lids carry the animation's and other mods'
+		// eyelid weights, so they are replaced by our blink before Rapport's face goes on (its lid keeps the larger
+		// of the two: the eye still closes over a held look); and the mouth goes to a line's lip sync only while
+		// Rapport says its own line plays (the speaking bit), never on the engine's lip state alone: a foreign line
+		// Rapport silenced still runs it, and would take the mouth over our face.
+		const bool own = held && m.blink >= 0.0f;
+		const bool lineSpeaks = own ? false : speaking;
+		float engine[kMorphs];
+		std::memcpy(engine, keep.weight, sizeof(engine));
+		if (own) {
+			float b = m.blink > 1.0f ? 1.0f : m.blink;
+			w[kLeftBlink] = w[kRightBlink] = engine[kLeftBlink] = engine[kRightBlink] = b;
+		}
 		if (held) {
-			FaceAuthority::Compose(w, *held, speaking);
+			FaceAuthority::Compose(w, *held, lineSpeaks);
 			if (held->deepMask)
-				FaceAuthority::BlendDeep(w, keep.weight, *held, m.deep);   // 1b: the deep face, by depth
+				FaceAuthority::BlendDeep(w, engine, *held, m.deep);   // 1b: the deep face, by depth
 		}
 		// 1c, a glance's face (RFAX): toward it by the glance's ease. Its MOUTH ids only as far as no contact
 		// mouth has the mouth, and never over a line's lip sync; the lids are the glance's lids layer's
 		if (m.glanceWeight > 0.0f && m.glanceMask) {
-			bool quiet = speaking || (held && ((held->owned >> FaceAuthority::kSpeakingBit) & 1u));
+			bool quiet = lineSpeaks || (held && ((held->owned >> FaceAuthority::kSpeakingBit) & 1u));
 			for (int id = 0; id < kMorphs; id++) {
 				if (!((m.glanceMask >> id) & 1u) || id == kLeftBlink || id == kRightBlink)
 					continue;
