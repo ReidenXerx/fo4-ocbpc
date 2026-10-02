@@ -356,6 +356,10 @@ int main()
 		merged(w);
 		FaceCompose::AfterMerge(w, keep, &talking, true, m, true);
 		Check("Rapport's own line (the speaking bit): the mouth is the line's lip sync (0.6)", Near(w[2], 0.6f));
+		merged(w);
+		FaceCompose::AfterMerge(w, keep, &talking, false, m, true);   // the bit's window runs on, the line ended
+		Check("Rapport's line has ended inside its speaking window: the jaw is Rapport's 0.35 again, not the merge",
+			Near(w[2], 0.35f));
 		m.blink = -1.0f;
 		merged(w);
 		FaceCompose::AfterMerge(w, keep, &r, true, m, true);

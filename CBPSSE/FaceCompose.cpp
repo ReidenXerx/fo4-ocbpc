@@ -23,10 +23,12 @@ namespace FaceCompose
 		// any other mod"). On a held face with its own blink: the merged lids carry the animation's and other mods'
 		// eyelid weights, so they are replaced by our blink before Rapport's face goes on (its lid keeps the larger
 		// of the two: the eye still closes over a held look); and the mouth goes to a line's lip sync only while
-		// Rapport says its own line plays (the speaking bit), never on the engine's lip state alone: a foreign line
-		// Rapport silenced still runs it, and would take the mouth over our face.
+		// Rapport says its own line plays (the speaking bit) AND a line is playing (the engine's lip state): never
+		// on the lip state alone (a foreign line Rapport silenced still runs it), and not for the rest of Rapport's
+		// speaking window once its line has ended (the animation's mouth would show again).
 		const bool own = held && m.blink >= 0.0f;
-		const bool lineSpeaks = own ? false : speaking;
+		const bool bit = held && ((held->owned >> FaceAuthority::kSpeakingBit) & 1u);
+		const bool lineSpeaks = own ? (bit && speaking) : (speaking || bit);
 		float engine[kMorphs];
 		std::memcpy(engine, keep.weight, sizeof(engine));
 		if (own) {
@@ -34,14 +36,16 @@ namespace FaceCompose
 			w[kLeftBlink] = w[kRightBlink] = engine[kLeftBlink] = engine[kRightBlink] = b;
 		}
 		if (held) {
-			FaceAuthority::Compose(w, *held, lineSpeaks);
+			FaceAuthority::Face face = *held;            // the bit is decided here, not again inside Compose
+			face.owned &= ~(1ull << FaceAuthority::kSpeakingBit);
+			FaceAuthority::Compose(w, face, lineSpeaks);
 			if (held->deepMask)
 				FaceAuthority::BlendDeep(w, engine, *held, m.deep);   // 1b: the deep face, by depth
 		}
 		// 1c, a glance's face (RFAX): toward it by the glance's ease. Its MOUTH ids only as far as no contact
 		// mouth has the mouth, and never over a line's lip sync; the lids are the glance's lids layer's
 		if (m.glanceWeight > 0.0f && m.glanceMask) {
-			bool quiet = lineSpeaks || (held && ((held->owned >> FaceAuthority::kSpeakingBit) & 1u));
+			bool quiet = lineSpeaks;                    // the same rule as the held face's mouth
 			for (int id = 0; id < kMorphs; id++) {
 				if (!((m.glanceMask >> id) & 1u) || id == kLeftBlink || id == kRightBlink)
 					continue;
