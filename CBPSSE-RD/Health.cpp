@@ -288,6 +288,16 @@ namespace
 			       << (simulated ? "" : ", NOT simulated") << ", race " << actorUtils::GetActorRaceEID(a) << "): ";
 			if (male) {
 				const int s = AimChainState(a);
+				// only a man on the human skeleton says anything about ZeX's: a robot, a dog or a feral ghoul never has
+				// penis bones (a player's report, 2026-10-02: Protectron, Ravager, Bee Swarm, Codsworth, Dog blamed ZeX)
+				std::string race = actorUtils::GetActorRaceEID(a);
+				std::transform(race.begin(), race.end(), race.begin(), [](unsigned char c) { return (char)tolower(c); });
+				const bool human = race.find("human") != std::string::npos ||
+				                   (race.find("ghoul") != std::string::npos && race.find("feral") == std::string::npos);
+				if (!human) {
+					r.text << "not a human skeleton: not counted\n";
+					continue;
+				}
 				men += simulated;
 				menChained += simulated && s >= 2;
 				menBroken += simulated && s == 1;
@@ -312,8 +322,9 @@ namespace
 			r.Problem(menBroken ? "The men's penis bones do not hang one from the next: the penis is not aimed." :
 				"The men's skeleton has no penis bones: Anatomy cannot aim or shape the penis.",
 				"Make ZeX's skeleton.nif (Meshes\\Actors\\Character\\CharacterAssets\\skeleton.nif) win over other skeleton mods.");
-		r.text << "  aim: " << (AimOn() ? "on" : "off") << ", chain " << AimChainText() << "; men simulated " << men
-		       << ", with a working chain " << menChained << "\n";
+		r.text << "  aim: " << (AimOn() ? "on" : "off") << ", chain " << AimChainText() << "; human men simulated " << men
+		       << ", with a working chain " << menChained << (men == 0 ? " (no human man loaded: the men's skeleton is "
+		       "not checked)" : "") << "\n";
 		// the sex sounds (A-67): the mute, the engine's own audio calls, Rapport's override and what it muted
 		r.text << "\nSex sounds: the packs' SoundPlay mute " << (Sound::Hooked() ? "hooked" : "NOT hooked (this build)")
 		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
