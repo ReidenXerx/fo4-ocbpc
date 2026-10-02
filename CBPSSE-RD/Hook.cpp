@@ -46,6 +46,87 @@ namespace
 
 	[[nodiscard]] bool Known(const Hook::IdPair& a_id) { return Hook::OgFamily() ? a_id.og != 0 : a_id.ae != 0; }
 	[[nodiscard]] REL::ID Id(const Hook::IdPair& a_id) { return REL::ID(a_id.og, a_id.ae); }
+
+	// On 1.10.163 IDDatabase::resolve(ID) tries the AE id's runtime pattern FIRST and takes whatever it matches; the OG
+	// address library offset comes only after (CommonLibF4RD src/REL/Relocation.cpp, IDDatabase::resolve). An OG-only
+	// id (no AE id) skips the pattern and lands on the address library: the classic build's ground truth. A player's
+	// OG 1.10.163 report (2026-10-02): "SoundPlay mute NOT hooked", while the GOG 1.10.163 exe holds exactly the two
+	// measured calls at the address library's offsets (handler 0x16C210, calls at 0x16C2DB and 0x16C484).
+	[[nodiscard]] REL::ID OgOnly(const Hook::IdPair& a_id) { return REL::ID(a_id.og, REL::ID::INVALID_ID); }
+
+	[[nodiscard]] std::optional<std::uintptr_t> ResolveId(const REL::ID& a_id)
+	{
+		const auto result = REL::IDDatabase::get().resolve(a_id);
+		if (!result) {
+			return std::nullopt;
+		}
+		return REL::Module::get().base() + *result.rva;
+	}
+
+	// The OG offset only when the address library itself answered: without its file, resolve_impl asks the runtime
+	// table by the OG number, which is not an id that table knows.
+	[[nodiscard]] std::optional<std::uintptr_t> Library(const Hook::IdPair& a_id)
+	{
+		const auto result = REL::IDDatabase::get().resolve(OgOnly(a_id));
+		if (!result || result.status != REL::IDResolveStatus::kResolvedLegacy) {
+			return std::nullopt;
+		}
+		return REL::Module::get().base() + *result.rva;
+	}
+
+	// The direct calls to `target` inside `owner`, exactly `expected` of them, each a direct E8 whose rel32 lands on the
+	// target; or nothing, with why in `why`.
+	std::vector<std::uintptr_t> Scan(const REL::ID& a_owner, const REL::ID& a_target, std::size_t a_expected,
+		std::string& a_why)
+	{
+		const auto sites = REL::resolve_callsites(a_owner, a_target);
+		if (sites.rvas.size() != a_expected) {
+			a_why = std::format("{} call site(s), {} measured ({})", sites.rvas.size(), a_expected,
+				REL::id_resolve_status_text(sites.status));
+			return {};
+		}
+		const auto target = ResolveId(a_target);
+		std::vector<std::uintptr_t> out;
+		for (const auto rva : sites.rvas) {
+			const auto site = REL::Module::get().base() + rva;
+			const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
+			if (!target || bytes[0] != 0xE8 || site + 5 + *reinterpret_cast<const std::int32_t*>(bytes + 1) != *target) {
+				a_why = std::format("the call at +{:X} is not a direct call to the target", rva);
+				return {};
+			}
+			out.push_back(site);
+		}
+		return out;
+	}
+
+	// 1.10.163: the address library first, then the runtime pattern; elsewhere the runtime's own order.
+	std::vector<std::uintptr_t> Find(const Hook::IdPair& a_owner, const Hook::IdPair& a_target, const char* a_what,
+		std::size_t a_expected)
+	{
+		const auto version = REL::Module::get().version().string();
+		if (!Known(a_owner) || !Known(a_target)) {
+			rdlog::warn("{}: no proven id for Fallout 4 {} yet: off on this runtime", a_what, version);
+			return {};
+		}
+		std::string libraryWhy;
+		if (Hook::OgFamily() && (!Library(a_owner) || !Library(a_target))) {
+			libraryWhy = "no address library offset";
+		} else if (Hook::OgFamily()) {
+			auto out = Scan(OgOnly(a_owner), OgOnly(a_target), a_expected, libraryWhy);
+			if (!out.empty()) {
+				return out;
+			}
+		}
+		std::string why;
+		auto out = Scan(Id(a_owner), Id(a_target), a_expected, why);
+		if (out.empty()) {
+			rdlog::warn("{}: {} on {}{}: off", a_what, why, version,
+				libraryWhy.empty() ? std::string() : std::format(" (address library: {})", libraryWhy));
+		} else if (!libraryWhy.empty()) {
+			rdlog::info("{}: found by the runtime pattern on {} (address library: {})", a_what, version, libraryWhy);
+		}
+		return out;
+	}
 }
 
 namespace Hook
@@ -57,62 +138,28 @@ namespace Hook
 		if (!Known(a_id)) {
 			return std::nullopt;
 		}
-		const auto result = REL::IDDatabase::get().resolve(Id(a_id));
-		if (!result) {
-			return std::nullopt;
+		// the same order as Find, so a call site and the target it is checked against come from one source
+		if (OgFamily()) {
+			if (const auto library = Library(a_id)) {
+				return library;
+			}
 		}
-		return REL::Module::get().base() + *result.rva;
+		return ResolveId(Id(a_id));
 	}
 
 	std::optional<std::uintptr_t> CallSite(const IdPair& a_owner, const IdPair& a_target, const char* a_what)
 	{
-		const auto version = REL::Module::get().version().string();
-		if (!Known(a_owner) || !Known(a_target)) {
-			rdlog::warn("{}: no proven id for Fallout 4 {} yet: off on this runtime", a_what, version);
+		const auto sites = Find(a_owner, a_target, a_what, 1);
+		if (sites.empty()) {
 			return std::nullopt;
 		}
-		const auto sites = REL::resolve_callsites(Id(a_owner), Id(a_target));
-		if (sites.rvas.size() != 1) {
-			rdlog::warn("{}: {} call site(s) on {} ({}): off", a_what, sites.rvas.size(), version,
-				REL::id_resolve_status_text(sites.status));
-			return std::nullopt;
-		}
-		const auto target = Resolve(a_target);
-		const auto site = REL::Module::get().base() + sites.rvas[0];
-		const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
-		if (!target || bytes[0] != 0xE8 || site + 5 + *reinterpret_cast<const std::int32_t*>(bytes + 1) != *target) {
-			rdlog::warn("{}: the call at +{:X} is not a direct call to the target on {}: off", a_what, sites.rvas[0], version);
-			return std::nullopt;
-		}
-		return site;
+		return sites.front();
 	}
 
 	std::vector<std::uintptr_t> CallSites(const IdPair& a_owner, const IdPair& a_target, const char* a_what,
 		std::size_t a_expected)
 	{
-		const auto version = REL::Module::get().version().string();
-		if (!Known(a_owner) || !Known(a_target)) {
-			rdlog::warn("{}: no proven id for Fallout 4 {} yet: off on this runtime", a_what, version);
-			return {};
-		}
-		const auto sites = REL::resolve_callsites(Id(a_owner), Id(a_target));
-		if (sites.rvas.size() != a_expected) {
-			rdlog::warn("{}: {} call site(s) on {}, {} measured ({}): off", a_what, sites.rvas.size(), version, a_expected,
-				REL::id_resolve_status_text(sites.status));
-			return {};
-		}
-		const auto target = Resolve(a_target);
-		std::vector<std::uintptr_t> out;
-		for (const auto rva : sites.rvas) {
-			const auto site = REL::Module::get().base() + rva;
-			const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
-			if (!target || bytes[0] != 0xE8 || site + 5 + *reinterpret_cast<const std::int32_t*>(bytes + 1) != *target) {
-				rdlog::warn("{}: the call at +{:X} is not a direct call to the target on {}: off", a_what, rva, version);
-				return {};
-			}
-			out.push_back(site);
-		}
-		return out;
+		return Find(a_owner, a_target, a_what, a_expected);
 	}
 
 	std::uintptr_t WriteCall(std::uintptr_t a_site, std::uintptr_t a_fn)

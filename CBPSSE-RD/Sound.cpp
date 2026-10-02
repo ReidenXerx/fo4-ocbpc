@@ -820,7 +820,9 @@ namespace Sound
 		}
 		if (canPlay)
 			PlayVoices(now);   // override on or off: Rapport voices its actors either way
-		if (!canPlay || !overrideOn.load(std::memory_order_relaxed)) {
+		// no mute, no sounds of our own: the packs' own play unmuted, and ours on top would double every stroke (a
+		// player's OG 1.10.163 report, 2026-10-02: "SoundPlay mute NOT hooked", override on by default)
+		if (!canPlay || !hooked || !overrideOn.load(std::memory_order_relaxed)) {
 			if (!tracks.empty() || !beats.empty())
 				CloseAll();
 			return;
