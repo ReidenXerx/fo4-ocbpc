@@ -201,7 +201,8 @@ namespace
 		bool fresh = !st.has || (int)st.p.size() != n;
 		if (!fresh)
 			for (int i = 0; i < n && !fresh; i++)
-				fresh = std::fabs(st.p[i].x - rest[i].x) > P.reset || std::fabs(st.p[i].y - rest[i].y) > P.reset ||
+				fresh = !std::isfinite(st.p[i].x) || !std::isfinite(st.p[i].y) || !std::isfinite(st.p[i].z) ||   // NaN
+				        std::fabs(st.p[i].x - rest[i].x) > P.reset || std::fabs(st.p[i].y - rest[i].y) > P.reset ||
 				        std::fabs(st.p[i].z - rest[i].z) > P.reset;
 		if (fresh) {
 			st.p = rest;
@@ -326,6 +327,18 @@ namespace
 				}
 			}
 		}
+		// a NaN (it fails every comparison above) or a point gone far: the whole skirt back to rest (Thing.cpp's guard)
+		for (int i = 0; i < n; i++)
+			if (!std::isfinite(p[i].x) || !std::isfinite(p[i].y) || !std::isfinite(p[i].z) ||
+					std::fabs(p[i].x - rest[i].x) > P.reset || std::fabs(p[i].y - rest[i].y) > P.reset ||
+					std::fabs(p[i].z - rest[i].z) > P.reset) {
+				p = rest;
+				prev = rest;
+				char bad[64];
+				_snprintf_s(bad, sizeof(bad), _TRUNCATE, "skirt|nan|%08X", actor->formID);
+				Note(bad, "[skirt] %08X: a skirt point went non-finite or far off: back to rest\n", actor->formID);
+				break;
+			}
 		// the nodes: local = the solved point, identity rotation; world at once, so this frame's skin sees it
 		for (int i = 0; i < n; i++) {
 			NiAVObject* node = nodes[i];

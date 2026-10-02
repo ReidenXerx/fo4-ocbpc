@@ -16,6 +16,26 @@
 #include "Utility.hpp"
 
 constexpr auto DEG_TO_RAD = 3.14159265 / 180;
+#include <unordered_set>
+
+// fo4-anatomy: a NaN fails every comparison, so the "> 100" reset below never fires on one, and a single non-finite bone
+// can take a whole skinned shape with it (its bound), not only the vertices it carries. A players' report, 2026-10-02:
+// invisible bodies on pre-placed corpses, only the head and hands left (no logs yet). A bone that goes non-finite or
+// absurdly far goes back to its rest, said once per actor and bone.
+static bool FiniteNear(const NiPoint3& p)
+{
+    return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+           std::fabs(p.x) < 1e4f && std::fabs(p.y) < 1e4f && std::fabs(p.z) < 1e4f;
+}
+
+static bool Finite(const NiMatrix43& m)
+{
+    for (int r = 0; r < 3; r++)
+        for (int col = 0; col < 3; col++)
+            if (!std::isfinite(m.data[r][col]))
+                return false;
+    return true;
+}
 const char* skeletonNif_boneName = "skeleton.nif";
 const char* COM_boneName = "COM";
 
@@ -796,6 +816,19 @@ void Thing::Update(Actor *actor) {
         rotDiff = rotateRotation * rotDiff;
         standardRot.SetEulerAngles(rotDiff.x, rotDiff.y, rotDiff.z);
         G::Local(obj).rot = standardRot * origLocalRot[boneName.c_str()][actor->formID];
+
+        if (!FiniteNear(G::Local(obj).pos) || !Finite(G::Local(obj).rot)) {
+            G::Local(obj).pos = origLocalPos[boneName.c_str()][actor->formID];
+            G::Local(obj).rot = origLocalRot[boneName.c_str()][actor->formID];
+            oldWorldPos = target;
+            velocity = NiPoint3(0, 0, 0);
+            lastLocalDiff = NiPoint3(0, 0, 0);
+            static std::unordered_set<std::string> said;
+            const std::string key = std::to_string(actor->formID) + "|" + boneName.c_str();
+            if (said.insert(key).second)
+                spdlog::info("[physics] {:08X}: {} went non-finite or far off: back to its rest", actor->formID,
+                    boneName.c_str());
+        }
 
     //logger.Error("end update()\n");
     /*QueryPerformanceCounter(&endingTime);
