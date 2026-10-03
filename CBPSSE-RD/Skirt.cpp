@@ -164,13 +164,29 @@ namespace
 		auto toLocal = [&](const NiPoint3& w) { return (pw.rot * (w - pw.pos)) / scale; };
 		NiPoint3 capA[4], capB[4];
 		NiAVObject* legs[2][3] = {};
+		// the skeleton's OWN leg nodes: thigh under the pelvis, calf under the thigh, foot under the calf (through their
+		// *_OFFSET nodes). A search of the whole tree returned the first node of the name anywhere, and an attached model
+		// can carry one (the owner, 2026-10-04: Ivy's pistol on RLeg_Thigh via Visible Favorites; her right skirt columns
+		// stopped following the leg)
+		NiAVObject* pelvisBone = G::Parent(pelvis);
+		auto under = [](NiAVObject* from, const char* name, NiAVObject* ancestor, int hops) -> NiAVObject* {
+			if (!from)
+				return nullptr;
+			BSFixedString fs(name);
+			NiAVObject* r = from->GetObjectByName(fs);
+			for (NiAVObject* p = r ? G::Parent(r) : nullptr; p && hops-- > 0; p = G::Parent(p))
+				if (p == ancestor)
+					return r;
+			return nullptr;
+		};
 		for (int sd = 0; sd < 2; sd++) {
 			NiAVObject** j = legs[sd];
-			for (int k = 0; k < 3; k++) {
-				BSFixedString jn(kLegs[sd][k]);
-				j[k] = root->GetObjectByName(jn);
-				if (!j[k])
-					return;
+			j[0] = under(pelvisBone, kLegs[sd][0], pelvisBone, 3);
+			j[1] = under(j[0], kLegs[sd][1], j[0], 3);
+			j[2] = under(j[1], kLegs[sd][2], j[1], 4);
+			if (!j[0] || !j[1] || !j[2]) {
+				Note("skirt|legs", "[skirt] the skeleton's own leg nodes were not found under the pelvis: the skirt is off\n");
+				return;
 			}
 			capA[sd * 2] = toLocal(G::World(j[0]).pos);
 			capB[sd * 2] = toLocal(G::World(j[1]).pos);

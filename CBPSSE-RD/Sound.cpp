@@ -393,8 +393,11 @@ namespace
 		RE::NiAVObject* root = G::Root(a);
 		if (!root)
 			return nullptr;
-		static RE::BSFixedString pelvis("Pelvis");
-		RE::NiAVObject* n = root->GetObjectByName(pelvis);
+		// the skeleton's Pelvis is Pelvis_skin's parent: a search for "Pelvis" itself can return a node of that name off
+		// an attached model (Visible Favorites hangs a slot on Pelvis; the skirt's legs, 2026-10-04)
+		static RE::BSFixedString skin("Pelvis_skin");
+		RE::NiAVObject* s = root->GetObjectByName(skin);
+		RE::NiAVObject* n = s ? G::Parent(s) : nullptr;
 		return n ? n : root;
 	}
 
