@@ -734,10 +734,14 @@ void UpdateAims()
 			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
 				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
 		}
-		if (r.active || shapeNow) {
+		// The shape only in a scene (the owner's photo, 2026-10-03: any nude man's flaccid penis kinked). It scales
+		// about the chain's bones, which lie on the erect line; a flaccid penis hangs off that line, so its skin was
+		// pulled to the bones and its glans pushed out. In a scene the penis is erect along them, as A-31 measured.
+		const bool shapeHere = shapeNow && c.inScene;
+		if (r.active || shapeHere) {
 			// the aim's turns (or the animation's own), its stretch, and the shape on top
 			std::vector<float> scaleMul, offsetMul;
-			if (shapeNow)
+			if (shapeHere)
 				AimSolve::ShapeFactors(n, shaftNow, AimSolve::HeadFor(a->formID, headLoNow, headHiNow), scaleMul, offsetMul);
 			else
 				AimSolve::ShapeFactors(n, 1.0f, 1.0f, scaleMul, offsetMul);
