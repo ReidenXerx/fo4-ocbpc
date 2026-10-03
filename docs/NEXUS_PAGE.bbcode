@@ -1,10 +1,12 @@
+[center][url=https://ko-fi.com/duduphudu][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-anatomy@6e50d8308b73ca15df0469604f39b03332242391/docs/img/support-kofi.png[/img][/url] [url=https://www.paypal.com/donate/?business=motet.volutes.5a@icloud.com&no_recurring=0&currency_code=USD][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-anatomy@6e50d8308b73ca15df0469604f39b03332242391/docs/img/support-paypal.png[/img][/url]
+[size=1]PayPal: motet.volutes.5a@icloud.com[/size][/center]
 [size=1]Comments here are also answered by Dudu's Butt, my own AI model: it handles your questions and brings bug reports straight to me.[/size]
 [center][url=https://discord.gg/H9yqPhjuY5][img]https://img.shields.io/discord/1273646070215348375?style=for-the-badge&labelColor=2b2b2b&logo=discord&logoColor=white&color=5865F2&label=Dudu%27s%20Den[/img][/url]
 [b][url=https://discord.gg/H9yqPhjuY5]Join Dudu's Den on Discord[/url][/b]: news, help and a chat with the people who play these mods.[/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/tube.jpg[/img][/center]
 
-[center][size=4][b]The physics engine behind [url=https://www.nexusmods.com/fallout4/mods/109435]Anatomy[/url], as a drop-in replacement for OCBPC's cbp.dll. With Anatomy it gives her body bones added at run time, openings that respond to contact, lips that fit what is at them and, with Rapport, her faces and glances; her partner's side is the aim, the shape and one-tube collision. On its own, every OCBPC config collides better with it.[/b][/size][/center]
+[center][size=4][b]Fallout 4's body physics lets things pass through each other and snap back. The Anatomy Engine fixes that, and it is what makes [url=https://www.nexusmods.com/fallout4/mods/109435]Anatomy[/url] work: the genitals open and move when bodies touch, the mouth fits what is at the lips, and the penis finds the right opening. It is a drop-in replacement for OCBPC's cbp.dll.[/b][/size][/center]
 
 [center]
 [url=https://www.virustotal.com/gui/file/0dac30fadc853c51d25fdfd29f5b466e9cd03bd489ebad14288c18ed37efde24][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2Ffo4-ocbpc%2Fmaster%2Fdocs%2Fvt-badge.json&style=for-the-badge&labelColor=2b2b2b&logo=virustotal&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/fo4-ocbpc#licence][img]https://img.shields.io/badge/license-GPL--3.0%20%28MIT%20base%29-blue?style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/fo4-ocbpc][img]https://img.shields.io/badge/source-GitHub-181717?style=for-the-badge&labelColor=2b2b2b&logo=github&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/fo4-ocbpc/commits][img]https://img.shields.io/github/last-commit/ReidenXerx/fo4-ocbpc?label=last%20commit&style=for-the-badge&labelColor=2b2b2b[/img][/url]
@@ -18,52 +20,60 @@
 
 [center][size=4][b]New here? [url=https://www.nexusmods.com/fallout4/articles/6679]The setup guide[/url]: from the body to the scenes, in one order, with what to take and what to skip.[/b][/size][/center]
 
+[size=5][b][color=#ffb547]In short[/color][/b][/size]
+
+[b]What you get[/b]
+[list]
+[*]Body parts that touch each other push each other, and nothing snaps or shakes. Breasts, butt, anything your physics file collides.[/*]
+[*]With Anatomy: genitals that open around what touches them, and a penis that finds the right opening in any animation pack.[/*]
+[*]With Anatomy: a mouth that fits what is at the lips, and our own sex sounds in scenes.[/*]
+[*]With Rapport: her face and eyes in a scene, including looking up into her partner's eyes now and then.[/*]
+[/list][b]What you need[/b]: F4SE and [url=https://www.nexusmods.com/fallout4/mods/108394]Runtime Database[/url]. For the genitals, mouth and aim, you also need [url=https://www.nexusmods.com/fallout4/mods/109435]Anatomy[/url].
+[b]How it goes[/b]: install it with Vortex or MO2, and let this engine's cbp.dll win over any other one. Details: [b]Before you play[/b], below.
+
 [size=5][b][color=#ffb547]What it is[/color][/b][/size]
 
-The Anatomy Engine (fo4-ocbpc) is OCBPC, the physics-with-collisions [font=Courier New]cbp.dll[/font], extended. It is a fork of [url=https://github.com/ericncream/OpenCBP_FO4]ericncream's OpenCBP_FO4[/url], the code behind OCBPC 0.3, and it replaces that one file. [b]Your ocbp.ini and OCBPCollisionConfig.txt keep working unchanged[/b], whether they come from OCBPC, Jiggle Physics or MadKita's.
+The Anatomy Engine (fo4-ocbpc) is OCBPC, the physics-with-collisions [font=Courier New]cbp.dll[/font], extended. It is a fork of [url=https://github.com/ericncream/OpenCBP_FO4]ericncream's OpenCBP_FO4[/url], the code behind OCBPC 0.3, and it replaces that one file.
 
-It is the engine under [b]Anatomy[/b], and it is what lets [url=https://www.nexusmods.com/fallout4/mods/109219]Rapport[/url] own the face in a scene. On its own it still fixes a collision bug every OCBPC user has.
+It is the engine under [b]Anatomy[/b], and it is what lets [url=https://www.nexusmods.com/fallout4/mods/109219]Rapport[/url] own the face in a scene. Without Anatomy, it is OCBPC with a collision bug fixed: every OCBPC config collides better with it.
 
-[size=5][b][color=#ffb547]New in 1.2.0[/color][/b][/size]
+How it works, in full: [url=https://www.nexusmods.com/fallout4/articles/6674]The physics engine[/url] and [url=https://www.nexusmods.com/fallout4/articles/6680]Skirt physics - cloth that follows the legs[/url].
+
+[size=5][b][color=#ffb547]What you get[/color][/b][/size]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@5b6d9837d62b2c86fc7e26e83d6282d1e7e8f185/docs/img/sounds.jpg[/img][/center]
-[center][b]Sex sounds from the engine.[/b] Every animation pack's canned sounds muted in scenes; our own loudness-matched set plays from each stroke's real depth and speed. [url=https://www.nexusmods.com/fallout4/articles/6675]Arousal and sex →[/url][/center]
+[center][b]Sex sounds from the engine.[/b] Every animation pack's built-in sounds are muted in scenes. Our own set, matched in loudness, plays from how deep and how fast each stroke really is. [url=https://www.nexusmods.com/fallout4/articles/6675]Arousal and sex →[/url][/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@5b6d9837d62b2c86fc7e26e83d6282d1e7e8f185/docs/img/skirt.jpg[/img][/center]
-[center][b]Skirt physics.[/b] Skinning cannot drape: 60 bones at the hips, pushed aside by the legs, for Anatomy Tailor's coats and dresses. [url=https://www.nexusmods.com/fallout4/articles/6674]The physics engine →[/url][/center]
+[center][b]Skirt physics.[/b] Coats and dresses can't drape on their own, so the engine gives them 60 bones at the hips, for Anatomy Tailor's outfits. The skirt follows the legs, and cloth around the hips moves like the skin under it. The trade: cloth sways less and stretches a little between the legs. [url=https://www.nexusmods.com/fallout4/articles/6674]The physics engine →[/url] · [url=https://www.nexusmods.com/fallout4/articles/6680]Skirt follow mode →[/url][/center]
 
 [list]
-[*][b]M-M:[/b] men simulated for Anatomy's bones even under a women-only preset; the shaft aims into the men's anus.
-[*][b]Contact without jitter:[/b] tight contact acts as a constraint, so nothing shakes when it squeezes.
-[*][b]A health check:[/b] Anatomy_Health.txt after every load names the engine, preset, body and actors; a box only on a real problem.
-[*][b]Anatomy's own preset follows the body built[/b] (CBBE or 3BBB) when you have no ocbp.ini of your own.
-[*][b]An installer:[/b] a setup check, then one page per feature. Install with Vortex or MO2; manual installs are not supported.
-[/list]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
+[*][b]Men too (M-M):[/b] men are simulated for Anatomy's bones even under a women-only preset, and the penis aims into the men's anus.[/*]
+[*][b]Contact without jitter:[/b] tight contact holds firm, so nothing shakes when it squeezes.[/*]
+[*][b]A health check:[/b] after every load, Anatomy_Health.txt names the engine, the preset, the body and the characters it moves. A message box appears only on a real problem.[/*]
+[*][b]Anatomy's own preset follows the body you built[/b] (CBBE or 3BBB).[/*]
+[*][b]An installer:[/b] a setup check, then one page per feature. Install with Vortex or MO2; installing by hand is not supported.[/*]
+[/list][center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
 [size=5][b][color=#ffb547]For every OCBPC user[/color][/b][/size]
 
 [list]
-[*][b]Each collider pushes once per frame.[/b] OCBPC put a collider in every grid cell it touched and pushed a bone once per cell, so near a cell edge a push doubled and snapped back the next frame. Breasts, butt, anything your config collides: pushed once.
-[*][b]Hooks that check first.[/b] Every hook reads the game's code before patching it and stays off, logged, on any other build. A fault while installing the eye or the mouth hook turns that one feature off instead of crashing the game.
-[*][b]A log two game processes can't break.[/b] A relaunch after a crash no longer wipes the running game's log.
-[*]Built with today's compiler, statically linked, with the same imports and exports as the original.
-[/list]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
+[*][b]Each collision pushes once per frame.[/b] OCBPC could push a bone twice near a cell edge, and it snapped back the next frame. Breasts, butt, anything your config collides: pushed once.[/*]
+[*][b]Hooks that check first.[/b] Every hook reads the game's code before patching it and stays off, logged, on any other build. If installing the eye or the mouth hook fails, that one feature turns off instead of crashing the game.[/*]
+[*][b]A log two game processes can't break.[/b] Relaunching after a crash no longer wipes the running game's log.[/*]
+[*]Built with today's compiler, statically linked, with the same imports and exports as the original.[/*]
+[/list][center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/divider.png[/img][/center]
 
 [size=5][b][color=#ffb547]With Anatomy[/color][/b][/size]
 
 Anatomy's own config switches these on; without it, they stay off.
 
 [list]
-[*][b]One smooth tube, not a string of balls.[/b] OCBPC reads a penis as five balls with gaps between them, so flesh rode in and out along a thrust. Measured on the real mesh: thrust wobble at the anus 0.69 → 0.21, at the vagina 0.26 → 0.13 (the card above).
-[*][b]Bones at run time.[/b] The genital bones are added under each actor's pelvis as she loads. No skeleton file is shipped or overwritten.
-[*][b]The shaft finds its opening.[/b] In an AAF scene it turns toward the opening the animation meant, bends along a measured path instead of poking through the body, follows the throat when the head tilts back, and follows a gripping hand.
-[*][b]Lips that fit.[/b] Fallout 4 heads have no mouth bones, so the engine solves 15 measured mouth morphs every frame to rest the lips on whatever crosses them, and closes them between strokes.
-[*][b]A shape per man:[/b] a thinner shaft and a bigger head, scaled on his bones at run time. BodyTalk4's files are untouched.
-[/list]
-[i]The genital bones stay attached on women outside your own cell, and settle back to rest after a ragdoll.[/i]
+[*][b]One smooth tube, not a string of balls.[/b] OCBPC reads a penis as five balls with gaps between them, so flesh rode in and out along a thrust. Measured on the real mesh: thrust wobble at the anus 0.69 → 0.21, at the vagina 0.26 → 0.13 (the card above).[/*]
+[*][b]Bones added while the game runs.[/b] The genital bones are added under each actor's pelvis as she loads. No skeleton file is shipped or overwritten.[/*]
+[*][b]The penis finds its opening.[/b] In an AAF scene it turns toward the opening the animation meant. It bends along a measured path instead of poking through the body, follows the throat when the head tilts back, and follows a gripping hand.[/*]
+[*][b]Lips that fit.[/b] Fallout 4 heads have no mouth bones, so the engine uses 15 measured mouth shapes every frame to rest the lips on whatever crosses them, and closes them between strokes.[/*]
+[*][b]A shape per man:[/b] a thinner shaft and a bigger head, set on his bones while the game runs. BodyTalk4's files are untouched.[/*]
+[/list][i]The genital bones stay attached on women outside your own cell, and settle back to rest after a ragdoll.[/i]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/aim.jpg[/img][/center]
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/lips.jpg[/img][/center]
@@ -74,39 +84,33 @@ Anatomy's own config switches these on; without it, they stay off.
 [size=5][b][color=#ffb547]With Rapport[/color][/b][/size]
 
 [list]
-[*][b]Rapport's face is the one that shows[/b] in any AAF scene. It is written after the engine's own merge, so it can close eyelids and a jaw an animation opened, which an expression override never can. Blinks still close the eyes.
-[*][b]Spoken lines keep their lip sync[/b], and a held face eases in and out over a quarter of a second.
-[*][b]Eyes that meet.[/b] Fallout 4 eyes have no bones: the game slides the eye's texture. The engine hooks that slide, so during a scene she looks up into her partner's eyes for 4-7 seconds now and then (Anatomy's config switches the glances on).
-[/list]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/glances.jpg[/img][/center]
+[*][b]Rapport's face is the one that shows[/b] in any AAF scene. It is applied after the engine's own, so it can close eyelids and a jaw an animation opened. Blinks still close the eyes.[/*]
+[*][b]Spoken lines keep their lip sync[/b], and a held face eases in and out over a quarter of a second.[/*]
+[*][b]Eyes that meet.[/b] Fallout 4 eyes have no bones: the game slides the eye's texture. The engine hooks that slide, so during a scene she looks up into her partner's eyes for 4-7 seconds now and then (Anatomy's config switches the glances on).[/*]
+[/list][center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-ocbpc@4fd97d389a06af8af74607de29174308dd41a491/docs/img/glances.jpg[/img][/center]
 
 [size=5][b][color=#ffb547]Before you play[/color][/b][/size]
 
 [quote]
 [b]Fallout 4 1.10.163 with F4SE 0.6.23[/b] (Steam or GOG), or [b]the Anniversary Edition 1.11.x[/b] with [url=https://www.nexusmods.com/fallout4/mods/42147]F4SE[/url] 0.7.9. Both need [url=https://www.nexusmods.com/fallout4/mods/108394]Runtime Database[/url]: one cbp.dll for both. Every hook reads the game's code before patching it and stays off, logged, on any other build.
 
-[b]Body, skeleton and physics preset.[/b] Anatomy is built for CBBE's own physics body and, since 1.2.0, for 3BBB (with Skeletal Adjustments for CBBE); other women's bodies aren't supported. Any skeleton works, 3BBB included: the genital bones are added at run time. Your ocbp.ini and collision file keep working unchanged; only [font=Courier New]cbp.dll[/font] must be this engine's.
+[b]Body and skeleton.[/b] Anatomy is built for CBBE's own physics body and for 3BBB (with Skeletal Adjustments for CBBE); other women's bodies aren't supported. Any skeleton works, 3BBB included: the genital bones are added while the game runs.
 
-[b]With Anatomy, a physics preset is optional:[/b] with none, Anatomy uses its own default preset; with your own [font=Courier New]ocbp.ini[/font], yours is used as before.
+[b]With Anatomy, don't add another physics preset.[/b] Anatomy brings its own, made for the body its builder made, and it follows the body you built (CBBE or 3BBB). Another preset replaces it, and the breasts and butt move wrong. 3BBB's own preset, which comes with 3BBB, is the exception: keep it. Only [font=Courier New]cbp.dll[/font] must be this engine's.
 
-[b]Install with Vortex or MO2; manual installs are not supported.[/b]
+[b]Install with Vortex or MO2; installing by hand is not supported.[/b]
 
-[b]It replaces cbp.dll.[/b] If OCBPC, Jiggle Physics or another mod also ships [font=Courier New]F4SE\Plugins\cbp.dll[/font], let this one win in your mod manager. Keep their configs: they are read as they are.
+[b]It replaces cbp.dll.[/b] If OCBPC, Jiggle Physics or another mod also ships [font=Courier New]F4SE\Plugins\cbp.dll[/font], let this one win in your mod manager.
 
-[b]The log.[/b] [font=Courier New]Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log[/font] records what was set up, once per run. A discovery log for modders, which lists unknown genital- or toy-looking bones nearby, is off unless you turn it on ([font=Courier New][Log] discover=1[/font]).
-[/quote]
-
-[size=5][b][color=#ffb547]Incompatibilities[/color][/b][/size]
+[b]The log.[/b] [font=Courier New]Documents\My Games\Fallout4\F4SE\anatomy_ocbpc.log[/font] records what was set up, once per run. A second log, for modders, lists unknown genital- or toy-looking bones nearby. It is off unless you turn it on ([font=Courier New][Log] discover=1[/font]).[/quote][size=5][b][color=#ffb547]Incompatibilities[/color][/b][/size]
 
 Known conflicts, from real reports and the code. Found another one? Tell us in the Bugs tab.
 [list]
-[*][b]Other mods shipping F4SE\Plugins\cbp.dll (OCBPC, Jiggle Physics 82699, and many physics presets)[/b]: whichever dll wins decides, and an older one turns every Anatomy feature off. Let the Anatomy Engine's cbp.dll win and keep their ocbp.ini / collision files; those are read unchanged.[/*]
+[*][b]Other physics engines that ship their own F4SE\Plugins\cbp.dll (OCBPC, Jiggle Physics 82699, and many physics presets)[/b]: whichever dll wins decides, and an older one turns every Anatomy feature off. Let the Anatomy Engine's cbp.dll win.[/*]
+[*][b]Other body physics presets (MTM / OCBP, MadKita's, Jiggle Physics presets and the like), with Anatomy[/b]: another preset replaces Anatomy's own, and the breasts and butt move wrong. Don't install one. 3BBB's own preset, which comes with 3BBB, is the exception: keep it.[/*]
 [*][b][url=https://www.nexusmods.com/fallout4/mods/105699]OCBP LPCE[/url][/b]: a separate physics engine on the same bones. Run one, not both.[/*]
 [*][b]Men's skeletons other than [url=https://www.nexusmods.com/fallout4/mods/36702]ZeX - ZaZ Extended Skeleton[/url][/b]: the penis aim needs ZeX's linked penis bones (Penis_00 to Penis_05 in one chain). With any other men's skeleton the aim switches itself off (the log says so) and the penis keeps the animation's own pose. Use ZeX 6.0 for the men.[/*]
-[/list]
-
-[size=5][b][color=#ffb547]FAQ[/color][/b][/size]
+[/list][size=5][b][color=#ffb547]FAQ[/color][/b][/size]
 
 [b]Do I need Anatomy?[/b]
 [spoiler]No. On its own it is OCBPC with the once-per-frame collision fix and safer hooks. Everything genital, the mouth and the aim is switched on by Anatomy's config.[/spoiler]
@@ -126,15 +130,9 @@ What Anatomy needs is not a physics simulation alone. This engine adds the genit
 [size=5][b][color=#ffb547]Credits[/color][/b][/size]
 
 [list]
-[*][b]JS[/b] and the OpenCBP authors, and [b]ericncream[/b] for OCBPC, which this is built on.
-[*][b]The F4SE team[/b], and [b]Ian Patterson[/b] for the common library.
-[*][b]Zzyxzz[/b], for CommonLibF4RD, built on [b]ryan-rsm-mckenzie[/b]'s CommonLib.
-[*][b]maximusmaxy[/b], whose Screen Archer Menu source documented the face data the mouth uses.
+[*][b]JS[/b] and the OpenCBP authors, and [b]ericncream[/b] for OCBPC, which this is built on.[/*]
+[*][b]The F4SE team[/b], and [b]Ian Patterson[/b] for the common library.[/*]
+[*][b]Zzyxzz[/b], for CommonLibF4RD, built on [b]ryan-rsm-mckenzie[/b]'s CommonLib.[/*]
+[*][b]maximusmaxy[/b], whose Screen Archer Menu source documented the face data the mouth uses.[/*]
 [*][b]hinatashoyokun[/b], for patient testing that found four real bugs: the builder not seeing MO2's virtual Data (Builder 1.0.6), BodySlide's preview crashing on BC7 skins (1.0.8), the genitals' tone shifting on BC7 skins (1.0.9), and presets with useWhitelist=1 freezing the genitals (Engine 1.1.1).[/*]
-[/list]
-
-Bugs go to the [b]Bugs[/b] tab, with [font=Courier New]anatomy_ocbpc.log[/font].
-
-[center]If you'd like to support my work:
-[url=https://ko-fi.com/duduphudu][img]https://img.shields.io/badge/Ko--fi-support%20me-FF5E5B?style=for-the-badge&labelColor=2b2b2b&logo=kofi&logoColor=white[/img][/url] [url=https://www.paypal.com/donate/?business=motet.volutes.5a@icloud.com&no_recurring=0&currency_code=USD][img]https://img.shields.io/badge/PayPal-donate-0070BA?style=for-the-badge&labelColor=2b2b2b&logo=paypal&logoColor=white[/img][/url]
-[size=1]PayPal: motet.volutes.5a@icloud.com[/size][/center]
+[/list]Bugs go to the [b]Bugs[/b] tab, with [font=Courier New]anatomy_ocbpc.log[/font].
