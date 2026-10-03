@@ -30,7 +30,13 @@ namespace
 		std::vector<float> stiffness;
 		float damping = 0.12f, hold = 4.0f, stretch = 1.05f, squash = 0.9f, spread = 1.6f, hintUp = 0.5f,
 			  reset = 60.0f, step = 1.0f / 60.0f, maxStep = 2.0f, gravity = 0.1f, deep = 0.75f, cross = 0.5f, away = 0.2f;
+		bool follow = true;   // [Skirt] mode=follow (default) or swing (the solver below)
 	} P;
+	// follow mode (the owner, 2026-10-03: no clipping over natural sway): per sex and node, from tools/skirt.py
+	// follow_table: segment (0 thigh, 1 calf), the left leg's share, the rest point in the left and the right leg
+	// segment's bind frame. A point in a leg's own frame is physical: placed with the leg's live transform, it is
+	// where that leg carried it.
+	std::unordered_map<std::string, std::vector<float>> followF, followM;
 	// per sex: each bone's clearance from each leg capsule (L thigh, L calf, R thigh, R calf), then from its segment up
 	std::unordered_map<std::string, std::vector<float>> clearF, clearM;
 	const char* kLegs[2][3] = { { "LLeg_Thigh", "LLeg_Calf", "LLeg_Foot" }, { "RLeg_Thigh", "RLeg_Calf", "RLeg_Foot" } };
@@ -157,8 +163,9 @@ namespace
 		const float scale = pw.scale > 1e-6f ? pw.scale : 1.0f;
 		auto toLocal = [&](const NiPoint3& w) { return (pw.rot * (w - pw.pos)) / scale; };
 		NiPoint3 capA[4], capB[4];
+		NiAVObject* legs[2][3] = {};
 		for (int sd = 0; sd < 2; sd++) {
-			NiAVObject* j[3];
+			NiAVObject** j = legs[sd];
 			for (int k = 0; k < 3; k++) {
 				BSFixedString jn(kLegs[sd][k]);
 				j[k] = root->GetObjectByName(jn);
@@ -169,6 +176,60 @@ namespace
 			capB[sd * 2] = toLocal(G::World(j[1]).pos);
 			capA[sd * 2 + 1] = toLocal(G::World(j[1]).pos);
 			capB[sd * 2 + 1] = toLocal(G::World(j[2]).pos);
+		}
+		auto writeNodes = [&](const std::vector<NiPoint3>& p) {
+			// local = the point, identity rotation; world at once, so this frame's skin sees it
+			for (int i = 0; i < n; i++) {
+				NiAVObject* node = nodes[i];
+				if (!node)
+					continue;
+				NiTransform& l = G::Local(node);
+				l.pos = p[i];
+				for (int r = 0; r < 3; r++)
+					for (int c = 0; c < 4; c++)
+						l.rot.data[r][c] = r == c ? 1.0f : 0.0f;
+				NiTransform& w = G::World(node);
+				w.rot = l.rot * pw.rot;
+				w.pos = pw.pos + pw.rot.Transpose() * (l.pos * pw.scale);
+				w.scale = pw.scale * l.scale;
+			}
+		};
+		// FOLLOW: each node rides its legs, no state, no solver (the legs' frames: the skeleton's own leg nodes)
+		auto& followTable = male && !followM.empty() ? followM : followF;
+		if (P.follow && !followTable.empty()) {
+			std::vector<NiPoint3> p(n);
+			bool complete = true;
+			for (int i = 0; i < n && complete; i++) {
+				auto it = followTable.find(LowerOf(Name(i / nl, i % nl)));
+				if (it == followTable.end() || it->second.size() != 8) {
+					complete = false;
+					break;
+				}
+				const auto& f = it->second;
+				const int seg = f[0] > 0.5f ? 1 : 0;
+				NiPoint3 at[2];
+				for (int sd = 0; sd < 2; sd++) {
+					const NiTransform& lw = G::World(legs[sd][seg]);
+					const NiPoint3 q(f[2 + sd * 3], f[3 + sd * 3], f[4 + sd * 3]);
+					at[sd] = toLocal(lw.pos + lw.rot.Transpose() * (q * lw.scale));
+				}
+				p[i] = at[0] * f[1] + at[1] * (1.0f - f[1]);
+				if (!std::isfinite(p[i].x) || !std::isfinite(p[i].y) || !std::isfinite(p[i].z) ||
+						std::fabs(p[i].x - rest[i].x) > P.reset || std::fabs(p[i].y - rest[i].y) > P.reset ||
+						std::fabs(p[i].z - rest[i].z) > P.reset)
+					p[i] = rest[i];                  // Thing.cpp's guard: never a NaN or a node gone far
+			}
+			if (complete) {
+				writeNodes(p);
+				char key[64];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "skirt|follow|%08X|%d", actor->formID, found);
+				Note(key, "[skirt] %08X: %d skirt node(s) follow the legs (%s)\n", actor->formID, found,
+					male ? "a man" : "a woman");
+				return;
+			}
+			Note(std::string("skirt|follow|incomplete|") + (male ? "m" : "f"),
+				"[skirt] the follow table lacks a node of this ring (%s): the swing solver runs instead\n",
+				male ? "men" : "women");
 		}
 		NiPoint3 up = pw.rot * NiPoint3(0.0f, 0.0f, 1.0f);
 		up = up / (Len(up) > 1e-6f ? Len(up) : 1.0f);
@@ -339,21 +400,7 @@ namespace
 				Note(bad, "[skirt] %08X: a skirt point went non-finite or far off: back to rest\n", actor->formID);
 				break;
 			}
-		// the nodes: local = the solved point, identity rotation; world at once, so this frame's skin sees it
-		for (int i = 0; i < n; i++) {
-			NiAVObject* node = nodes[i];
-			if (!node)
-				continue;
-			NiTransform& l = G::Local(node);
-			l.pos = p[i];
-			for (int r = 0; r < 3; r++)
-				for (int c = 0; c < 4; c++)
-					l.rot.data[r][c] = r == c ? 1.0f : 0.0f;
-			NiTransform& w = G::World(node);
-			w.rot = l.rot * pw.rot;
-			w.pos = pw.pos + pw.rot.Transpose() * (l.pos * pw.scale);
-			w.scale = pw.scale * l.scale;
-		}
+		writeNodes(p);
 		char key[64];
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "skirt|actor|%08X|%d", actor->formID, found);
 		Note(key, "[skirt] %08X: %d skirt node(s) moved (%s)\n", actor->formID, found, male ? "a man" : "a woman");
@@ -385,9 +432,18 @@ void LoadSkirtConfig(INIReader& reader)
 	P.deep = f("deep", 0.75f);
 	P.cross = f("cross", 0.5f);
 	P.away = f("away", 0.2f);
+	P.follow = LowerOf(reader.Get("Skirt", "mode", "follow")) != "swing";
 	clearF.clear();
 	clearM.clear();
+	followF.clear();
+	followM.clear();
 	const auto sections = reader.Sections();          // Section() throws on a section the file lacks
+	if (sections.count("SkirtFollow"))
+		for (auto& e : reader.Section("SkirtFollow"))
+			followF[LowerOf(e.first)] = Floats(e.second);
+	if (sections.count("SkirtFollowMale"))
+		for (auto& e : reader.Section("SkirtFollowMale"))
+			followM[LowerOf(e.first)] = Floats(e.second);
 	if (sections.count("SkirtClear"))
 		for (auto& e : reader.Section("SkirtClear"))
 			clearF[LowerOf(e.first)] = Floats(e.second);
@@ -397,8 +453,9 @@ void LoadSkirtConfig(INIReader& reader)
 	if (P.columns < 3 || P.levels < 1 || P.columns * P.levels > 512)
 		P.enabled = false;
 	Note("skirt|config|" + std::to_string(clearF.size()) + "|" + std::to_string(clearM.size()),
-		"[skirt] %s: %d columns x %d levels, clearances for %d (women) and %d (men) nodes\n",
-		P.enabled ? "on" : "off", P.columns, P.levels, (int)clearF.size(), (int)clearM.size());
+		"[skirt] %s (%s): %d columns x %d levels, clearances for %d (women) and %d (men) nodes, follow rows %d / %d\n",
+		P.enabled ? "on" : "off", P.follow ? "follow" : "swing", P.columns, P.levels, (int)clearF.size(),
+		(int)clearM.size(), (int)followF.size(), (int)followM.size());
 	ResetSkirt();
 }
 
