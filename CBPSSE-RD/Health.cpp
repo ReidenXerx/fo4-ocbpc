@@ -314,6 +314,19 @@ namespace
 			const bool genitals = std::find(body.shapes.begin(), body.shapes.end(), "AnatomyGenitals") != body.shapes.end();
 			r.text << (genitals ? "Anatomy's genitals" : "no Anatomy genitals (clothed, or another body)") << ", " << body.ours
 			       << " of our bones in the skin; shapes " << Join(body.shapes) << "\n";
+			// body bones the skin found outside her skeleton (a Havok cloth bone of a garment is not a body bone: only
+			// *_skin names count)
+			std::vector<std::string> nailed;
+			for (const auto& bn : body.loose)
+				if (bn.size() > 5 && _stricmp(bn.c_str() + bn.size() - 5, "_skin") == 0)
+					nailed.push_back(bn);
+			if (!nailed.empty()) {
+				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n";
+				r.Problem(G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
+					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). "
+					"Her skeleton.nif comes from a mod without 3BBB's bones: make Skeletal Adjustments for CBBE (3BBB) win, "
+					"or find the mod (or her race) that gives her another skeleton.");
+			}
 		}
 		if (player && !playerIn && !actorUtils::IsActorMale(player))
 			r.Problem("The physics skips your character.", "The preset's [General] (playerOnly, npcOnly, maleOnly) or its race "

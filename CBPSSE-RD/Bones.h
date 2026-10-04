@@ -40,5 +40,6 @@ struct BodyView
 {
 	std::vector<std::string> shapes;
 	int ours = 0;
+	std::vector<std::string> loose;   // skin bones not hanging under her skeleton's COM: their vertices stay nailed
 };
 bool DescribeBody(Actor* actor, BodyView& out);

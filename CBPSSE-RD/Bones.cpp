@@ -463,6 +463,24 @@ static void DescribeBodyImpl(Actor* actor, BodyView& out)
 {
 	if (!actor || !G::Root(actor))
 		return;
+	// the skeleton's COM, above Pelvis_skin: a skin bone that does not hang under it is a loose copy the game bound
+	// when the skeleton lacked that bone, and the vertices on it stay nailed in place (the owner, 2026-10-04: a
+	// player's Ivy, breasts fixed at one height on every new game; the owner had seen the same with skeletons
+	// missing 3BBB's breast bones)
+	NiAVObject* com = nullptr;
+	{
+		BSFixedString pelvisName(kPelvis);
+		NiAVObject* p = G::Root(actor)->GetObjectByName(pelvisName);
+		for (int hop = 0; p && hop < 8 && !com; hop++, p = G::Parent(p))
+			if (G::Name(p) && _stricmp(G::Name(p), "COM") == 0)
+				com = p;
+	}
+	auto underCom = [&](NiAVObject* n) {
+		for (int hop = 0; n && hop < 32; hop++, n = G::Parent(n))
+			if (n == com)
+				return true;
+		return false;
+	};
 	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
 		const char* name = G::Name(geo);
 		out.shapes.push_back(name ? name : "?");
@@ -476,6 +494,11 @@ static void DescribeBodyImpl(Actor* actor, BodyView& out)
 			NiNode* b = G::SkinBones(skin).entries[i];
 			if (b && IsOurs(G::Name(b)))
 				out.ours++;
+			else if (b && com && G::Name(b) && !underCom(b)) {
+				std::string bn = G::Name(b);
+				if (std::find(out.loose.begin(), out.loose.end(), bn) == out.loose.end())
+					out.loose.push_back(bn);
+			}
 		}
 	});
 }
