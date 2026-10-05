@@ -9,7 +9,7 @@ set(VCPKG_TARGET_TRIPLET "x64-windows-static-md" CACHE STRING "")
 
 project(
 	OCBPC
-	VERSION 1.2.7
+	VERSION 1.2.8
 	LANGUAGES CXX
 )
 

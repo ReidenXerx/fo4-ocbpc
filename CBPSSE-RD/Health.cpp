@@ -15,6 +15,7 @@
 #include "config.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -321,11 +322,35 @@ namespace
 				if (bn.size() > 5 && _stricmp(bn.c_str() + bn.size() - 5, "_skin") == 0)
 					nailed.push_back(bn);
 			if (!nailed.empty()) {
-				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n";
+				// which skeleton her race sends her to, and which plugin last edited that race (a player's case,
+				// 2026-10-05: LooksMenu Customization Compendium and Pip-Boy 2000 overrode HumanRace after
+				// DiscreteFemaleSkeleton.esp and sent women back to the base skeleton; Vortex shows no file conflict)
+				std::string skel = "?", owner = "?", raceName = actorUtils::GetActorRaceEID(a);
+				if (a->race) {
+					const char* m = a->race->skeletonModel[1].model.c_str();
+					skel = m && *m ? m : "(none)";
+					if (RE::TESFile* f = a->race->GetFile(-1))
+						owner = std::string(f->GetFilename());
+				}
+				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n"
+				       << "    her race " << raceName << " sends women to " << skel << " (last edited by " << owner << ")\n";
+				// the race already names the women's skeleton: then the FILE there lacks the bones (another skeleton
+				// mod wins over Skeletal Adjustments), and the race's last editor is not the one to blame
+				std::string low = skel;
+				for (auto& c : low)
+					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				const bool raceOk = low.find("female\\skeleton.nif") != std::string::npos ||
+				                    low.find("female/skeleton.nif") != std::string::npos;
+				const std::string fix = raceOk ?
+					"Her race " + raceName + " already sends women to " + skel + ", so that file lacks the bones: "
+					"another skeleton mod overwrites Skeletal Adjustments for CBBE's female\\skeleton.nif. Make Skeletal "
+					"Adjustments for CBBE (3BBB) win that file." :
+					"Her race " + raceName + " sends women to " + skel + ", as last edited by " + owner + ". It must be "
+					"Actors\\Character\\CharacterAssets\\female\\skeleton.nif (DiscreteFemaleSkeleton.esp sets it, and the "
+					"file comes from Skeletal Adjustments for CBBE): load DiscreteFemaleSkeleton.esp after " + owner +
+					", or make a patch that keeps that path.";
 				r.Problem(G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
-					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). "
-					"Her skeleton.nif comes from a mod without 3BBB's bones: make Skeletal Adjustments for CBBE (3BBB) win, "
-					"or find the mod (or her race) that gives her another skeleton.");
+					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). " + fix);
 			}
 		}
 		if (player && !playerIn && !actorUtils::IsActorMale(player))
