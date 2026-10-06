@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <map>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -459,6 +460,125 @@ namespace
 	}
 }
 
+// The first AAF scene after a load, watched for a few seconds and added to the report (the owner, 2026-10-06: "make
+// the health feature smarter"; a player's report was written at load, before any scene, and could not see that the
+// penis never entered her). File only, never a message box: a modal box mid-scene stalls Papyrus.
+namespace
+{
+	constexpr auto kSceneWatch = std::chrono::seconds(10);
+	bool sceneArmed = false;
+	bool sceneOn = false;
+	Clock::time_point sceneStart;
+	struct SceneSeen
+	{
+		std::string name;
+		bool man = false;
+		bool human = true;
+		int chain = -1;
+		int frames = 0, inside = 0, opening = 0, received = 0;
+		float deepest = 0.0f;
+	};
+	std::map<UInt32, SceneSeen> sceneSeen;
+
+	void SceneSample()
+	{
+		const auto& openings = AimOpenings();
+		bool anyone = false;
+		for (auto& e : actorEntries) {
+			Actor* a = e.actor;
+			if (!a || !G::Root(a) || !AimSeesScene(a->formID))
+				continue;
+			anyone = true;
+			auto& s = sceneSeen[a->formID];
+			if (s.name.empty()) {
+				s.name = G::RefName(a);
+				s.man = actorUtils::IsActorMale(a);
+				s.human = actorUtils::GetActorRaceEID(a) == "HumanRace";   // other races (Servitron) have no genitals of ours
+				s.chain = s.man ? AimChainState(a) : -1;
+			}
+			s.frames++;
+			if (s.man) {
+				// in anything: an opening, a mouth or a gripping hand (an oral or a handjob scene is not a miss)
+				const float d = AimDepth(a->formID);
+				if (d > 0.0f || AimGripDepth(a->formID) > 0.0f)
+					s.inside++;
+				s.deepest = (std::max)(s.deepest, d);
+			} else {
+				for (const auto& o : openings)
+					if (o.owner == a->formID && (o.kind == 0 || o.kind == 1)) {
+						s.opening++;
+						break;
+					}
+				if (AimReceived(a->formID))
+					s.received++;
+			}
+		}
+		if (anyone && !sceneOn) {
+			sceneOn = true;
+			sceneStart = Clock::now();
+		}
+	}
+
+	void SceneReport()
+	{
+		Report r;
+		const std::time_t t = std::time(nullptr);
+		std::tm tm{};
+		localtime_s(&tm, &t);
+		char when[32];
+		std::strftime(when, sizeof(when), "%H:%M:%S", &tm);
+		auto pct = [](int part, int whole) { return whole ? (100 * part + whole / 2) / whole : 0; };
+		r.text << "\nDuring the first scene (" << when << ", watched " << kSceneWatch.count() << " s): the penis aim "
+		       << (AimOn() ? "on" : "OFF") << "\n";
+		bool womanOpen = false, manInside = false, manAimed = false;
+		for (auto& [id, s] : sceneSeen) {
+			char hex[16];
+			_snprintf_s(hex, sizeof(hex), _TRUNCATE, "%08X", id);
+			if (s.man) {
+				r.text << "  " << hex << " " << s.name << " (man): penis chain "
+				       << (s.chain >= 2 ? "aimed" : s.chain == 1 ? "NOT one bone after the next" : s.chain == 0 ? "MISSING" : "-")
+				       << "; inside her (or a mouth or hand) " << pct(s.inside, s.frames) << "% of the time, deepest "
+				       << s.deepest << " units\n";
+				manInside |= s.inside > 0;
+				manAimed |= s.chain >= 2;
+			} else {
+				r.text << "  " << hex << " " << s.name << " (woman): her openings found " << pct(s.opening, s.frames)
+				       << "% of the time; something inside " << pct(s.received, s.frames) << "%\n";
+				womanOpen |= s.opening > 0;
+				if (s.opening == 0 && s.human)
+					r.Problem(s.name + "'s vagina and anus were not found during the scene.",
+						"Her body has no Anatomy genitals there: she is clothed in the scene, or her FemaleBody.nif is not "
+						"Anatomy's (another body mod wins it, or a BodySlide build of another body).");
+			}
+		}
+		if (AimOn() && manAimed && womanOpen && !manInside)
+			r.Problem("In the first scene the penis never went into her (nor a mouth or hand).",
+				"If this animation was meant to be penetrative: her openings were found and the aim was on, so the "
+				"animation holds the penis too far from her for the "
+				"aim to correct (it fixes small misses only), or a physics preset that is not Anatomy's (see 'Physics "
+				"preset' above) keeps her closed. Try another animation; if none enters, send this file.");
+		r.text << (r.problems.empty() ? "  Nothing wrong seen in the scene.\n"
+		                              : "  " + std::to_string(r.problems.size()) + " problem(s) seen in the scene.\n");
+		if (auto dir = rdlog::log_directory()) {
+			*dir /= "Anatomy_Health.txt"sv;
+			std::ofstream out(*dir, std::ios::binary | std::ios::app);
+			out << r.text.str();
+		}
+		rdlog::info("health: the first scene: {} problem(s), {} actor(s) watched", r.problems.size(), sceneSeen.size());
+	}
+
+	void SceneTick()
+	{
+		if (!sceneArmed || armed)          // after the load's own report, once per load
+			return;
+		SceneSample();
+		if (sceneOn && Clock::now() - sceneStart >= kSceneWatch) {
+			sceneArmed = false;
+			SceneReport();
+		}
+	}
+}
+
 namespace Health
 {
 	void OnGameLoaded()
@@ -466,10 +586,19 @@ namespace Health
 		armed = true;
 		frames = 0;
 		loadedAt = Clock::now();
+		sceneArmed = true;
+		sceneOn = false;
+		sceneSeen.clear();
 	}
 
 	void Tick()
 	{
+		try {
+			SceneTick();
+		} catch (const std::exception& e) {
+			sceneArmed = false;
+			rdlog::warn("health: the scene check stopped: {}", e.what());
+		}
 		if (!armed || ++frames < kMinFrames || Clock::now() - loadedAt < kWait)
 			return;
 		armed = false;
