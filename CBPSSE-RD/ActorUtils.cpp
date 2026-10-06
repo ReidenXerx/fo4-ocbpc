@@ -21,6 +21,12 @@ bool actorUtils::IsActorMale(Actor *actor)
         return false;
     }
 
+    // a female-bodied robot race: the game flags every robot male (Automatron's templates), whatever its body. Servitron
+    // (Nexus 32801) wears a woman's CBBE body, so its physics, body checks and scene roles are a woman's (a player,
+    // 2026-10-06: a women-only preset never simulated his Servitron)
+    if (_stricmp(GetActorRaceEID(actor).c_str(), "ServitronRace") == 0)
+        return false;
+
     TESNPC* actorNPC = actor->GetNPC();
 
     auto npcSex = actorNPC ? actorNPC->GetSex() : 1;   // Fallout 4's SEX: 0 male, 1 female
