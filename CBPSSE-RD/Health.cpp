@@ -183,6 +183,24 @@ namespace
 		if (!others.empty())
 			r.Problem("Another physics plugin is installed beside Anatomy Engine (" + Join(others) + "). Two engines move the "
 				"same bones and fight: keep only Anatomy Engine's cbp.dll.");
+		// mods known to break Anatomy in scenes, found by plugin files only they ship (a player, 2026-10-06: with the
+		// Extended AAF Patch the vulva stayed closed behind an "invisible barrier" and the penis stretched; UAP works)
+		struct Known { const char* file; const char* mod; const char* fix; };
+		static const Known kKnown[] = {
+			{ "Data\\EAP Moans.esp", "Extended AAF Patch (EAP, LoversLab)",
+			  "in AAF scenes the genitals stay closed and the penis stretches. Use UAP (Ultimate AAF Patch) instead." },
+			{ "Data\\AAF_DR_creature_EAP_patch.esp", "Extended AAF Patch (EAP, LoversLab)",
+			  "in AAF scenes the genitals stay closed and the penis stretches. Use UAP (Ultimate AAF Patch) instead." },
+		};
+		std::string seen;
+		for (const auto& k : kKnown) {
+			std::error_code ec;
+			if (seen != k.mod && std::filesystem::exists(k.file, ec)) {
+				seen = k.mod;
+				r.text << "  incompatible with Anatomy: " << k.mod << " (" << k.file << ")\n";
+				r.Problem(std::string(k.mod) + " is installed, and it is incompatible with Anatomy.", std::string("With it, ") + k.fix);
+			}
+		}
 	}
 
 	void Preset(Report& r, const std::vector<std::string>& bones)
