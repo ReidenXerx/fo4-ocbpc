@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -196,6 +197,27 @@ namespace
 		if (bones.empty())
 			r.Problem("Your physics preset moves no body bones: breasts and butt stay still.",
 				"Its [Attach] section is empty or missing: " + path);
+		// a preset of the player's own that is not one of Anatomy's (a player, 2026-10-06: 3BBB's own ocbp.ini, and in
+		// scenes the vulva stayed closed while the penis slid along it). Anatomy's presets open with a fixed header line,
+		// so a collection that ships one at the player's path (Ivy) still reads as Anatomy's
+		if (!anatomys) {
+			std::string head;
+			if (std::FILE* f = std::fopen(path.c_str(), "rb")) {
+				char buf[256] = {};
+				const size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+				std::fclose(f);
+				head.assign(buf, n);
+			}
+			if (head.find("Anatomy's default physics preset") == std::string::npos) {
+				r.text << "  not one of Anatomy's presets (its first line: " << head.substr(0, head.find_first_of("\r\n")) << ")\n";
+				r.Problem("Your physics preset is not Anatomy's (" + path + "), and another body physics preset is "
+					"incompatible with Anatomy.",
+					"It replaces the preset AnatomyBuilder made for your body (Anatomy\\ocbp-body.ini): breasts move by "
+					"another body's tuning and in scenes the genitals stay closed. Remove or hide it (in MO2: right-click "
+					"F4SE\\Plugins\\ocbp.ini and OCBPCollisionConfig.txt in the mod that ships them, often 3BBB, and Hide), "
+					"then run AnatomyBuilder again.");
+			}
+		}
 	}
 
 	// the women's body on disk: Anatomy's? which body? weighted to what the preset moves?
