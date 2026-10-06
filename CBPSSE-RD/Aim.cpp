@@ -752,10 +752,17 @@ void UpdateAims()
 			for (size_t i = 0; i + 1 < n; i++) {
 				// the solver turns the link's effective local (gap x own); the node's own local takes that turn
 				// seen through the gap: G^T D G (D itself for a clean chain)
-				AimSolve::M3 d = AimSolve::ToMatrix(r.local[i]);
-				if (i > 0)
-					d = Mul(Transposed(gaps[i].r), Mul(d, gaps[i].r));
-				G::Local(nodes[i]).rot = r.active ? Stored(Mul(d, Actual(h.baseRot[i]))) : h.baseRot[i];
+				// the solver's turns only when it ran: with the aim off (enabled=0, or Rapport's switch) the shape still
+				// runs in a scene and r.local is EMPTY - reading it crashed every scene (a player, 2026-10-06,
+				// cbp.dll+89B06 AimSolve::ToMatrix on a null read)
+				if (r.active && i < r.local.size()) {
+					AimSolve::M3 d = AimSolve::ToMatrix(r.local[i]);
+					if (i > 0)
+						d = Mul(Transposed(gaps[i].r), Mul(d, gaps[i].r));
+					G::Local(nodes[i]).rot = Stored(Mul(d, Actual(h.baseRot[i])));
+				}
+				else
+					G::Local(nodes[i]).rot = h.baseRot[i];
 				h.wroteRot[i] = G::Local(nodes[i]).rot;
 			}
 			for (size_t k = 1; k < n; k++) {
