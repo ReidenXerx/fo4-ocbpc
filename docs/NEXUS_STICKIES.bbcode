@@ -17,11 +17,6 @@
 [*]Our own set (Anatomy.esp, 9 kinds, 37 clips) plays from each stroke's real depth and speed, per opening: strokes, slaps, closed-mouth sounds, licks, fingers, hands, toys.
 [*]Every moment goes to Rapport, which voices the moans. On by default; Rapport's MCM switches it.
 [/list]
-[b]Skirt physics[/b] ([b]new[/b], [i]Anatomy[/i])
-[list]
-[*]A ring of 60 skirt bones (12 around × 5 down) under the pelvis, on an actor whose garment is weighted to them (Anatomy Tailor's "Skirt physics"). Each frame they swing, keep their length, and the thighs and calves push them aside; a snapped AAF pose sends cloth to its own side of the leg.
-[*]Legs through a long coat, crouch/sit/stride: 24/38/14 % → 5/17/2 %.
-[/list]
 [b]Bones and config[/b]
 [list]
 [*]Genital bones are created at run time under each actor's pelvis ([i]Anatomy[/i]). No skeleton file is shipped.
@@ -72,7 +67,6 @@ Two ini files are read, yours first: [i]Data\F4SE\Plugins\ocbp.ini[/i], then [i]
 [*][b][Face][/b]: authority (Rapport's faces) and react. On by default.
 [*][b][Eyes][/b]: the eye hook, on by default; [i]glances=1[/i] tells Rapport glances work (off unless set); uMax, vMin, vMax, rollMax, axes.
 [*][b][Sound][/b]: [i]enabled[/i] (on), [i]force[/i] (-1: Rapport's MCM decides; 0 never; 1 always mute). The override is on by default.
-[*][b][Skirt][/b]: the skirt solver (columns, levels, prefix, damping, stiffness per level, maxStep, gravity, hold, stretch, squash, spread, hintUp, deep, cross, away); [b][SkirtClear][/b] / [b][SkirtClearMale][/b]: each skirt node's clearance from the four leg capsules. On when the sections are there.
 [*][b][Log][/b]: [i]discover=1[/i] lists genital- or toy-looking nodes on nearby actors. It walks their scene graphs every 2 s, so it is off unless you set it.
 [/list]
-Every key's default, clamp and meaning is in the header comment of its source file (Mouth.h, Aim.h, Eyes.h, Bones.h, TubeCollide.h, FaceAuthority.h, Sound.h, Skirt.h) and config.cpp, in [url=https://github.com/ReidenXerx/fo4-ocbpc]the repository[/url]. [i]probe=[/i] and [i]test=[/i] keys are for development and log heavily.
+Every key's default, clamp and meaning is in the header comment of its source file (Mouth.h, Aim.h, Eyes.h, Bones.h, TubeCollide.h, FaceAuthority.h, Sound.h) and config.cpp, in [url=https://github.com/ReidenXerx/fo4-ocbpc]the repository[/url]. [i]probe=[/i] and [i]test=[/i] keys are for development and log heavily.
