@@ -14,6 +14,11 @@ std::string actorUtils::GetActorRaceEID(Actor* actor) {
     return std::string(actor->race->formEditorID.c_str());
 }
 
+bool actorUtils::IsServitron(Actor* actor)
+{
+    return IsActorValid(actor) && _stricmp(GetActorRaceEID(actor).c_str(), "ServitronRace") == 0;
+}
+
 bool actorUtils::IsActorMale(Actor *actor)
 {
     if (!IsActorValid(actor)) {

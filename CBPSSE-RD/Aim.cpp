@@ -43,6 +43,12 @@ namespace
 	bool anusMale = false;                        // A-69: a man's anus ([Aim] anusM, anusInM, anusPathM)
 	NiPoint3 anusAtM, anusInM;
 	std::vector<NiPoint3> anusPathM;
+	// Servitron (Nexus 32801, 2026-10-08): its own rubber openings sit elsewhere than ours; a Servitron wearing
+	// fo4-anatomy's rigged rubber abdomen (servitronBone) is aimed at them ([Aim] vaginaS, vaginaInS, vaginaPathS, anusS...)
+	std::string servitronBone = "AnatSrvVag_F";
+	bool vaginaSrv = false, anusSrv = false;
+	NiPoint3 vaginaAtS, vaginaInS, anusAtS, anusInS;
+	std::vector<NiPoint3> vaginaPathS, anusPathS;
 	std::vector<NiPoint3> vaginaPath, anusPath, throatF, throatM, throatNeckF, throatNeckM;
 	bool vagina = false, anus = false, mouths = true;
 	// The shaft enters a mouth this far BELOW the line where her lips meet: centred on that line its upper
@@ -256,11 +262,16 @@ namespace
 	void AddAnatomyTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
 		const bool male = actorUtils::IsActorMale(a);
-		if (male ? !anusMale : (!vagina && !anus))
-			return;
 		NiAVObject* pelvis = Find(G::Root(a), kPelvis);
+		if (!pelvis)
+			return;
+		// a Servitron in our rigged rubber abdomen: its own openings. By race: [Bones] creates every node of ours on any
+		// woman whose skin names one, so servitronBone exists on our women too; on a Servitron it says ours is worn
+		const bool servitron = !male && (vaginaSrv || anusSrv) && actorUtils::IsServitron(a) && Find(pelvis, servitronBone);
+		if (!servitron && (male ? !anusMale : (!vagina && !anus)))
+			return;
 		// one of ours: her vulva bone, or on a man (A-69) his anus bones (our men's body names them)
-		if (!pelvis || !Find(pelvis, male ? "AnatAnus_F" : anatomyBone.c_str()))
+		if (!servitron && !Find(pelvis, male ? "AnatAnus_F" : anatomyBone.c_str()))
 			return;                                   // not one of ours: no opening to aim at
 		const NiTransform& t = G::World(pelvis);
 		NiMatrix43 toWorld = t.rot.Transpose();
@@ -276,6 +287,13 @@ namespace
 		};
 		if (male) {
 			add(AimSolve::kAnus, anusAtM, anusInM, anusPathM);   // a man: his anus only
+			return;
+		}
+		if (servitron) {
+			if (vaginaSrv)
+				add(AimSolve::kVagina, vaginaAtS, vaginaInS, vaginaPathS);
+			if (anusSrv)
+				add(AimSolve::kAnus, anusAtS, anusInS, anusPathS);
 			return;
 		}
 		if (vagina)
@@ -466,6 +484,11 @@ void LoadAimConfig(INIReader& reader)
 	anusPath = ReadPath(reader, "anusPath");
 	anusMale = ReadPoint(reader, "anusM", anusAtM) && ReadPoint(reader, "anusInM", anusInM);
 	anusPathM = ReadPath(reader, "anusPathM");
+	vaginaSrv = ReadPoint(reader, "vaginaS", vaginaAtS) && ReadPoint(reader, "vaginaInS", vaginaInS);
+	anusSrv = ReadPoint(reader, "anusS", anusAtS) && ReadPoint(reader, "anusInS", anusInS);
+	vaginaPathS = ReadPath(reader, "vaginaPathS");
+	anusPathS = ReadPath(reader, "anusPathS");
+	servitronBone = reader.Get("Aim", "servitronBone", servitronBone);
 	throatF = ReadPath(reader, "throatF");
 	throatM = ReadPath(reader, "throatM");
 	throatNeckF = ReadPath(reader, "throatNeckF");

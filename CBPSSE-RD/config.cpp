@@ -321,7 +321,8 @@ bool LoadConfig() {
     propMinBound = (float)propsReader.GetReal("Props", "minBound", 1.0);
     propTargets.clear();
     {
-        std::stringstream targets(propsReader.Get("Props", "targets", ""));
+        // targets2 continues the list: the INI reader cuts a line at 200 bytes (Servitron's rings, 2026-10-08, crossed it)
+        std::stringstream targets(propsReader.Get("Props", "targets", "") + "," + propsReader.Get("Props", "targets2", ""));
         std::string target;
         while (std::getline(targets, target, ',')) {
             target.erase(0, target.find_first_not_of(" \t"));

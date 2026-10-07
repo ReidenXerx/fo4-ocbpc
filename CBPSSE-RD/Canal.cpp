@@ -26,7 +26,7 @@ namespace
 	{
 		bool enabled = true;
 		int rings = 5, spokes = 8;
-		std::string prefix = "AnatCanal_";
+		std::string prefix = "AnatCanal_", prefixServitron = "AnatSrvCanal_";   // Servitron: its own canal's rings
 		float radius = 1.68f, lead = 1.5f, rate = 10.0f, reach = 5.0f;
 	} P;
 
@@ -47,10 +47,10 @@ namespace
 		return l > 1e-6f ? a / l : NiPoint3(0.0f, 0.0f, 1.0f);
 	}
 
-	std::string Name(int ring, int spoke)
+	std::string Name(const std::string& prefix, int ring, int spoke)
 	{
 		char buf[64];
-		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s%d_%d", P.prefix.c_str(), ring + 1, spoke);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s%d_%d", prefix.c_str(), ring + 1, spoke);
 		return buf;
 	}
 
@@ -100,10 +100,11 @@ namespace
 		if (!pelvis)
 			return;
 		const int R = P.rings, S = P.spokes, n = R * S;
+		const std::string& prefix = actorUtils::IsServitron(actor) ? P.prefixServitron : P.prefix;
 		std::vector<NiAVObject*> nodes(n, nullptr);
 		std::vector<NiPoint3> rest(n);
 		for (int i = 0; i < n; i++) {
-			const std::string nm = Name(i / S, i % S);
+			const std::string nm = Name(prefix, i / S, i % S);
 			BSFixedString want(nm.c_str());
 			NiAVObject* node = pelvis->GetObjectByName(want);
 			if (!node || G::Parent(node) != pelvis)
@@ -213,6 +214,7 @@ void LoadCanalConfig(INIReader& reader)
 	P.rings = (int)reader.GetInteger("Canal", "rings", 5);
 	P.spokes = (int)reader.GetInteger("Canal", "spokes", 8);
 	P.prefix = reader.Get("Canal", "prefix", "AnatCanal_");
+	P.prefixServitron = reader.Get("Canal", "prefixServitron", "AnatSrvCanal_");
 	auto f = [&](const char* k, float d) { return (float)reader.GetReal("Canal", k, d); };
 	P.radius = f("radius", 1.68f);
 	P.lead = (std::max)(0.1f, f("lead", 1.5f));

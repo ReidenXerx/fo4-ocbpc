@@ -7,6 +7,8 @@ namespace actorUtils {
     bool IsActorInPowerArmor(Actor* actor);
     bool IsActorTorsoArmorEquipped(Actor* actor);
     bool IsActorMale(Actor* actor);
+    // Servitron (Nexus 32801): a female-bodied robot race with openings of its own (fo4-anatomy's rigged rubber abdomen)
+    bool IsServitron(Actor* actor);
     bool IsActorTrackable(Actor* actor);
     // fo4-anatomy (A-69): every filter of the preset but its sex one (femaleOnly / maleOnly)
     bool IsActorTrackableForAnatomy(Actor* actor);
