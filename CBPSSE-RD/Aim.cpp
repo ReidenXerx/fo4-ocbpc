@@ -76,6 +76,8 @@ namespace
 	std::unordered_map<UInt32, float> grips;       // AimGripDepth: this actor's shaft through a gripping hand
 	std::unordered_map<UInt32, UInt32> gripPartners;   // AimGripPartner: whose hand
 	std::vector<AimOpening> openings;              // AimOpenings: this frame's vaginas, anuses and mouths
+	// AimShaft: the shaft locked in her opening this frame, its chain's world points root to tip (key: owner << 8 | kind)
+	std::unordered_map<std::uint64_t, std::vector<NiPoint3>> shafts;
 	std::unordered_set<UInt32> busy;
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
@@ -515,6 +517,7 @@ void ResetAims()
 	grips.clear();
 	gripPartners.clear();
 	openings.clear();
+	shafts.clear();
 	std::lock_guard<std::mutex> l(busyLock);
 	busy.clear();
 	busyAt = 0;
@@ -533,6 +536,7 @@ void UpdateAims()
 	grips.clear();
 	gripPartners.clear();
 	openings.clear();
+	shafts.clear();
 	// Rapport's MCM (RFAK): switches aim or shape off, and retunes the shape; none heard, the ini's
 	FaceAuthority::Knobs knobs;
 	const bool knobsHeard = FaceAuthority::CurrentKnobs(knobs);
@@ -808,6 +812,10 @@ void UpdateAims()
 						received[t.owner] = true;
 						receivedKinds[t.owner] |= 1u << t.kind;
 						depthKinds[t.owner] = t.kind;
+						auto& sh = shafts[((std::uint64_t)t.owner << 8) | (unsigned)t.kind];   // the canal's wrap (Canal.h)
+						sh.clear();
+						for (NiAVObject* nd : nodes)
+							sh.push_back(G::World(nd).pos);
 					}
 					else {                                // kept apart for the sounds: the deep face keeps Mouth.cpp's
 						orals[t.owner] = (std::max)(orals[t.owner], d);
@@ -902,6 +910,15 @@ unsigned int AimGripPartner(unsigned int formID)
 const std::vector<AimOpening>& AimOpenings()
 {
 	return openings;
+}
+
+bool AimShaft(unsigned int owner, int kind, std::vector<NiPoint3>& joints)
+{
+	auto it = shafts.find(((std::uint64_t)owner << 8) | (unsigned)kind);
+	if (it == shafts.end())
+		return false;
+	joints = it->second;
+	return true;
 }
 
 bool AimSeesScene(unsigned int formID)

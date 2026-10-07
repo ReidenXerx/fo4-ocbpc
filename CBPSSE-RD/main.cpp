@@ -10,6 +10,7 @@
 #include "Mouth.h"
 #include "PapyrusOCBP.h"
 #include "Skirt.h"
+#include "Canal.h"
 #include "Sound.h"
 #include "config.h"
 
@@ -70,12 +71,14 @@ namespace
 			ReleaseAllFaces("a new game");   // nothing Rapport held survives into another game
 			Sound::Reset();   // fo4-anatomy (A-67): no moment or voice handle crosses into it
 			ResetSkirt();     // roadmap 5: nor any skirt's swing
+			ResetCanal();     // nor any canal held open
 			break;
 		case F4SE::MessagingInterface::kPreLoadGame:
 			ReleaseAllFaces("a save is loading");
 			ResetAims();   // fo4-anatomy (A-28): the new skeletons carry nothing we wrote
 			Sound::Reset();
 			ResetSkirt();
+			ResetCanal();
 			break;
 		case F4SE::MessagingInterface::kPostLoad:
 			ListenForFaces(F4SE::GetMessagingInterface());   // every plugin is loaded, Rapport too
