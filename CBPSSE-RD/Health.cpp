@@ -540,7 +540,8 @@ namespace
 						s.opening++;
 						break;
 					}
-				if (AimReceived(a->formID))
+				// her vagina or anus, or her mouth (the owner, 10-07: oral is penetration too)
+				if (AimReceived(a->formID) || AimOralDepth(a->formID) > 0.0f)
 					s.received++;
 			}
 		}
@@ -574,7 +575,7 @@ namespace
 				manAimed |= s.chain >= 2;
 			} else {
 				r.text << "  " << hex << " " << s.name << " (woman): her openings found " << pct(s.opening, s.frames)
-				       << "% of the time; something inside " << pct(s.received, s.frames) << "%\n";
+				       << "% of the time; something inside her (vagina, anus or mouth) " << pct(s.received, s.frames) << "%\n";
 				womanOpen |= s.opening > 0;
 				if (s.opening == 0 && s.human)
 					r.Problem(s.name + "'s vagina and anus were not found during the scene.",
