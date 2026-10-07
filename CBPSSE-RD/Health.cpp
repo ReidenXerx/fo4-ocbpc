@@ -501,6 +501,19 @@ namespace
 	void SceneSample()
 	{
 		const auto& openings = AimOpenings();
+		// a scene only counts once a human woman is in it (the owner's test, 10-07: the first "scene" after the load
+		// was two Diamond City men an AAF-side mod had marked busy, so his own cowgirl scene went unrecorded)
+		if (!sceneOn) {
+			bool woman = false;
+			for (auto& e : actorEntries) {
+				Actor* a = e.actor;
+				if (a && G::Root(a) && AimSeesScene(a->formID) && !actorUtils::IsActorMale(a) &&
+						actorUtils::GetActorRaceEID(a) == "HumanRace")
+					woman = true;
+			}
+			if (!woman)
+				return;
+		}
 		bool anyone = false;
 		for (auto& e : actorEntries) {
 			Actor* a = e.actor;
