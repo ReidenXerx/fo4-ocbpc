@@ -334,7 +334,8 @@ namespace
 				// penis bones (a player's report, 2026-10-02: Protectron, Ravager, Bee Swarm, Codsworth, Dog blamed ZeX)
 				std::string race = actorUtils::GetActorRaceEID(a);
 				std::transform(race.begin(), race.end(), race.begin(), [](unsigned char c) { return (char)tolower(c); });
-				const bool human = race.find("human") != std::string::npos ||
+				// a Servitron in fo4-anatomy's male abdomen counts too: its skeleton has the penis chain (2026-10-08)
+				const bool human = race.find("human") != std::string::npos || actorUtils::IsServitron(a) ||
 				                   (race.find("ghoul") != std::string::npos && race.find("feral") == std::string::npos);
 				if (!human) {
 					r.text << "not a human skeleton: not counted\n";
@@ -518,7 +519,7 @@ namespace
 			for (auto& e : actorEntries) {
 				Actor* a = e.actor;
 				if (a && G::Root(a) && AimSeesScene(a->formID) && !actorUtils::IsActorMale(a) &&
-						actorUtils::GetActorRaceEID(a) == "HumanRace")
+						(actorUtils::GetActorRaceEID(a) == "HumanRace" || actorUtils::IsServitron(a)))
 					woman = true;
 			}
 			if (!woman)
