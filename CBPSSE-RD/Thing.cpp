@@ -199,7 +199,7 @@ void Thing::Reset(Actor *actor) {
         logger.Error("No loaded state for actor %08x\n", actor->formID);
         return;
     }
-    auto obj = loadedState->GetObjectByName(boneName);
+    auto obj = G::SkeletonNode(loadedState, boneName);
 
     if (!obj) {
         logger.Error("Couldn't get name for loaded state for actor %08x\n", actor->formID);
@@ -225,7 +225,7 @@ NiAVObject* Thing::IsActorValid(Actor* actor) {
         logger.Error("No loaded state for actor %08x\n", actor->formID);
         return NULL;
     }
-    auto obj = loadedState->GetObjectByName(boneName);
+    auto obj = G::SkeletonNode(loadedState, boneName);
 
     if (!obj) {
         logger.Error("Couldn't get name for loaded state for actor %08x\n", actor->formID);

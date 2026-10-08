@@ -396,7 +396,7 @@ namespace
 		// the skeleton's Pelvis is Pelvis_skin's parent: a search for "Pelvis" itself can return a node of that name off
 		// an attached model (Visible Favorites hangs a slot on Pelvis; the skirt's legs, 2026-10-04)
 		static RE::BSFixedString skin("Pelvis_skin");
-		RE::NiAVObject* s = root->GetObjectByName(skin);
+		RE::NiAVObject* s = G::SkeletonNode(root, skin);
 		RE::NiAVObject* n = s ? G::Parent(s) : nullptr;
 		return n ? n : root;
 	}
@@ -407,7 +407,7 @@ namespace
 		if (!root)
 			return nullptr;
 		static RE::BSFixedString head("Head");   // node names match case-insensitively (the string pool)
-		RE::NiAVObject* n = root->GetObjectByName(head);
+		RE::NiAVObject* n = G::SkeletonNode(root, head);
 		return n ? n : root;
 	}
 

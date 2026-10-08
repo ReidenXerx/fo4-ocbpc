@@ -128,7 +128,7 @@ namespace
 		if (!root)
 			return;
 		BSFixedString pelvisName("Pelvis_skin");
-		NiAVObject* pelvis = root->GetObjectByName(pelvisName);
+		NiAVObject* pelvis = G::SkeletonNode(root, pelvisName);
 		if (!pelvis)
 			return;
 		const int nc = P.columns, nl = P.levels, n = nc * nl;

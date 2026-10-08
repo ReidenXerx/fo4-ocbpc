@@ -121,7 +121,7 @@ void SimObj::UpdateStretch(Actor* actor) {
         if (g <= 0)
             continue;
         BSFixedString childName((t.first + "_Stretch").c_str());
-        NiAVObject* child = root->GetObjectByName(childName);
+        NiAVObject* child = G::SkeletonNode(root, childName);
         if (!child)
             continue;
         float extra = t.second.stretchGain * (smallest[g] - t.second.stretchKnee);

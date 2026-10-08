@@ -722,7 +722,7 @@ bool MouthOpening(Actor* actor, NiPoint3& centre, NiPoint3& outward, NiPoint3* u
 	if (!actor || !G::Root(actor) || !G::Root(actor))
 		return false;
 	BSFixedString headName("HEAD");
-	NiAVObject* head = G::Root(actor)->GetObjectByName(headName);
+	NiAVObject* head = G::SkeletonNode(G::Root(actor), headName);
 	if (!head)
 		return false;
 	const NiTransform& t = G::World(head);
@@ -860,7 +860,7 @@ void UpdateMouths()
 			continue;
 		if (probe)
 			listened.emplace_back(a->formID, data);
-		NiAVObject* head = G::Root(a)->GetObjectByName(headName);
+		NiAVObject* head = G::SkeletonNode(G::Root(a), headName);
 		if (!head)
 			continue;
 		bool male = actorUtils::IsActorMale(a);

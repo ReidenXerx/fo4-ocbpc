@@ -244,6 +244,13 @@ namespace
 		return under ? under->GetObjectByName(n) : nullptr;
 	}
 
+	// a body node of an actor (head, neck, fingers, pelvis), the skeleton's own (G::SkeletonNode: worn files carry copies)
+	NiAVObject* FindBody(Actor* a, const std::string& name)
+	{
+		BSFixedString n(name.c_str());
+		return G::SkeletonNode(G::Root(a), n);
+	}
+
 	// A node's local point in the world.
 	V3 WorldPoint(const NiTransform& t, const NiPoint3& local)
 	{
@@ -318,10 +325,10 @@ namespace
 		if (mouthLead > 0.0f)
 			g.path.push_back(lips);                     // then through them along it
 		bool male = actorUtils::IsActorMale(a);
-		if (NiAVObject* head = Find(G::Root(a), "HEAD")) {
+		if (NiAVObject* head = FindBody(a, "HEAD")) {
 			for (auto& q : WorldPath(G::World(head), male ? throatM : throatF))
 				g.path.push_back(AimSolve::Add(q, down));   // in the mouth, lowered with the entrance
-			if (NiAVObject* neck = Find(G::Root(a), "Neck"))
+			if (NiAVObject* neck = FindBody(a, "Neck"))
 				for (auto& q : WorldPath(G::World(neck), male ? throatNeckM : throatNeckF))
 					g.path.push_back(q);                    // down the neck: where the neck is, not the head
 		}
@@ -339,7 +346,7 @@ namespace
 			int found = 0;
 			for (int f = 2; f <= 5; f++) {
 				for (int j = 1; j <= 3; j++) {
-					NiAVObject* n = Find(G::Root(a), side + "_Finger" + std::to_string(f * 10 + j));
+					NiAVObject* n = FindBody(a, side + "_Finger" + std::to_string(f * 10 + j));
 					if (!n)
 						continue;
 					joints[f - 2][j - 1] = ToV3(G::World(n).pos);
@@ -371,7 +378,7 @@ namespace
 		// there" and never aimed (the owner's photo: the penis went straight through her ring). The skeleton hangs it
 		// under Pelvis
 		if (root && !Find(root, chainNames[1]))
-			if (NiAVObject* pelvisBone = Find(G::Root(a), "Pelvis"))
+			if (NiAVObject* pelvisBone = FindBody(a, "Pelvis"))
 				root = Find(pelvisBone, chainNames.front());
 		if (!root || !G::Parent(root))
 			return false;
@@ -611,7 +618,7 @@ void UpdateAims()
 				continue;                             // a hand out of a scene holds nobody's shaft here
 			AddGripTargets(a, inScene, targets);
 			for (auto& n : handNames)
-				if (NiAVObject* h = Find(G::Root(a), n))
+				if (NiAVObject* h = FindBody(a, n))
 					hands.push_back(AimSolve::Hand{ a->formID, ToV3(G::World(h).pos) });
 		}
 	}

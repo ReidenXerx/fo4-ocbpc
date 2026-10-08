@@ -408,7 +408,7 @@ void WatchLoadedActors()
 static float RestOurBones(Actor* actor)
 {
 	BSFixedString pelvisName(kPelvis);
-	NiAVObject* pelvis = G::Root(actor)->GetObjectByName(pelvisName);
+	NiAVObject* pelvis = G::SkeletonNode(G::Root(actor), pelvisName);
 	if (!pelvis)
 		return -1.0f;
 	float worst = -1.0f;
@@ -505,7 +505,7 @@ static void DescribeBodyImpl(Actor* actor, BodyView& out)
 	NiAVObject* com = nullptr;
 	{
 		BSFixedString pelvisName(kPelvis);
-		NiAVObject* p = G::Root(actor)->GetObjectByName(pelvisName);
+		NiAVObject* p = G::SkeletonNode(G::Root(actor), pelvisName);
 		for (int hop = 0; p && hop < 8 && !com; hop++, p = G::Parent(p))
 			if (G::Name(p) && _stricmp(G::Name(p), "COM") == 0)
 				com = p;
