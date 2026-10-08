@@ -258,6 +258,27 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		}
 		if (pelvis && !Reaches(pelvis, G::Root(actor)))
 			return;                                  // A-51: bound to nodes that are not the live skeleton's
+		if (!pelvis && namesOurs) {
+			// fo4-anatomy (10-08): names ours but its Pelvis_skin entry is empty - a Servitron's robot parts leave every
+			// skeleton entry of theirs empty (Pelvis_skin, Belly_skin, ...; ours are the file's own nodes). Remembered as
+			// done, the rubber abdomen never got our nodes (the owner's AAF scene: its openings stretched to the floor).
+			// So the skeleton's OWN Pelvis_skin: the child of Pelvis under COM (an attached model can carry a copy of a
+			// name, never that chain)
+			BSFixedString pelvisName("Pelvis"), skinName(kPelvis);
+			NiAVObject* bone = G::Root(actor)->GetObjectByName(pelvisName);
+			NiAVObject* com = bone ? G::Parent(bone) : nullptr;
+			NiAVObject* own = (com && G::Name(com) && _stricmp(G::Name(com), "COM") == 0) ? bone->GetObjectByName(skinName)
+			                                                                                 : nullptr;
+			if (own && G::Parent(own) == bone)
+				pelvis = G::AsNode(own);
+			char key[64];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|unbound|%08X|%d", actor->formID, pelvis ? 1 : 0);
+			Note(key, pelvis ? "[bones] %08X: a skin names ours with its Pelvis_skin entry empty: the skeleton's own used\n"
+			                 : "[bones] %08X: a skin names ours with its Pelvis_skin entry empty, and no Pelvis_skin under "
+			                   "Pelvis: looking again\n", actor->formID);
+			if (!pelvis)
+				return;
+		}
 		if (!pelvis || !namesOurs) {
 			done[skin] = Done{ G::SkinBones(skin).entries, count, kNone, nullptr };
 			return;
