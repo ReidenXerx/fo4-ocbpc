@@ -365,6 +365,13 @@ namespace
 		if (!a || !G::Root(a) || !G::Root(a) || chainNames.size() < 2)
 			return false;
 		NiAVObject* root = Find(G::Root(a), chainNames.front());
+		// the skeleton's own chain, not a worn file's copy of its first bone: fo4-anatomy's male Servitron abdomen
+		// (2026-10-08) carries Penis_00..05 as flat nodes, the first found, with nothing below them - the chain was "not
+		// there" and never aimed (the owner's photo: the penis went straight through her ring). The skeleton hangs it
+		// under Pelvis
+		if (root && !Find(root, chainNames[1]))
+			if (NiAVObject* pelvisBone = Find(G::Root(a), "Pelvis"))
+				root = Find(pelvisBone, chainNames.front());
 		if (!root || !G::Parent(root))
 			return false;
 		nodes.push_back(root);
