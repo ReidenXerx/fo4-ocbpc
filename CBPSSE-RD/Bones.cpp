@@ -94,8 +94,11 @@ namespace
 	}
 }
 
+static bool srvPelvisFallback = true;   // [Servitron] pelvisFallback (10-08 test switch)
+
 void LoadBonesConfig(INIReader& reader)
 {
+	srvPelvisFallback = reader.GetBoolean("Servitron", "pelvisFallback", true);
 	table.clear();
 	ours.clear();
 	maleLocal.clear();
@@ -258,7 +261,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		}
 		if (pelvis && !Reaches(pelvis, G::Root(actor)))
 			return;                                  // A-51: bound to nodes that are not the live skeleton's
-		if (!pelvis && namesOurs) {
+		if (!pelvis && namesOurs && srvPelvisFallback) {
 			// fo4-anatomy (10-08): names ours but its Pelvis_skin entry is empty - a Servitron's robot parts leave every
 			// skeleton entry of theirs empty (Pelvis_skin, Belly_skin, ...; ours are the file's own nodes). Remembered as
 			// done, the rubber abdomen never got our nodes (the owner's AAF scene: its openings stretched to the floor).
