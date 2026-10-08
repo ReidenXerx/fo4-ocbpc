@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <mutex>
+#include <unordered_map>
 
 #include "ActorUtils.h"
 #include "Game.h"
@@ -19,6 +21,30 @@ bool actorUtils::IsServitron(Actor* actor)
     return IsActorValid(actor) && _stricmp(GetActorRaceEID(actor).c_str(), "ServitronRace") == 0;
 }
 
+// a Servitron in the male abdomen: its 3D holds the shape AnatServitronPenis. Looked up once per 3D (the workbench or a
+// scene rebuilds a robot's 3D: a new root), and again every few hundred asks in case the parts change under one root
+bool actorUtils::ServitronIsMale(Actor* actor)
+{
+    struct Seen { void* root; bool male; int asks; };
+    static std::unordered_map<std::uint32_t, Seen> seen;
+    static std::mutex lock;
+    NiAVObject* root = G::Root(actor);
+    if (!root)
+        return false;
+    std::lock_guard<std::mutex> guard(lock);
+    auto it = seen.find(actor->formID);
+    if (it != seen.end() && it->second.root == root && ++it->second.asks < 600)
+        return it->second.male;
+    BSFixedString penis("AnatServitronPenis");
+    const bool male = root->GetObjectByName(penis) != nullptr;
+    if (it == seen.end() || it->second.male != male)
+        logger.Info("Servitron %08X: %s\n", actor->formID, male ? "the male abdomen: a man" : "a woman");
+    seen[actor->formID] = Seen{ root, male, 0 };
+    if (seen.size() > 4096)
+        seen.clear();
+    return male;
+}
+
 bool actorUtils::IsActorMale(Actor *actor)
 {
     if (!IsActorValid(actor)) {
@@ -29,8 +55,10 @@ bool actorUtils::IsActorMale(Actor *actor)
     // a female-bodied robot race: the game flags every robot male (Automatron's templates), whatever its body. Servitron
     // (Nexus 32801) wears a woman's CBBE body, so its physics, body checks and scene roles are a woman's (a player,
     // 2026-10-06: a women-only preset never simulated his Servitron)
+    // ...unless it wears fo4-anatomy's MALE rubber abdomen (the owner's poll, 2026-10-08: the abdomen decides the robot's
+    // sex): its penis shape AnatServitronPenis rides the skeleton's penis chain, so he is aimed and simulated as a man
     if (_stricmp(GetActorRaceEID(actor).c_str(), "ServitronRace") == 0)
-        return false;
+        return ServitronIsMale(actor);
 
     TESNPC* actorNPC = actor->GetNPC();
 
