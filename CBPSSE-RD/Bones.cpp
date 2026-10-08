@@ -239,6 +239,17 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				oursCount++;
 			}
 		}
+		if (actorUtils::IsServitron(actor)) {           // fo4-anatomy (10-08): a Servitron's rubber abdomen got none of ours
+			char key[160];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|srv|%08X|%s|%u|%d|%d", actor->formID, G::Name(geo), count,
+				oursCount, nulls);
+			const char* first = nullptr;
+			for (UInt32 i = 0; i < count && !first; i++)
+				if (G::SkinBones(skin).entries[i])
+					first = G::Name(G::SkinBones(skin).entries[i]);
+			Note(key, "[bones] %08X Servitron: '%s' skin of %u bones, Pelvis_skin %s, %d ours, %d empty, first '%s'\n",
+				actor->formID, G::Name(geo), count, pelvis ? "found" : "MISSING", oursCount, nulls, first ? first : "-");
+		}
 		if (pelvis && (namesOurs || nulls)) {           // a body: say once what its skin looks like
 			char key[96];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|skin|%08X|%u|%d|%d", actor->formID, count, oursCount, nulls);
