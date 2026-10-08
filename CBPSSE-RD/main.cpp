@@ -66,6 +66,7 @@ namespace
 		switch (a_msg->type) {
 		case F4SE::MessagingInterface::kGameDataReady:
 			WatchLoadedActors();   // fo4-anatomy (A-44): Bones.h
+			ServitronClothes();    // fo4-anatomy (10-08): human outfits on Servitrons
 			break;
 		case F4SE::MessagingInterface::kNewGame:
 			ReleaseAllFaces("a new game");   // nothing Rapport held survives into another game

@@ -43,3 +43,6 @@ struct BodyView
 	std::vector<std::string> loose;   // skin bones not hanging under her skeleton's COM: their vertices stay nailed
 };
 bool DescribeBody(Actor* actor, BodyView& out);
+
+// fo4-anatomy (10-08): human outfits on Servitrons: ServitronRace borrows HumanRace's armour at game data ready
+void ServitronClothes();

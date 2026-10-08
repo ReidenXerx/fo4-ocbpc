@@ -95,10 +95,12 @@ namespace
 }
 
 static bool srvPelvisFallback = true;   // [Servitron] pelvisFallback (10-08 test switch)
+static bool srvHumanClothes = false;    // [Servitron] humanClothes: human outfits on Servitrons (OFF: a slot-33 outfit replaces the whole robot skin, 10-08)
 
 void LoadBonesConfig(INIReader& reader)
 {
 	srvPelvisFallback = reader.GetBoolean("Servitron", "pelvisFallback", true);
+	srvHumanClothes = reader.GetBoolean("Servitron", "humanClothes", false);
 	table.clear();
 	ours.clear();
 	maleLocal.clear();
@@ -552,4 +554,28 @@ static bool DescribeBodyGuarded(Actor* actor, BodyView* out)
 bool DescribeBody(Actor* actor, BodyView& out)
 {
 	return DescribeBodyGuarded(actor, &out);
+}
+
+// fo4-anatomy (the owner, 2026-10-08: "make it universally being able wear 3bbb, even a male servitron"): an outfit's
+// armour addons list the races that may wear them, and ServitronRace borrows none, so human clothes never showed on a
+// Servitron. Its armour race becomes HumanRace at load (no record of anyone's overridden): every human outfit's addons
+// then fit her, while her robot parts still match ServitronRace itself. A race some other mod already gave an armour
+// race keeps it.
+void ServitronClothes()
+{
+	if (!srvHumanClothes)
+		return;
+	auto* data = RE::TESDataHandler::GetSingleton();
+	if (!data)
+		return;
+	auto* servitron = data->LookupForm<RE::TESRace>(0x000F99, "Servitron.esm");
+	auto* human = data->LookupForm<RE::TESRace>(0x013746, "Fallout4.esm");
+	if (!servitron || !human)
+		return;
+	if (servitron->armorParentRace) {
+		Note("srv|clothes|kept", "[servitron] ServitronRace already wears another race's armour: left as it is\n");
+		return;
+	}
+	servitron->armorParentRace = human;
+	Note("srv|clothes", "[servitron] ServitronRace wears HumanRace's outfits ([Servitron] humanClothes=1)\n");
 }
