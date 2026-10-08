@@ -362,6 +362,16 @@ namespace
 			for (const auto& bn : body.loose)
 				if (bn.size() > 5 && _stricmp(bn.c_str() + bn.size() - 5, "_skin") == 0)
 					nailed.push_back(bn);
+			// the prewar spouse in the intro (Armor_SpouseWeddingRing, Fallout4.esm 0007C70C): a player's reports (2026-10-07/08,
+			// callofthewildproductions) flagged only her, in her prewar outfit, while the same setup past the intro had no problem
+			// (Ivy fine). Not a test of the setup: said so, not counted as a problem
+			const bool prewarSpouse = a != player && std::any_of(body.shapes.begin(), body.shapes.end(),
+				[](const std::string& s) { return s.find("0007C70C") != std::string::npos; });
+			if (!nailed.empty() && prewarSpouse) {
+				r.text << "    her skeleton lacks " << Join(nailed) << ", but she is the prewar spouse of the intro: not a test of "
+				          "your setup (check again past the intro, with any other woman)\n";
+				nailed.clear();
+			}
 			if (!nailed.empty()) {
 				// which skeleton her race sends her to, and which plugin last edited that race (a player's case,
 				// 2026-10-05: LooksMenu Customization Compendium and Pip-Boy 2000 overrode HumanRace after
