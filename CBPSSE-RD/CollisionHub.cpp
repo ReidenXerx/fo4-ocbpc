@@ -294,7 +294,7 @@ void CreateOtherColliders()
 		{
 
 			BSFixedString fs = ReturnUsableString(ColliderNodesListPtr->at(j).NodeName);
-			NiAVObject* node = mostInterestingRoot->GetObjectByName(fs);
+			NiAVObject* node = G::SkeletonNode(mostInterestingRoot, fs);
 
 			if (node)
 			{

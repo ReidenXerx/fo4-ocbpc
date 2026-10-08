@@ -262,7 +262,8 @@ namespace
 	void AddAnatomyTargets(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
 	{
 		const bool male = actorUtils::IsActorMale(a);
-		NiAVObject* pelvis = Find(G::Root(a), kPelvis);
+		BSFixedString pelvisName(kPelvis);
+		NiAVObject* pelvis = G::SkeletonNode(G::Root(a), pelvisName);
 		if (!pelvis)
 			return;
 		// a Servitron in our rigged rubber abdomen: its own openings. By race: [Bones] creates every node of ours on any

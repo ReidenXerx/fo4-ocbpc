@@ -96,7 +96,7 @@ namespace
 		if (!root || actorUtils::IsActorMale(actor))
 			return;
 		BSFixedString pelvisName("Pelvis_skin");
-		NiAVObject* pelvis = root->GetObjectByName(pelvisName);
+		NiAVObject* pelvis = G::SkeletonNode(root, pelvisName);
 		if (!pelvis)
 			return;
 		const int R = P.rings, S = P.spokes, n = R * S;

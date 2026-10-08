@@ -42,7 +42,7 @@ bool SimObj::Bind(Actor *actor, std::vector<std::string>& boneNames, config_t &c
                 continue;
             const char* bone_c_str = b.c_str();
             BSFixedString cs(bone_c_str);
-            auto bone = loadedData->GetObjectByName(cs);
+            auto bone = G::SkeletonNode(loadedData, cs);
             if (!bone) {
                 logger.Info("Failed to find Bone %s for actor %08x\n", b.c_str(), actor->formID);
             } else {
@@ -147,7 +147,7 @@ bool SimObj::UpdateConfig(Actor* actor, std::vector<std::string>& boneNames, con
                 continue;
             logger.Error("SimObj::UpdateConfig - adding bone %s\n", b.c_str());
             BSFixedString cs(b.c_str());
-            auto bone = loadedData->GetObjectByName(cs);
+            auto bone = G::SkeletonNode(loadedData, cs);
             auto findBone = things.find(b);
             if (!bone) {
                 logger.Info("Failed to find Bone %s for actor %08x\n", b.c_str(), actor->formID);

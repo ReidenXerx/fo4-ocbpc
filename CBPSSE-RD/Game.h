@@ -62,6 +62,19 @@ namespace G
 	{
 		return a_ref && a_ref->loadedData ? a_ref->loadedData->data3D.get() : nullptr;
 	}
+	// a body bone as the skeleton holds it: searched under COM first. A worn file can carry flat copies of bone names
+	// (a robot part's skin bones; fo4-anatomy's Servitron abdomens, 2026-10-08) that a root-wide search may meet first.
+	// Those copies never move: physics on them moved nothing the skin used, and colliders on them sat still
+	inline NiAVObject* SkeletonNode(NiAVObject* a_root, const BSFixedString& a_name)
+	{
+		if (!a_root)
+			return nullptr;
+		static const BSFixedString com("COM");
+		if (NiAVObject* c = a_root->GetObjectByName(com))
+			if (NiAVObject* n = c->GetObjectByName(a_name))
+				return n;
+		return a_root->GetObjectByName(a_name);
+	}
 	inline Actor* LookupActor(std::uint32_t a_formID)
 	{
 		auto* form = a_formID ? TESForm::GetFormByID(a_formID) : nullptr;
