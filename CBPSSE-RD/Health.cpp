@@ -354,7 +354,14 @@ namespace
 		r.text << "\nAnatomyBuilder: " << kStamp << "\n";
 		INIReader stamp(kStamp);
 		if (stamp.ParseError() < 0) {
-			r.text << "  no stamp (a builder older than this engine, or not run): not checked\n";
+			// a player's case (falloutfan2077 via Watcher, 2026-10-10, MO2): the builder ran, but its output never reached
+			// Data, so the body was built without its physics and a foreign ocbp.ini stayed in charge; "not checked" told
+			// nobody that. Every builder since 1.2.0 writes this stamp, so no stamp means its output is not in Data
+			r.text << "  no stamp: AnatomyBuilder's output is not in your Data\n";
+			r.Problem("AnatomyBuilder's output is not in your game's Data (no F4SE\\Plugins\\Anatomy\\build.ini).",
+				"Run AnatomyBuilder from your mod manager. In MO2: add it as an executable and run it from MO2's list; "
+				"its files land in Overwrite: right-click Overwrite > Create Mod and enable that mod. Then build \"Anatomy "
+				"Body\" in BodySlide the same way.");
 			return;
 		}
 		const std::string body = stamp.Get("Build", "body", "?"), breasts = stamp.Get("Build", "breasts", "?"),
