@@ -276,6 +276,78 @@ namespace
 		}
 	}
 
+	// The bodies' morph files against BodyGen (a player's case, 2026-10-09, Marcy Long in Obi's Cozy Classic jeans: skin
+	// through at the hips, under the cheeks and at the knees). LooksMenu shapes every NPC a BodyGen template names
+	// (Silhouette) through the body's .tri AND each outfit's .tri; with the body's missing, or left from an older build
+	// (BodySlide writes it only with "Build Morphs" ticked), the clothes take her shape and the body keeps the preset's,
+	// so it comes out through every outfit. Reproduced offline: 0 vertices through under her cheeks with both morphed,
+	// 276 with the body unmorphed.
+	void BodyMorphs(Report& r)
+	{
+		const char* kBodyGen = "Data\\F4SE\\Plugins\\F4EE\\BodyGen";
+		bool women = false, men = false;
+		int files = 0;
+		std::error_code ec;
+		for (auto it = std::filesystem::recursive_directory_iterator(kBodyGen, ec);
+				!ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+			const auto name = Lower(it->path().filename().string());
+			if (name.size() < 10 || name.substr(name.size() - 10) != "morphs.ini")
+				continue;
+			std::string text;
+			if (!ReadFile(it->path(), text))
+				continue;
+			files++;
+			text = Lower(text);
+			women = women || text.find("|female=") != std::string::npos;
+			men = men || text.find("|male=") != std::string::npos;
+		}
+		r.text << "\nBody morphs (BodyGen): " << files << " morphs.ini file(s), templates for "
+		       << (women && men ? "women and men" : women ? "women" : men ? "men" : "nobody") << "\n";
+		if (!files)
+			return;
+		struct Sex { bool on; const char* who; const char* nif; const char* shape; };
+		const Sex sexes[] = {
+			{ women, "women", kFemaleBody, "CBBE" },
+			{ men, "men", "Data\\Meshes\\Actors\\Character\\CharacterAssets\\MaleBody.nif", nullptr },
+		};
+		const char* fix = "In BodySlide, tick \"Build Morphs\" and build the body again (for women: \"Anatomy Body\" at your "
+		                  "preset), or reinstall the prebuilt body, so that its .tri sits beside the .nif and nothing older "
+		                  "overwrites it.";
+		for (const auto& s : sexes) {
+			std::error_code e1, e2;
+			if (!s.on || !std::filesystem::exists(s.nif, e1))
+				continue;   // the women's body in an archive is Body()'s problem already
+			std::filesystem::path tri(s.nif);
+			tri.replace_extension(".tri");
+			if (!std::filesystem::exists(tri, e2)) {
+				r.text << "  " << s.who << ": " << tri.string() << " MISSING\n";
+				r.Problem(std::string("The ") + s.who + "'s body has no morph file (" + tri.filename().string() + "), so NPC "
+					"body shapes (BodyGen, Silhouette) shape their clothes but not their body: it comes out through outfits.",
+					fix);
+				continue;
+			}
+			const auto tn = std::filesystem::last_write_time(s.nif, e1), tt = std::filesystem::last_write_time(tri, e2);
+			const auto older = std::chrono::duration_cast<std::chrono::seconds>(tn - tt).count();
+			std::string t;
+			const bool shape = !s.shape || (ReadFile(tri, t) && [&] {
+				const std::string want = s.shape;
+				for (size_t at = t.find(want); at != std::string::npos; at = t.find(want, at + 1))
+					if (at >= 1 && (unsigned char)t[at - 1] == want.size())   // a .tri names each shape: length byte, name
+						return true;
+				return false;
+			}());
+			r.text << "  " << s.who << ": " << tri.string() << (older > 120 ? ", " + std::to_string(older / 60) +
+			          " min OLDER than the body .nif" : ", built with the body") << (shape ? "" : ", no morphs for its CBBE shape") << "\n";
+			if (!e1 && !e2 && older > 120)
+				r.Problem(std::string("The ") + s.who + "'s body morph file is older than the body (" + tri.filename().string() +
+					"): NPC body shapes (BodyGen, Silhouette) shape their clothes but not their body, so it comes out through "
+					"outfits.", "The body was rebuilt without its morphs. " + std::string(fix));
+			else if (!shape)
+				r.Problem(std::string("The ") + s.who + "'s body morph file (" + tri.filename().string() + ") is for another "
+					"body: NPC body shapes reach their clothes but not their body.", fix);
+		}
+	}
+
 	// AnatomyBuilder's stamp: the body it built and how the breasts were weighted, against the preset running now
 	void Builder(Report& r, const std::vector<std::string>& bones, const std::string& kind)
 	{
@@ -465,6 +537,7 @@ namespace
 		Engine(r);
 		Preset(r, bones);
 		Body(r, bones, kind);
+		BodyMorphs(r);
 		Builder(r, bones, kind);
 		Actors(r);
 		r.text << "\n" << (r.problems.empty() ? "No problems found.\n" : std::to_string(r.problems.size()) + " problem(s) found.\n");
