@@ -97,6 +97,7 @@ namespace
 		bool wrote = false;
 		bool toldKeyed = false;
 		ULONGLONG seenAt = 0;
+		ULONGLONG freeSince = 0, whyAt = 0;          // in a scene with no opening taken: since when; last "why not"
 	};
 	std::unordered_map<UInt32, Held> held;
 	// Someone the scan no longer lists this long (out of OCBPC's reach, or unloaded) gets the animation's
@@ -634,6 +635,17 @@ void UpdateAims()
 		std::vector<NiAVObject*> nodes;
 		if (!FindChain(a, nodes))
 			continue;
+		// every Servitron's skeleton carries the penis chain, a woman's too: hers aimed a penis she does not have at her
+		// partner's anus (the owner's test, 2026-10-09, BP70 Romantic Cowgirl). Only the male abdomen has one
+		if (actorUtils::IsServitron(a) && !actorUtils::ServitronIsMale(a)) {
+			auto it = held.find(a->formID);
+			if (it != held.end()) {
+				if (it->second.wrote)
+					PutBack(it->second, nodes);
+				held.erase(it);
+			}
+			continue;
+		}
 		if (!Linear(nodes)) {
 			Note("aim|shape|" + std::to_string(a->formID), "[aim] %08X: %s ... %s do not hang one from the next - "
 				"that chain is not aimed\n", a->formID, chainNames.front().c_str(), chainNames.back().c_str());
@@ -776,6 +788,52 @@ void UpdateAims()
 			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
 				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
 		}
+		// In a scene with no opening taken for 3 s: why not, every 5 s, for the nearest vagina or anus (the owner,
+		// 2026-10-09: BP70 Romantic Cowgirl kept the penis straight past both holes for two minutes, and the log only
+		// says when a lock is LOST, never why none is taken). The numbers are Judge's: miss against captureMiss, the
+		// turn against captureAngle, the entry against entryAngle, the entrance against the shaft's reach.
+		if (aimOn && c.inScene && !h.state.locked && !r.held) {
+			static int whyLines = 0;
+			if (!h.freeSince)
+				h.freeSince = ms;
+			if (ms - h.freeSince >= 3000 && ms - h.whyAt >= 5000 && whyLines < 400) {
+				h.whyAt = ms;
+				std::vector<V3> joints;
+				std::vector<AimSolve::Quat> world;
+				AimSolve::Pose(c, c.locals, 1.0f, joints, world);
+				const AimSolve::Target* nearT = nullptr;
+				float nearD = 1e9f;
+				for (const AimSolve::Target& t : targets) {
+					if ((t.kind != AimSolve::kVagina && t.kind != AimSolve::kAnus) || t.owner == a->formID || !t.inScene ||
+							joints.size() < 2)
+						continue;
+					const float d = AimSolve::Length(AimSolve::Sub(t.point, joints.front()));
+					if (d < nearD) {
+						nearD = d;
+						nearT = &t;
+					}
+				}
+				if (nearT) {
+					const AimSolve::Fit f = AimSolve::Judge(c, joints, *nearT, params, false);
+					const V3 base = joints.front();
+					const V3 u = AimSolve::Normalized(AimSolve::Sub(joints.back(), base));
+					const V3 q = AimSolve::Sub(nearT->point, base);
+					const float miss = AimSolve::Length(AimSolve::Sub(q, AimSolve::Scale(u, AimSolve::Dot(q, u))));
+					const V3 d = AimSolve::Normalized(AimSolve::Sub(AimSolve::Add(nearT->point, AimSolve::Scale(nearT->in,
+						params.depth)), base));
+					auto deg = [](float c) { return std::acos((std::max)(-1.0f, (std::min)(1.0f, c))) * 57.29578f; };
+					char key[64];
+					_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|why|%08X|%d", a->formID, whyLines++);
+					Note(key, "[aim] %08X: no opening taken; nearest %08X's %s: %s (miss %.1f of %.1f, turn %.0f of %.0f deg, "
+						"entry %.0f of %.0f deg, entrance %.1f, shaft %.1f x reach %.2f)\n", a->formID, nearT->owner,
+						AimSolve::KindName(nearT->kind), f.ok ? "would lock now" : f.why, miss, params.captureMiss,
+						deg(AimSolve::Dot(u, d)), params.captureAngle * 57.29578f, deg(AimSolve::Dot(d, nearT->in)),
+						params.entryAngle * 57.29578f, nearD, AimSolve::ChainLength(c), params.reach);
+				}
+			}
+		}
+		else
+			h.freeSince = 0;
 		// The shape only in a scene (the owner's photo, 2026-10-03: any nude man's flaccid penis kinked). It scales
 		// about the chain's bones, which lie on the erect line; a flaccid penis hangs off that line, so its skin was
 		// pulled to the bones and its glans pushed out. In a scene the penis is erect along them, as A-31 measured.
