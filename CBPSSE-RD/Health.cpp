@@ -358,8 +358,12 @@ namespace
 			// Data, so the body was built without its physics and a foreign ocbp.ini stayed in charge; "not checked" told
 			// nobody that. Every builder since 1.2.0 writes this stamp, so no stamp means its output is not in Data
 			r.text << "  no stamp: AnatomyBuilder's output is not in your Data\n";
+			// the same report's real cause (falloutfan2077's AnatomyBuilder.log, 10-10): a builder from before 1.2.0, which
+			// writes no stamp and leaves the breasts on CBBE's cloth bones when there is no ocbp.ini
 			r.Problem("AnatomyBuilder's output is not in your game's Data (no F4SE\\Plugins\\Anatomy\\build.ini).",
-				"Run AnatomyBuilder from your mod manager. In MO2: add it as an executable and run it from MO2's list; "
+				"Either your AnatomyBuilder is older than Anatomy 1.2.0 (its log's first line shows no version): download "
+				"the current one from the Anatomy page's Files tab. Or its output went elsewhere: run it from your mod "
+				"manager. In MO2: add it as an executable and run it from MO2's list; "
 				"its files land in Overwrite: right-click Overwrite > Create Mod and enable that mod. Then build \"Anatomy "
 				"Body\" in BodySlide the same way.");
 			return;
