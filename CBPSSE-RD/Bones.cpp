@@ -535,6 +535,17 @@ static void DescribeBodyImpl(Actor* actor, BodyView& out)
 				std::string bn = G::Name(b);
 				if (std::find(out.loose.begin(), out.loose.end(), bn) == out.loose.end())
 					out.loose.push_back(bn);
+				// the skeleton has the bone after all: this mesh brought its own copy and the game bound the skin to
+				// it (falloutfan2077 via Watcher, 2026-10-10: two raiders' Painspike gear flagged "skeleton lacks
+				// Head_skin, Neck_skin..." under the vanilla, ZeX and CBBE skeletons alike, all of which have them)
+				NiAVObject* real = com->GetObjectByName(BSFixedString(bn.c_str()));
+				if (real && real != b) {
+					if (std::find(out.copied.begin(), out.copied.end(), bn) == out.copied.end())
+						out.copied.push_back(bn);
+					const std::string shape = name ? name : "?";
+					if (std::find(out.copiedBy.begin(), out.copiedBy.end(), shape) == out.copiedBy.end())
+						out.copiedBy.push_back(shape);
+				}
 			}
 		}
 	});

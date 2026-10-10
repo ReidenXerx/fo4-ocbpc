@@ -442,10 +442,14 @@ namespace
 			       << " of our bones in the skin; shapes " << Join(body.shapes) << "\n";
 			// body bones the skin found outside her skeleton (a Havok cloth bone of a garment is not a body bone: only
 			// *_skin names count)
-			std::vector<std::string> nailed;
+			std::vector<std::string> nailed, carried;
 			for (const auto& bn : body.loose)
 				if (bn.size() > 5 && _stricmp(bn.c_str() + bn.size() - 5, "_skin") == 0)
-					nailed.push_back(bn);
+					(std::find(body.copied.begin(), body.copied.end(), bn) != body.copied.end() ? carried : nailed).push_back(bn);
+			// bones her skeleton HAS but a worn mesh brought its own copy of: the outfit's fault, not the setup's (no box)
+			if (!carried.empty())
+				r.text << "    an outfit carries its own copies of " << Join(carried) << " (in " << Join(body.copiedBy)
+				       << "): those pieces stay nailed. A fault of that outfit's mod, not your skeleton (it has them)\n";
 			// the prewar spouse in the intro (Armor_SpouseWeddingRing, Fallout4.esm 0007C70C): a player's reports (2026-10-07/08,
 			// callofthewildproductions) flagged only her, in her prewar outfit, while the same setup past the intro had no problem
 			// (Ivy fine). Not a test of the setup: said so, not counted as a problem

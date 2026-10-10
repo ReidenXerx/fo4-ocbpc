@@ -41,6 +41,9 @@ struct BodyView
 	std::vector<std::string> shapes;
 	int ours = 0;
 	std::vector<std::string> loose;   // skin bones not hanging under her skeleton's COM: their vertices stay nailed
+	// of those, the ones her skeleton DOES have: the skin was bound to a copy the worn mesh carries itself (an outfit
+	// mod's fault, not the skeleton's), with the shapes that use them
+	std::vector<std::string> copied, copiedBy;
 };
 bool DescribeBody(Actor* actor, BodyView& out);
 
