@@ -282,6 +282,30 @@ namespace
 	// (BodySlide writes it only with "Build Morphs" ticked), the clothes take her shape and the body keeps the preset's,
 	// so it comes out through every outfit. Reproduced offline: 0 vertices through under her cheeks with both morphed,
 	// 276 with the body unmorphed.
+	// Plugins known to break the women's skeleton in a setup they were not made for. HumanRaceSkeletonFix.esp is a patch
+	// for Pip-Boy 2000 (Nexus 32025: PiP-Boy2000.esp, PiP-Boy2000_LMCC.esp); without that mod it still overrides HumanRace,
+	// and with LooksMenu Customization Compendium it left a player's breasts sinking into her chest while she ran, every
+	// 3BBB bone present (sdp_phoenix via Watcher, 2026-10-12: disabling both fixed it; alasdairn named the files)
+	void SkeletonPatches(Report& r)
+	{
+		auto* data = RE::TESDataHandler::GetSingleton();
+		if (!data)
+			return;
+		auto loaded = [&](std::string_view name) {
+			return data->LookupLoadedModByName(name) != nullptr || data->LookupLoadedLightModByName(name) != nullptr;
+		};
+		if (!loaded("HumanRaceSkeletonFix.esp"))
+			return;
+		const bool pipboy = loaded("PiP-Boy2000.esp") || loaded("PiP-Boy2000_LMCC.esp");
+		r.text << "Skeleton patches: HumanRaceSkeletonFix.esp is loaded; Pip-Boy 2000 (the mod it patches) "
+		       << (pipboy ? "is too\n\n" : "is NOT\n\n");
+		if (!pipboy)
+			r.Problem("HumanRaceSkeletonFix.esp is loaded without Pip-Boy 2000.",
+				"It is a patch for Pip-Boy 2000 (Nexus 32025) and edits HumanRace, the race that picks the women's skeleton. "
+				"Without that mod it breaks the 3BBB breasts (they sink into the chest while she runs), worst together with "
+				"LooksMenu Customization Compendium. Disable HumanRaceSkeletonFix.esp.");
+	}
+
 	void BodyMorphs(Report& r)
 	{
 		const char* kBodyGen = "Data\\F4SE\\Plugins\\F4EE\\BodyGen";
@@ -585,6 +609,7 @@ namespace
 		Preset(r, bones);
 		Body(r, bones, kind);
 		BodyMorphs(r);
+		SkeletonPatches(r);
 		Builder(r, bones, kind);
 		Actors(r);
 		r.text << "\n" << (r.problems.empty() ? "No problems found.\n" : std::to_string(r.problems.size()) + " problem(s) found.\n");
