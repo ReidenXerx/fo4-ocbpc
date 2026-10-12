@@ -567,6 +567,52 @@ bool DescribeBody(Actor* actor, BodyView& out)
 	return DescribeBodyGuarded(actor, &out);
 }
 
+static bool SkinUsesBoneImpl(Actor* actor, const std::vector<std::string>& names)
+{
+	bool found = false;
+	if (!actor || !G::Root(actor))
+		return false;
+	VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
+		if (found)
+			return;
+		Layout::CheckSkin(geo);
+		if (Layout::Skin() != Layout::State::kGood)
+			return;
+		G::SkinInstance* skin = G::Skin(geo);
+		if (!skin || !G::SkinBones(skin).entries)
+			return;
+		for (UInt32 i = 0; i < G::SkinBones(skin).count && !found; i++) {
+			NiNode* b = G::SkinBones(skin).entries[i];
+			const char* bn = b ? G::Name(b) : nullptr;
+			if (!bn)
+				continue;
+			for (const auto& n : names)
+				if (_stricmp(bn, n.c_str()) == 0) {
+					found = true;
+					break;
+				}
+		}
+	});
+	return found;
+}
+
+static bool SkinUsesBoneGuarded(Actor* actor, const std::vector<std::string>* names, bool* out)
+{
+	__try {
+		*out = SkinUsesBoneImpl(actor, *names);
+		return true;
+	} __except (1) {
+		NoteFault(actor, "SkinUsesBone");
+		return false;
+	}
+}
+
+bool SkinUsesBone(Actor* actor, const std::vector<std::string>& names)
+{
+	bool out = false;
+	return SkinUsesBoneGuarded(actor, &names, &out) ? out : true;
+}
+
 // fo4-anatomy (the owner, 2026-10-08: "make it universally being able wear 3bbb, even a male servitron"): an outfit's
 // armour addons list the races that may wear them, and ServitronRace borrows none, so human clothes never showed on a
 // Servitron. Its armour race becomes HumanRace at load (no record of anyone's overridden): every human outfit's addons

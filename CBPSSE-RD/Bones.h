@@ -46,6 +46,9 @@ struct BodyView
 	std::vector<std::string> copied, copiedBy;
 };
 bool DescribeBody(Actor* actor, BodyView& out);
+// true when a skinned shape under the actor's 3D is bound to one of these bones (a worn penis rides the chain); a fault
+// while her 3D changes answers true, so nothing that worked before stops
+bool SkinUsesBone(Actor* actor, const std::vector<std::string>& names);
 
 // fo4-anatomy (10-08): human outfits on Servitrons: ServitronRace borrows HumanRace's armour at game data ready
 void ServitronClothes();

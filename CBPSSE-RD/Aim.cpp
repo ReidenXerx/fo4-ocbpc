@@ -7,6 +7,7 @@
 #include "ActorEntry.h"
 #include "ActorUtils.h"
 #include "AimSolve.h"
+#include "Bones.h"
 #include "CollisionHub.h"
 #include "FaceAuthority.h"
 #include "Mouth.h"
@@ -367,6 +368,31 @@ namespace
 		}
 	}
 
+	// A woman whose skeleton carries the penis chain (a unified skeleton: kaide via Watcher, 2026-10-11, Connie Abernathy
+	// "shaft onto" her partner's anus in an NPC x NPC scene) has no penis unless something she wears is weighted to the
+	// chain (a futa body, a strap-on rigged to it). Asked once per 3D, and again every few hundred asks, since she
+	// undresses under the same root
+	bool WearsChain(Actor* a)
+	{
+		struct Seen { void* root; bool wears; int asks; };
+		static std::unordered_map<std::uint32_t, Seen> seen;
+		NiAVObject* root = G::Root(a);
+		if (!root)
+			return false;
+		auto it = seen.find(a->formID);
+		if (it != seen.end() && it->second.root == root && ++it->second.asks < 600)
+			return it->second.wears;
+		const bool wears = SkinUsesBone(a, chainNames);
+		if (it == seen.end() || it->second.wears != wears)
+			Note("aim|woman|" + std::to_string(a->formID) + (wears ? "|1" : "|0"), wears ?
+				"[aim] %08X: a woman wearing a mesh on the penis chain: aimed\n" :
+				"[aim] %08X: a woman whose skeleton carries the penis chain, nothing worn on it: not aimed\n", a->formID);
+		seen[a->formID] = Seen{ root, wears, 0 };
+		if (seen.size() > 4096)
+			seen.clear();
+		return wears;
+	}
+
 	// The chain's nodes under an actor's skeleton, root first; false unless every one is there.
 	bool FindChain(Actor* a, std::vector<NiAVObject*>& nodes)
 	{
@@ -637,7 +663,7 @@ void UpdateAims()
 			continue;
 		// every Servitron's skeleton carries the penis chain, a woman's too: hers aimed a penis she does not have at her
 		// partner's anus (the owner's test, 2026-10-09, BP70 Romantic Cowgirl). Only the male abdomen has one
-		if (actorUtils::IsServitron(a) && !actorUtils::ServitronIsMale(a)) {
+		if (actorUtils::IsServitron(a) ? !actorUtils::ServitronIsMale(a) : !actorUtils::IsActorMale(a) && !WearsChain(a)) {
 			auto it = held.find(a->formID);
 			if (it != held.end()) {
 				if (it->second.wrote)
