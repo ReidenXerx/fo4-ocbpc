@@ -460,26 +460,58 @@ namespace
 				          "your setup (check again past the intro, with any other woman)\n";
 				nailed.clear();
 			}
-			if (!nailed.empty()) {
-				// which skeleton her race sends her to, and which plugin last edited that race (a player's case,
-				// 2026-10-05: LooksMenu Customization Compendium and Pip-Boy 2000 overrode HumanRace after
-				// DiscreteFemaleSkeleton.esp and sent women back to the base skeleton; Vortex shows no file conflict)
-				std::string skel = "?", owner = "?", raceName = actorUtils::GetActorRaceEID(a);
-				if (a->race) {
-					const char* m = a->race->skeletonModel[1].model.c_str();
-					skel = m && *m ? m : "(none)";
-					if (RE::TESFile* f = a->race->GetFile(-1))
-						owner = std::string(f->GetFilename());
+			// which skeleton her race sends her to, and which plugin last edited that race (a player's case,
+			// 2026-10-05: LooksMenu Customization Compendium and Pip-Boy 2000 overrode HumanRace after
+			// DiscreteFemaleSkeleton.esp and sent women back to the base skeleton; Vortex shows no file conflict).
+			// Printed for every woman since 1.2.21 (sdp_phoenix via Watcher, 2026-10-12: LMCC in the load order, every
+			// bone present, breasts sinking into her chest while she ran - the report could not say which skeleton)
+			std::string skel = "?", owner = "?", raceName = actorUtils::GetActorRaceEID(a);
+			if (a->race) {
+				const char* m = a->race->skeletonModel[1].model.c_str();
+				skel = m && *m ? m : "(none)";
+				if (RE::TESFile* f = a->race->GetFile(-1))
+					owner = std::string(f->GetFilename());
+			}
+			std::string low = skel;
+			for (auto& c : low)
+				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			const bool raceOk = low.find("female\\skeleton.nif") != std::string::npos ||
+			                    low.find("female/skeleton.nif") != std::string::npos;
+			if (!actorUtils::IsServitron(a)) {
+				r.text << "    her race " << raceName << " sends women to " << skel << " (last edited by " << owner << ")"
+				       << (raceOk ? "" : ": not CBBE's female\\skeleton.nif, the base skeleton every man uses") << "\n";
+				// the breast chain as her skeleton hangs it: 3BBB's female\skeleton.nif hangs LBreast_01_skin under
+				// LBreast_00_3B, LBreast_OFFSET and Chest. One that does not run through Chest does not lean with her
+				// torso, so her breasts sink into it when she bends forward to run
+				BSFixedString b1("LBreast_01_skin");
+				if (NiAVObject* n = G::SkeletonNode(G::Root(a), b1)) {
+					std::vector<std::string> up;
+					bool chest = false;
+					for (NiAVObject* q = G::Parent(n); q && up.size() < 8; q = G::Parent(q)) {
+						const char* qn = G::Name(q);
+						up.push_back(qn ? qn : "?");
+						if (qn && (_stricmp(qn, "Chest") == 0 || _stricmp(qn, "Chest_skin") == 0)) {
+							chest = true;
+							break;
+						}
+						if (qn && _stricmp(qn, "COM") == 0)
+							break;
+					}
+					std::string chain;
+					for (const auto& u : up)
+						chain += " <- " + u;
+					r.text << "    her left breast hangs: LBreast_01_skin" << chain << "\n";
+					if (!chest)
+						r.Problem(G::RefName(a) + "'s breast bones do not hang under her chest.",
+							"Her skeleton (" + skel + ", race last edited by " + owner + ") hangs LBreast_01_skin" + chain +
+							", not under Chest: her breasts do not lean with her torso and sink into it when she runs or "
+							"bends. Women need Skeletal Adjustments for CBBE's female\\skeleton.nif (3BBB).");
 				}
-				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n"
-				       << "    her race " << raceName << " sends women to " << skel << " (last edited by " << owner << ")\n";
+			}
+			if (!nailed.empty()) {
+				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n";
 				// the race already names the women's skeleton: then the FILE there lacks the bones (another skeleton
 				// mod wins over Skeletal Adjustments), and the race's last editor is not the one to blame
-				std::string low = skel;
-				for (auto& c : low)
-					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-				const bool raceOk = low.find("female\\skeleton.nif") != std::string::npos ||
-				                    low.find("female/skeleton.nif") != std::string::npos;
 				const std::string fix = raceOk ?
 					"Her race " + raceName + " already sends women to " + skel + ", so that file lacks the bones: "
 					"another skeleton mod overwrites Skeletal Adjustments for CBBE's female\\skeleton.nif. Make Skeletal "
