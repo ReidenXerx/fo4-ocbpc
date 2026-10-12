@@ -263,6 +263,17 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		}
 		if (pelvis && !Reaches(pelvis, G::Root(actor)))
 			return;                                  // A-51: bound to nodes that are not the live skeleton's
+		// A human's skin with its Pelvis_skin entry still empty is one the game has not finished binding (an outfit
+		// coming off: zenar45 via Watcher, 2026-10-13, OG 1.10.163, a BodyTalk man undressing as AAF walked an NPC couple
+		// in; the log's last line, then the desktop, every time). Pointing its entries at our nodes then raced the game's
+		// own binding. Left alone, NOT remembered as done: the next visit finds it bound and goes the normal way
+		if (!pelvis && namesOurs && !actorUtils::IsServitron(actor)) {
+			char key[64];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|binding|%08X", actor->formID);
+			Note(key, "[bones] %08X: a skin names ours before the game has bound its Pelvis_skin: waiting for it\n",
+				actor->formID);
+			return;
+		}
 		if (!pelvis && namesOurs && srvPelvisFallback) {
 			// fo4-anatomy (10-08): names ours but its Pelvis_skin entry is empty - a Servitron's robot parts leave every
 			// skeleton entry of theirs empty (Pelvis_skin, Belly_skin, ...; ours are the file's own nodes). Remembered as
