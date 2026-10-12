@@ -69,6 +69,11 @@ public:
     NiPoint3 stretchAxis = NiPoint3(0, 0, 0);
     // this frame's displacement from rest, in the parent's frame (what Update added to origLocalPos)
     NiPoint3 lastLocalDiff = NiPoint3(0, 0, 0);
+    // fo4-anatomy 1.2.20: the spring rides the actor's travel, low-passed over followTravel seconds (0: off)
+    float followTravel = 0.3f;
+    NiPoint3 travel = NiPoint3(0, 0, 0);
+    NiPoint3 lastTarget = NiPoint3(0, 0, 0);
+    bool haveLastTarget = false;
 
     static pos_map origLocalPos;
     static rot_map origLocalRot;

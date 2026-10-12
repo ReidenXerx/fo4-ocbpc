@@ -167,6 +167,8 @@ void Thing::UpdateConfig(configEntry_t & centry) {
 
     gravityBias = centry["gravityBias"];
     gravityCorrection = centry["gravityCorrection"];
+    // fo4-anatomy 1.2.20: on unless a section sets followTravel=0 (the old world-space spring)
+    followTravel = centry.find("followTravel") != centry.end() ? centry["followTravel"] : 0.3f;
     cogOffsetY = centry["cogOffsetY"];
     cogOffsetX = centry["cogOffsetX"];
     cogOffsetZ = centry["cogOffsetZ"];
@@ -262,6 +264,7 @@ void Thing::Update(Actor *actor) {
 
     auto newTime = clock();
     auto deltaT = newTime - time;
+    const bool longGap = deltaT > 250;          // fo4-anatomy 1.2.20: not run for a while (out of the scan, a menu)
 
     time = newTime;
     if (deltaT > 64) deltaT = 64;
@@ -475,6 +478,31 @@ void Thing::Update(Actor *actor) {
 
     // Offset to move Center of Mass make rotational motion more significant
     NiPoint3 target = (targetRot * NiPoint3(varCogOffsetX, varCogOffsetY, varCogOffsetZ)) + origWorldPos;
+
+    // fo4-anatomy 1.2.20 (sdp_phoenix via Watcher, 2026-10-12: 3BBB breasts sank into the chest while she ran and
+    // came back round when she stopped). The spring works in world space and its damping acts on the bone's absolute
+    // velocity, so an actor travelling at a steady speed V holds every bone back by about V * damping / stiffness:
+    // studies/breast_run_lag.py measured the 3BBB breast chain 2.8 units into the chest at a run, 3.6 at a sprint, its
+    // bounce pinned at the limit. The bone's internal position now rides the actor's travel, low-passed over
+    // followTravel seconds: steady travel stretches nothing, while a start, a stop and the gait's own bob still swing
+    // it (the same study: the run's vertical bounce and the bounce in place within 3% of before).
+    if (followTravel > 0.0f) {
+        if (haveLastTarget && !longGap) {
+            const NiPoint3 d = target - lastTarget;
+            if (fabs(d.x) > 100 || fabs(d.y) > 100 || fabs(d.z) > 100)
+                travel = zeroVector;                   // a teleport or a load: no travel to carry
+            else {
+                const float a = 1.0f - std::exp(-(float)originalDeltaT / 1000.0f / followTravel);
+                travel = travel + (d - travel) * a;
+                oldWorldPos += travel;
+                newPos = oldWorldPos;
+            }
+        }
+        lastTarget = target;
+        if (longGap)
+            travel = zeroVector;
+        haveLastTarget = true;
+    }
 
 #if DEBUG
     logger.Error("World Position: ");
