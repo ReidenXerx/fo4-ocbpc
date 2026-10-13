@@ -9,6 +9,7 @@
 // so hooking that call is the same thing.
 #include "PCH.h"
 #include "Hook.h"
+#include "CodeGuard.h"
 
 void UpdateActors();
 
@@ -29,6 +30,7 @@ namespace
 	{
 		*reinterpret_cast<std::uint64_t*>(static_cast<char*>(a_this) + 0x0C) = 0;
 		*reinterpret_cast<std::uint64_t*>(static_cast<char*>(a_this) + 0x04) = 0;
+		CodeGuard::Check("frame");   // before any of our code a stray patch may sit in runs (CodeGuard.h)
 		UpdateActors();
 		return 0;   // the reset's xor eax,eax
 	}

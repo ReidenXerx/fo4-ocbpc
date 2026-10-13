@@ -11,6 +11,7 @@
 #include "PapyrusOCBP.h"
 #include "Skirt.h"
 #include "Canal.h"
+#include "CodeGuard.h"
 #include "Sound.h"
 #include "config.h"
 
@@ -63,6 +64,18 @@ namespace
 
 	void MessageHandler(F4SE::MessagingInterface::Message* a_msg)
 	{
+		// another plugin's patch meant for the original OCBP's cbp.dll lands in Load or at these messages (CodeGuard.h)
+		switch (a_msg->type) {
+		case F4SE::MessagingInterface::kPostLoad:
+		case F4SE::MessagingInterface::kPostPostLoad:
+		case F4SE::MessagingInterface::kGameDataReady:
+		case F4SE::MessagingInterface::kPreLoadGame:
+		case F4SE::MessagingInterface::kPostLoadGame:
+			CodeGuard::Check("an F4SE message");
+			break;
+		default:
+			break;
+		}
 		switch (a_msg->type) {
 		case F4SE::MessagingInterface::kGameDataReady:
 			WatchLoadedActors();   // fo4-anatomy (A-44): Bones.h

@@ -8,6 +8,7 @@
 #include "Aim.h"
 #include "Sound.h"
 #include "Bones.h"
+#include "CodeGuard.h"
 #include "Game.h"
 #include "Hook.h"
 #include "INIReader.h"
@@ -180,6 +181,17 @@ namespace
 				others.push_back(name);
 		}
 		r.text << "  other physics plugins in Data\\F4SE\\Plugins: " << Join(others) << "\n";
+		// a plugin that patched this DLL as if it were the original OCBP's (CodeGuard.h): put back, and named here
+		if (const auto undone = CodeGuard::Undone(); !undone.empty()) {
+			const bool hfpf = GetModuleHandleW(L"HighFPSPhysicsFix.dll") != nullptr;
+			r.text << "  another plugin wrote into cbp.dll: " << undone << " (put back)\n";
+			r.Problem(hfpf ? "High FPS Physics Fix's FixOCBPSpeed patched Anatomy Engine (it is made for the original OCBP)."
+			               : "Another plugin patched Anatomy Engine's code as if it were the original OCBP.",
+				"The engine put its code back (" + undone + "), so the game no longer closes when a scene starts. " +
+				(hfpf ? std::string("Set FixOCBPSpeed=false in Data\\F4SE\\Plugins\\HighFPSPhysicsFix.ini (and "
+				                    "HighFPSPhysicsFix_custom.ini): Anatomy Engine keeps its own speed at any frame rate.")
+				      : std::string("cbp.log names the offsets; turn off that plugin's OCBP patch.")));
+		}
 		if (!others.empty())
 			r.Problem("Another physics plugin is installed beside Anatomy Engine (" + Join(others) + "). Two engines move the "
 				"same bones and fight: keep only Anatomy Engine's cbp.dll.");
