@@ -46,6 +46,22 @@ namespace
 	Clock::time_point loadedAt;
 	int frames = 0;
 	bool shown = false;   // the message box: once per game session
+	// a check that finds a problem runs again kWait later, and only that second pass shows the box, so the box and
+	// Anatomy_Health.txt always come from the same pass (alasdairn via Watcher, 2026-10-14: a box named two women's
+	// breast chains, the file written by a later load said "No problems found" and the breasts looked right)
+	bool confirming = false;
+
+	// every node of that name in an actor's 3D: worn files carry their own copies of the skeleton's bones
+	void FindAll(NiAVObject* a_obj, const char* a_name, std::vector<NiAVObject*>& a_out, int a_depth = 0)
+	{
+		if (!a_obj || a_depth > 64 || a_out.size() >= 8)
+			return;
+		if (G::NameIs(a_obj, a_name))
+			a_out.push_back(a_obj);
+		if (NiNode* node = G::AsNode(a_obj))
+			for (std::uint32_t i = 0; i < G::ChildCount(node); ++i)
+				FindAll(G::Child(node, i), a_name, a_out, a_depth + 1);
+	}
 
 	std::string Lower(std::string s)
 	{
@@ -519,23 +535,32 @@ namespace
 				// the breast chain as her skeleton hangs it: 3BBB's female\skeleton.nif hangs LBreast_01_skin under
 				// LBreast_00_3B, LBreast_OFFSET and Chest. One that does not run through Chest does not lean with her
 				// torso, so her breasts sink into it when she bends forward to run
-				BSFixedString b1("LBreast_01_skin");
-				if (NiAVObject* n = G::SkeletonNode(G::Root(a), b1)) {
+				// Every copy is looked at: while an outfit goes on, the first one found can be the outfit's own
+				std::vector<NiAVObject*> copies;
+				FindAll(G::Root(a), "LBreast_01_skin", copies);
+				bool chest = false;
+				std::string chain;
+				for (NiAVObject* n : copies) {
 					std::vector<std::string> up;
-					bool chest = false;
+					bool under = false;
 					for (NiAVObject* q = G::Parent(n); q && up.size() < 8; q = G::Parent(q)) {
 						const char* qn = G::Name(q);
 						up.push_back(qn ? qn : "?");
 						if (qn && (_stricmp(qn, "Chest") == 0 || _stricmp(qn, "Chest_skin") == 0)) {
-							chest = true;
+							under = true;
 							break;
 						}
 						if (qn && _stricmp(qn, "COM") == 0)
 							break;
 					}
-					std::string chain;
-					for (const auto& u : up)
-						chain += " <- " + u;
+					if (chain.empty() || (under && !chest)) {
+						chain.clear();
+						for (const auto& u : up)
+							chain += " <- " + u;
+					}
+					chest = chest || under;
+				}
+				if (!copies.empty()) {
 					r.text << "    her left breast hangs: LBreast_01_skin" << chain << "\n";
 					if (!chest)
 						r.Problem(G::RefName(a) + "'s breast bones do not hang under her chest.",
@@ -614,7 +639,8 @@ namespace
 		localtime_s(&tm, &t);
 		char when[32];
 		std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &tm);
-		r.text << "Anatomy health check, " << when << " (a save loaded " << kWait.count() << " s ago)\n\n";
+		r.text << "Anatomy health check, " << when << " (a save loaded " << (confirming ? 2 : 1) * kWait.count() << " s ago"
+		       << (confirming ? "; a second look at what the first one found" : "") << ")\n\n";
 		const auto bones = PresetBones();
 		std::string kind;
 		Engine(r);
@@ -633,9 +659,20 @@ namespace
 			out << r.text.str();
 			where = dir->string();
 		}
-		rdlog::info("health: {} problem(s); report {}", r.problems.size(), where);
-		if (r.problems.empty() || shown)
+		rdlog::info("health: {} problem(s); report {}{}", r.problems.size(), where, confirming ? " (second pass)" : "");
+		if (r.problems.empty() || shown) {
+			confirming = false;
 			return;
+		}
+		if (!confirming) {
+			// once more after kWait: an actor whose 3D was still being built is read again before anyone is told
+			confirming = true;
+			armed = true;
+			frames = 0;
+			loadedAt = Clock::now();
+			return;
+		}
+		confirming = false;
 		std::string box = "Anatomy found " + std::to_string(r.problems.size()) + " problem(s):\n";
 		for (auto& p : r.problems)
 			box += "\n- " + p;
@@ -784,6 +821,7 @@ namespace Health
 	void OnGameLoaded()
 	{
 		armed = true;
+		confirming = false;
 		frames = 0;
 		loadedAt = Clock::now();
 		sceneArmed = true;
