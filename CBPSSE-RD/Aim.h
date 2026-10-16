@@ -49,8 +49,8 @@ struct AimOpening
 const std::vector<AimOpening>& AimOpenings();   // this actor's vagina or anus holds a shaft (its AimDepth is a received one)
 // the shaft locked in this woman's opening (kind 0 vagina, 1 anus) this frame: its chain's world points, root to tip
 bool AimShaft(unsigned int owner, int kind, std::vector<NiPoint3>& joints);
-// the tip of this actor's shaft (its chain's last joint, world), locked or not: Strands.cpp's far end after a pull-out
-bool AimTip(Actor* a, NiPoint3& tip);
+// this actor's shaft chain's nodes, root to tip, locked or not ([Aim] chain): Strands.cpp fixes a strand's end in one
+bool AimChain(Actor* a, std::vector<NiAVObject*>& nodes);
 // The health check (Health.cpp): the actor's chain as UpdateAims would find it (-1 none configured, 0 missing,
 // 1 not hanging one from the next, 2 aimed, 3 aimed with nodes between); [Aim] enabled; "first ... last".
 int AimChainState(Actor* a);

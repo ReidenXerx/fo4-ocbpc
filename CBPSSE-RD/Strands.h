@@ -5,10 +5,13 @@
 // Licensed under the GNU General Public License, version 3 (COPYING), with the additional
 // permission for F4SE stated in README.md.
 #pragma once
-// When a shaft leaves an opening in a scene (Aim's vagina, anus or mouth), a strand may stay between her entrance and
-// his tip ([Strands] chance): a rope of kBones points under gravity, sagging, thinning in the middle as the two part,
-// broken past maxLength, thinned away after life seconds or when the shaft goes back in. One at a time: the mesh is
-// one Demand prototype (more need OStrands' Clone()). Without the mesh, nothing is loaded or touched.
+// Strands between a shaft and the opening Aim locked it in (vagina, anus or mouth), as OStrands makes them: on every
+// outstroke 1-2 "bridges" from points on her rim to his shaft where it crosses her entrance, each end fixed in its node
+// (her Pelvis_skin or head, his shaft bone) so they stretch as he pulls back; and on the pull-out, one from her entrance
+// to his tip ([Strands] pulloutChance). Each is a rope of kBones points under gravity with viscosity, its volume kept so
+// it thins as it stretches; it snaps in the middle past maxLength beyond its first length, under minRadius or after life
+// seconds, and the halves thin away. Up to kPool at once: one mesh copy each (Strand00..07.nif, one Demand prototype
+// apiece, since the game's clone is not bound). Without the meshes, nothing is loaded or touched.
 
 #include "INIReader.h"
 #include "Game.h"

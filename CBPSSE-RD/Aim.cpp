@@ -1043,13 +1043,9 @@ bool AimShaft(unsigned int owner, int kind, std::vector<NiPoint3>& joints)
 	return true;
 }
 
-bool AimTip(Actor* a, NiPoint3& tip)
+bool AimChain(Actor* a, std::vector<NiAVObject*>& nodes)
 {
-	std::vector<NiAVObject*> nodes;
-	if (!FindChain(a, nodes))
-		return false;
-	tip = G::World(nodes.back()).pos;
-	return true;
+	return FindChain(a, nodes);
 }
 
 bool AimSeesScene(unsigned int formID)
