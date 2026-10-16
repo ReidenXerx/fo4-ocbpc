@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License, version 3 (COPYING), with the additional
 // permission for F4SE stated in README.md.
 #include "Strands.h"
+#include "Fluid.h"
 
 #include <algorithm>
 #include <array>
@@ -736,6 +737,19 @@ namespace Strands
 				for (UInt32 o : a_actors)
 					if (o != id)
 						other = o;
+				if (Fluid::Ready()) {   // the climax fluid (Fluid.h): the opening he is in, if any, and who is with him
+					UInt32 her = 0;
+					int kind = -1;
+					for (auto& [key, st] : pairs)
+						if (st.lastPartner == id && st.since < 1.5f) {
+							her = (UInt32)(key >> 2);
+							kind = (int)(key & 3);
+							break;
+						}
+					Fluid::Climax(id, her ? her : other, her, kind);
+					Note(her ? "a climax inside (fluid)" : "a climax outside (fluid)", her ? her : other, kind, id, 0.0f);
+					continue;
+				}
 				bool inside = false;
 				for (auto& [key, st] : pairs)
 					if (st.lastPartner == id && st.since < 1.5f) {

@@ -5,6 +5,7 @@
 #include "Skirt.h"
 #include "Canal.h"
 #include "Strands.h"
+#include "Fluid.h"
 #include "config.h"
 #include "Game.h"
 #include "INIReader.h"
@@ -392,6 +393,7 @@ bool LoadConfig() {
     LoadSkirtConfig(extrasSections.count("Skirt") ? anatomyExtras : configReader);   // roadmap 5
     LoadCanalConfig(extrasSections.count("Canal") ? anatomyExtras : configReader);
     Strands::LoadConfig(extrasSections.count("Strands") ? anatomyExtras : configReader);
+    Fluid::LoadConfig(extrasSections.count("Fluid") ? anatomyExtras : configReader);   // ROADMAP 6
     LoadTubeConfig(extrasSections.count("Tube") ? anatomyExtras : configReader);
     Sound::LoadConfig(extrasSections.count("Sound") ? anatomyExtras : configReader);   // A-67
 

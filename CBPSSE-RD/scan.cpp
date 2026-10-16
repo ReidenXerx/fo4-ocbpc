@@ -33,6 +33,7 @@
 #include "Canal.h"
 #include "Health.h"
 #include "Strands.h"
+#include "Fluid.h"
 #include "log.h"
 #include "Thing.h"
 #include "config.h"
@@ -345,6 +346,7 @@ void UpdateActors() {
         actorEntries.size(), (void*)curCell);
     Health::Tick();   // fo4-anatomy: the health check after a save load (Health.h)
     Strands::Tick();   // fo4-anatomy (2026-10-16): fluid strands after a pull-out (Strands.h)
+    Fluid::Tick();     // and the climax fluid (Fluid.h)
     // fo4-anatomy (A-57): what the physics costs per frame, to put numbers on a 3BBB body against CBBE's
     double physUs = 0.0;
     size_t physActors = 0, physBones = 0;
