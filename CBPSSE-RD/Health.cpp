@@ -700,8 +700,76 @@ namespace
 		int chain = -1;
 		int frames = 0, inside = 0, opening = 0, received = 0;
 		float deepest = 0.0f;
+		// every bone a skinned shape on them uses: the box its local offset swept during the watch. A skeleton bone
+		// only turns, so its offset stays put; one that swings units is flung (physics) or pushed, and the skin
+		// weighted to it tears into a sheet (the owner's test, 2026-10-16: "wings" off a man's hips in Cowgirl)
+		struct Sweep
+		{
+			NiPoint3 lo, hi;
+			bool ranged = false;
+			// how often the skin held a copy of it outside the skeleton's COM: a copy stays where it was bound (A-14)
+			int samples = 0, looseSamples = 0;
+		};
+		std::map<std::string, Sweep> bones;
+		std::map<std::string, int> nullBones;   // a skinned shape's bone slots with no node: those vertices go nowhere
 	};
 	std::map<UInt32, SceneSeen> sceneSeen;
+	int sceneFrame = 0;
+	constexpr float kBoneSwept = 3.0f;      // units: listed in the report
+	constexpr float kBoneFlung = 10.0f;     // units: a problem (breast jiggle sweeps ~5.6 in a lively scene, 10-16)
+
+	void SweepBones(NiAVObject* a_obj, SceneSeen& s, int a_depth)
+	{
+		if (!a_obj || a_depth > 64)
+			return;
+		if (RE::BSGeometry* g = G::AsGeometry(a_obj)) {
+			if (G::SkinInstance* skin = G::Skin(g)) {
+				auto& list = G::SkinBones(skin);
+				for (std::uint32_t i = 0; i < list.count && i < 512; i++) {
+					NiNode* n = list.entries[i];
+					if (!n) {
+						// an empty bone entry alone is the game's own (a man's 77-bone body: 52 of them, drawn fine);
+						// one whose world transform is empty too has nothing to skin by
+						auto& xf = G::SkinWorldTransforms(skin);
+						if (i >= xf.count || !xf.entries || !xf.entries[i]) {
+							const char* gn = G::Name(g);
+							s.nullBones[gn ? gn : "?"] = (std::max)(s.nullBones[gn ? gn : "?"], (int)i + 1);
+						}
+						continue;
+					}
+					if (!n->name.c_str())
+						continue;
+					if (std::strncmp(n->name.c_str(), "Strand", 6) == 0 || std::strncmp(n->name.c_str(), "CLOTH_", 6) == 0)
+						continue;   // our fluid strands and Havok cloth: they move by design
+					const NiPoint3 p = G::Local(n).pos;
+					bool underCom = false;
+					for (NiAVObject* q = n; q && !underCom; q = G::Parent(q)) {
+						const char* qn = G::Name(q);
+						underCom = qn && _stricmp(qn, "COM") == 0;
+					}
+					const bool rootish = _stricmp(n->name.c_str(), "COM") == 0 || _stricmp(n->name.c_str(), "Root") == 0;
+					const bool looseNow = !underCom && !rootish;
+					auto& w = s.bones[n->name.c_str()];
+					w.samples++;
+					w.looseSamples += looseNow;
+					// the sweep only over the skeleton's own node: a skin rebuilt as AAF undresses holds a loose copy
+					// for a sample or two before the engine repoints it (Bones.cpp), and that copy sits ~66 units away
+					if (!looseNow) {
+						if (!w.ranged) {
+							w.lo = w.hi = p;
+							w.ranged = true;
+						}
+						w.lo = NiPoint3((std::min)(w.lo.x, p.x), (std::min)(w.lo.y, p.y), (std::min)(w.lo.z, p.z));
+						w.hi = NiPoint3((std::max)(w.hi.x, p.x), (std::max)(w.hi.y, p.y), (std::max)(w.hi.z, p.z));
+					}
+				}
+			}
+			return;
+		}
+		if (NiNode* node = G::AsNode(a_obj))
+			for (UInt16 i = 0; i < G::ChildCount(node); i++)
+				SweepBones(G::Child(node, i), s, a_depth + 1);
+	}
 
 	void SceneSample()
 	{
@@ -733,6 +801,8 @@ namespace
 				s.chain = s.man ? AimChainState(a) : -1;
 			}
 			s.frames++;
+			if (sceneFrame % 3 == 0)
+				SweepBones(G::Root(a), s, 0);
 			if (s.man) {
 				// in anything: an opening, a mouth or a gripping hand (an oral or a handjob scene is not a miss)
 				const float d = AimDepth(a->formID);
@@ -754,6 +824,7 @@ namespace
 			sceneOn = true;
 			sceneStart = Clock::now();
 		}
+		sceneFrame++;
 	}
 
 	void SceneReport()
@@ -787,6 +858,65 @@ namespace
 						"Her body has no Anatomy genitals there: she is clothed in the scene, or her FemaleBody.nif is not "
 						"Anatomy's (another body mod wins it, or a BodySlide build of another body).");
 			}
+		}
+		// skin bound to bones outside the skeleton: they stay where they were bound while the body moves, and the skin
+		// weighted to them stretches into sheets (A-14's nailed parts; the women's check above names the breasts)
+		for (auto& [id, s] : sceneSeen) {
+			std::vector<std::string> loose;
+			for (auto& [name, w] : s.bones)
+				if (w.looseSamples * 5 >= w.samples && w.looseSamples > 0)   // held, not the moment AAF undresses
+					loose.push_back(name + " (" + std::to_string(w.samples ? 100 * w.looseSamples / w.samples : 0) + "%)");
+			if (loose.empty())
+				continue;
+			std::string list;
+			for (size_t i = 0; i < loose.size() && i < 12; i++)
+				list += (i ? ", " : "") + loose[i];
+			r.text << "  " << s.name << ": skin bound to bones outside the skeleton (they stay behind when the body moves): "
+			       << list << (loose.size() > 12 ? ", ..." : "") << "\n";
+			r.Problem(s.name + "'s skin is bound to " + std::to_string(loose.size()) + " bone(s) the skeleton does not move (" +
+					loose.front() + (loose.size() > 1 ? ", ..." : "") + ").",
+				"Those parts stay where they were bound while the body moves and stretch into sheets in scenes. The body or "
+				"outfit was made for another skeleton (a skeleton mod missing, or overridden), or the engine did not add "
+				"Anatomy's own bones to this actor. Send this file.");
+		}
+		// skinned shapes with empty bone slots: their vertices weighted there are drawn toward nothing (sheets, spikes)
+		for (auto& [id, s] : sceneSeen) {
+			if (s.nullBones.empty())
+				continue;
+			std::string list;
+			for (auto& [shape, n] : s.nullBones)
+				list += (list.empty() ? "" : ", ") + shape;
+			r.text << "  " << s.name << ": skinned shapes with empty bone slots: " << list << "\n";
+			r.Problem(s.name + "'s " + s.nullBones.begin()->first + " is skinned to a bone that is not there.",
+				"Its vertices weighted to it are drawn toward nothing and stretch into sheets or spikes. The mesh names a bone "
+				"this actor's skeleton lacks; send this file.");
+		}
+		// bones swept off their place: the skin weighted to them tears into sheets ("wings", spikes)
+		for (auto& [id, s] : sceneSeen) {
+			std::vector<std::pair<float, std::string>> swept;
+			for (auto& [name, w] : s.bones) {
+				if (_stricmp(name.c_str(), "COM") == 0 || _stricmp(name.c_str(), "Root") == 0)
+					continue;   // the whole body moving: the scene's placement, not a tear (names come in any case)
+				const NiPoint3 d = w.hi - w.lo;
+				const float range = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+				if (range >= kBoneSwept)
+					swept.emplace_back(range, name);
+			}
+			if (swept.empty())
+				continue;
+			std::sort(swept.begin(), swept.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+			r.text << "  " << s.name << ": bones that moved off their place (their skin stretches with them):";
+			for (size_t i = 0; i < swept.size() && i < 6; i++) {
+				char buf[96];
+				_snprintf_s(buf, sizeof(buf), _TRUNCATE, " %s %.1f", swept[i].second.c_str(), swept[i].first);
+				r.text << buf << (i + 1 < swept.size() && i < 5 ? "," : "");
+			}
+			r.text << " units\n";
+			if (swept.front().first >= kBoneFlung)
+				r.Problem(s.name + "'s " + swept.front().second + " moved " + std::to_string((int)swept.front().first) +
+					" units off its place during the scene.",
+					"The skin weighted to it stretches into a sheet or a spike. A physics setting that moves that bone "
+					"(Anatomy's, your own ocbp.ini, or another physics mod) flings it; send this file if you do not know which.");
 		}
 		if (AimOn() && manAimed && womanOpen && !manInside)
 			r.Problem("In the first scene the penis never went into her (nor a mouth or hand).",
@@ -827,6 +957,7 @@ namespace Health
 		sceneArmed = true;
 		sceneOn = false;
 		sceneSeen.clear();
+		sceneFrame = 0;
 	}
 
 	void Tick()
