@@ -12,6 +12,7 @@
 #include "FaceAuthority.h"
 #include "Mouth.h"
 #include "SimObj.h"
+#include "Strands.h"
 
 
 #include <windows.h>
@@ -484,6 +485,17 @@ namespace
 			G::Local(nodes[i]).scale = h.baseScale[i];
 		UpdateWorldFrom(nodes[0], G::World(G::Parent(nodes[0])));
 		h.wrote = false;
+	}
+
+	// Climax(Actor[] akActors): a stage tagged CLIMAX began (Anatomy:Arousal, AAF's animation events); fluid strands
+	void Climax(std::monostate, std::vector<Actor*> actors)
+	{
+		std::vector<unsigned int> ids;
+		for (Actor* a : actors)
+			if (a)
+				ids.push_back(a->formID);
+		if (!ids.empty())
+			Strands::Climax(ids);
 	}
 
 	// SetBusy(Actor[] akBusy): everyone in an AAF scene near the player, from Anatomy:Arousal's tick.
@@ -1056,6 +1068,7 @@ bool AimSeesScene(unsigned int formID)
 bool RegisterAimFuncs(RE::BSScript::IVirtualMachine* vm)
 {
 	vm->BindNativeMethod("AnatomyAim"sv, "SetBusy"sv, SetBusy, true);   // true: NoWait, as the classic flag
+	vm->BindNativeMethod("AnatomyAim"sv, "Climax"sv, Climax, true);
 	return true;
 }
 

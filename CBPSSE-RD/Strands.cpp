@@ -26,7 +26,8 @@ namespace Strands
 		// 1.2.6 shipped 10, 1.2.7 ships 16 (smoother bends). Either engine runs either mesh
 		constexpr int kMaxBones = 32;
 		constexpr int kMinBones = 4;
-		constexpr int kPool = 8;   // meshes\Anatomy\Strand\Strand00..07.nif: one Demand prototype each (no clone yet)
+		constexpr int kPool = 16;  // meshes\Anatomy\Strand\Strand00..15.nif: one Demand prototype each (no clone bound);
+		                           // a missing copy only leaves its slot off (Anatomy 1.2.6-1.2.7 ship 8)
 		constexpr float kPi = 3.14159265f;
 		// OStrands' StrandManager.cpp constants
 		constexpr int kSubsteps = 2;
@@ -78,6 +79,24 @@ namespace Strands
 			float fade = 0.4f;          // seconds to thin away once snapped
 			bool collide = true;        // pushed out of both bodies' collision spheres (OCBPCollisionConfig's)
 			float clearance = 2.0f;     // points this near an end are not pushed: the ends sit on (in) the bodies
+			// climax (AAF's CLIMAX-tagged stage, Anatomy:Arousal -> AnatomyAim.Climax): outside her, shots from his tip;
+			// inside her, drips from her opening once he is out (the owner unparked fluids, 2026-10-16)
+			bool climax = true;
+			int shotsMin = 3, shotsMax = 5;   // pulses per climax
+			float shotInterval = 0.7f;  // seconds between pulses
+			float shotSpeed = 180.0f;   // units per second at the tip, the first pulse; each next one 0.8 of the last
+			float shotSpread = 0.12f;   // off his shaft's axis, as a fraction of the speed
+			float shotGravity = 600.0f; // in flight (a stream is not yet a viscous strand)
+			float shotRadius = 0.16f;
+			float shotRelease = 0.25f;  // seconds the stream stays on his tip
+			float shotLife = 7.0f;      // seconds a landed stream lies there before it thins away
+			int drips = 5;              // per climax inside her
+			float dripInterval = 1.2f;  // seconds between drips
+			float dripRadius = 0.12f;
+			float dripStretch = 1.2f;   // seconds for a drip to grow by e
+			float dripMax = 6.0f;       // units: longer, it lets go of her
+			float dripLife = 4.0f;
+			float climaxCooldown = 20.0f;   // seconds: AAF repeats a climax stage's events; one climax per man in this time
 		} P;
 
 		// one end: a point fixed in a node's frame (OStrands' End), so it rides her pelvis or his shaft
@@ -109,8 +128,13 @@ namespace Strands
 			bool failed = false;
 			// the strand
 			bool active = false;
-			UInt32 owner = 0;            // her: whose 3D carries it
-			UInt32 partner = 0;
+			int kind = 0;                // 0 a bridge or pull-out (both ends fixed), 1 a shot, 2 a drip (a free end)
+			bool topPinned = true, bottomPinned = true;
+			bool landed = false;         // a shot's free end stuck to a body
+			float releaseAt = 0.0f;      // a shot: its age when it leaves his tip
+			float fixedRadius = 0.0f;    // shots and drips: their radius (bridges: by their volume)
+			UInt32 owner = 0;            // whose 3D carries it: her for a bridge or drip, him for a shot
+			UInt32 partner = 0;          // the other one (0: none)
 			std::uint64_t pair = 0;      // owner << 2 | opening kind
 			End top, bottom;
 			std::array<NiPoint3, kMaxBones> pos{}, prev{};
@@ -164,6 +188,8 @@ namespace Strands
 		struct PairState
 		{
 			UInt32 partner = 0;          // whose shaft held it last frame (0: none)
+			UInt32 lastPartner = 0;      // whose shaft held it last, and how long ago: Aim's lock flickers off between
+			float since = 1e9f;          // strokes, so a climax "inside" is one within a moment of a hold (10-16)
 			Swing stroke;
 			bool bridgePending = false;
 			float budget = 0.0f;
@@ -349,6 +375,10 @@ namespace Strands
 			const NiPoint3 a = a_top.World(), b = a_bottom.World();
 			const float length = Length(b - a);
 			s.active = true;
+			s.kind = 0;
+			s.topPinned = s.bottomPinned = true;
+			s.landed = false;
+			s.fixedRadius = 0.0f;
 			s.owner = a_owner;
 			s.partner = a_partner;
 			s.pair = a_pair;
@@ -368,6 +398,42 @@ namespace Strands
 			Attach(s, a_parent);
 		}
 
+		// a strand with one free end (OStrands' drip kind): every point at the top, moving with a_velocity along it so it
+		// streams out (a shot), or barely (a drip)
+		void StartFree(Strand& s, int a_kind, UInt32 a_owner, UInt32 a_partner, End a_top, const NiPoint3& a_velocity, float a_radius,
+			NiNode* a_parent)
+		{
+			const NiPoint3 a = a_top.World();
+			s.active = true;
+			s.kind = a_kind;
+			s.topPinned = true;
+			s.bottomPinned = false;
+			s.landed = false;
+			s.releaseAt = P.shotRelease;
+			s.fixedRadius = a_radius;
+			s.owner = a_owner;
+			s.partner = a_partner;
+			s.pair = 0;
+			s.top = std::move(a_top);
+			s.bottom = End{};
+			constexpr float kFrame = 1.0f / 60.0f;
+			for (int i = 0; i < s.n; i++) {
+				const float t = (float)i / (s.n - 1);
+				s.pos[i] = a + a_velocity * (t * kFrame);
+				s.prev[i] = a;
+			}
+			s.rest.fill(0.02f);
+			s.volume = 0.0f;
+			s.startLength = 0.0f;
+			s.radius = a_radius;
+			s.age = 0.0f;
+			s.fade = 1.0f;
+			s.fadeRate = 0.0f;
+			s.previousStep = 0.0f;
+			s.breakAt = -1;
+			Attach(s, a_parent);
+		}
+
 		void Snap(Strand& s, float a_fadeTime)
 		{
 			if (s.breakAt >= 0)
@@ -377,38 +443,59 @@ namespace Strands
 			s.fadeRate = 1.0f / (std::max)(a_fadeTime, 0.05f);
 		}
 
-		// both bodies' collision spheres this frame (CollisionHub's, positioned earlier in this scan)
-		void Spheres(const Actor* a_her, const Actor* a_him, std::vector<const Sphere*>& out)
+		// both bodies' collision spheres this frame (CollisionHub's, positioned earlier in this scan), with their node
+		struct Ball
+		{
+			const Sphere* sphere;
+			NiAVObject* node;
+		};
+		void Spheres(const Actor* a_her, const Actor* a_him, std::vector<Ball>& out)
 		{
 			out.clear();
 			if (!P.collide)
 				return;
 			for (const Collision& c : otherColliders)
-				if (!c.isProp && (c.colliderActor == a_her || c.colliderActor == a_him))
+				if (!c.isProp && c.colliderActor && (c.colliderActor == a_her || c.colliderActor == a_him))
 					for (const Sphere& sp : c.collisionSpheres)
-						out.push_back(&sp);
+						out.push_back(Ball{ &sp, c.CollisionObject });
 		}
 
 		// OStrands' Simulate: substeps of verlet under gravity, the ends pinned, a rope's constraints (none across a
 		// break), the points pushed out of the bodies (OStrands' capsules: here the engine's spheres; not within
 		// clearance of an end, which sits on or in a body), and viscosity: a stretched segment's rest flows after it
-		void Simulate(Strand& s, float a_delta, const std::vector<const Sphere*>& a_spheres)
+		void Simulate(Strand& s, float a_delta, const std::vector<Ball>& a_spheres)
 		{
-			const NiPoint3 a = s.top.World(), b = s.bottom.World();
-			const NiPoint3 gravity(0, 0, -P.gravity);
+			if (s.kind == 1 && s.topPinned && s.age >= s.releaseAt)
+				s.topPinned = false;   // the pulse is over: the stream leaves his tip
+			const NiPoint3 a = s.topPinned ? s.top.World() : s.pos[0];
+			const NiPoint3 b = s.bottomPinned ? s.bottom.World() : s.pos[s.n - 1];
+			const bool flying = s.kind == 1 && !s.landed;
+			const NiPoint3 gravity(0, 0, -(flying ? P.shotGravity : P.gravity));
 			const float h = a_delta / kSubsteps;
 			const float damping = h > 0.0f ? std::pow((std::clamp)(P.damping, 0.0f, 1.0f), h * 120.0f) : 1.0f;
 			const int last = s.n - 1;
+			const int first = s.topPinned ? 1 : 0, end = s.bottomPinned ? last : last + 1;   // the free points: [first, end)
 			for (int step = 0; step < kSubsteps; step++) {
-				const float scale = damping * (s.previousStep > 0.0f ? h / s.previousStep : 1.0f);
-				for (int i = 1; i < last; i++) {
+				const float scale = (flying ? 1.0f : damping) * (s.previousStep > 0.0f ? h / s.previousStep : 1.0f);
+				for (int i = first; i < end; i++) {
 					const NiPoint3 v = (s.pos[i] - s.prev[i]) * scale;
 					s.prev[i] = s.pos[i];
 					s.pos[i] = s.pos[i] + v + gravity * (h * h);
 				}
 				s.previousStep = h;
-				s.pos[0] = a;
-				s.pos[last] = b;
+				if (s.topPinned)
+					s.pos[0] = a;
+				if (s.bottomPinned)
+					s.pos[last] = b;
+				if (flying) {   // in flight the stream lengthens behind its free end: no segment holds it back
+					const float span = Length(s.pos[last] - s.pos[0]) / last;
+					for (int k = 0; k < last; k++)
+						s.rest[k] = (std::max)(s.rest[k], span);
+				} else if (s.kind == 2 && s.topPinned) {   // a drip grows under its own weight (OStrands' dripStretchTime)
+					const float growth = std::exp(h / (std::max)(P.dripStretch, 0.05f));
+					for (int k = 0; k < last; k++)
+						s.rest[k] *= growth;
+				}
 				for (int it = 0; it < kIterations; it++) {
 					for (int k = 0; k < last; k++) {
 						if (k == s.breakAt)
@@ -417,10 +504,15 @@ namespace Strands
 						const float l = Length(d);
 						if (l < 1e-5f)
 							continue;
+						if (s.kind != 0 && l <= s.rest[k])
+							continue;   // a free strand is a rope: it pulls, never pushes
 						const NiPoint3 fix = d * ((l - s.rest[k]) / l);
-						if (k == 0)
+						const bool pinnedA = k == 0 && s.topPinned, pinnedB = k + 1 == last && s.bottomPinned;
+						if (pinnedA && pinnedB)
+							continue;
+						if (pinnedA)
 							s.pos[k + 1] = s.pos[k + 1] - fix;
-						else if (k + 1 == last)
+						else if (pinnedB)
 							s.pos[k] = s.pos[k] + fix;
 						else {
 							s.pos[k] = s.pos[k] + fix * 0.5f;
@@ -428,12 +520,16 @@ namespace Strands
 						}
 					}
 				}
-				for (int i = 1; i < last && !a_spheres.empty(); i++) {
-					if (Length(s.pos[i] - a) < P.clearance || Length(s.pos[i] - b) < P.clearance)
+				for (int i = first; i < end && !a_spheres.empty(); i++) {
+					if ((s.topPinned && Length(s.pos[i] - a) < P.clearance) || (s.bottomPinned && Length(s.pos[i] - b) < P.clearance))
 						continue;
+					if (s.kind == 1 && s.age < 0.15f)
+						continue;   // a shot leaves his own body first
 					const NiPoint3 before = s.pos[i];
 					bool moved = false;
-					for (const Sphere* sp : a_spheres) {
+					NiAVObject* hitNode = nullptr;
+					for (const Ball& ball : a_spheres) {
+						const Sphere* sp = ball.sphere;
 						const NiPoint3 d = s.pos[i] - sp->worldPos;
 						const float dist = Length(d);
 						const float limit = (float)sp->radius + s.radius + kSkinMargin;
@@ -441,6 +537,14 @@ namespace Strands
 							continue;
 						s.pos[i] = sp->worldPos + (dist > 1e-4f ? d * (1.0f / dist) : NiPoint3(0, 0, 1)) * limit;
 						moved = true;
+						hitNode = ball.node;
+					}
+					// a shot's free end sticks where it lands, fixed in that body part's node from now on
+					if (moved && flying && i == last && hitNode && !s.bottomPinned) {
+						s.bottom = End::At(hitNode, s.pos[i]);
+						s.bottomPinned = true;
+						s.landed = true;
+						s.age = (std::min)(s.age, 1.0f);
 					}
 					if (moved) {
 						s.prev[i] = s.prev[i] + (s.pos[i] - before);
@@ -458,11 +562,21 @@ namespace Strands
 			for (int k = 0; k < last; k++)
 				if (k != s.breakAt)
 					total += Length(s.pos[k + 1] - s.pos[k]);
-			s.radius = std::sqrt(s.volume / (kPi * (std::max)(total, 0.01f)));
 			s.age += a_delta;
-			if (s.breakAt < 0 && (s.radius < P.minRadius || total - s.startLength > P.maxLength || s.age > P.life))
-				Snap(s, P.fade);
-			if (s.breakAt >= 0)
+			if (s.kind == 0) {
+				s.radius = std::sqrt(s.volume / (kPi * (std::max)(total, 0.01f)));
+				if (s.breakAt < 0 && (s.radius < P.minRadius || total - s.startLength > P.maxLength || s.age > P.life))
+					Snap(s, P.fade);
+			} else {
+				s.radius = s.fixedRadius;
+				if (s.kind == 2 && s.topPinned && (total > P.dripMax || s.age > P.dripLife))
+					s.topPinned = false;   // too long or too old: the drip lets go of her and falls
+				const bool done = s.kind == 1 ? (s.landed ? s.age > P.shotLife : s.age > 1.6f)   // landed / missed every body
+				                              : !s.topPinned && s.age > P.dripLife + 0.8f;
+				if (s.fadeRate <= 0.0f && done)
+					s.fadeRate = 1.0f / (std::max)(P.fade, 0.05f);
+			}
+			if (s.breakAt >= 0 || (s.kind != 0 && s.fadeRate > 0.0f))
 				s.fade -= s.fadeRate * a_delta;
 		}
 
@@ -475,7 +589,13 @@ namespace Strands
 			NiPoint3 lo = s.pos[0], hi = s.pos[0];
 			for (int i = 0; i <= last; i++) {
 				const float t = (float)i / last;
-				float r = s.radius * (1.0f + 0.6f * (1.0f - std::sin(kPi * t)));
+				float r;
+				if (s.kind == 2)        // OStrands' drip: a bead at the bottom
+					r = s.radius * (i == last ? 2.2f : i == last - 1 ? 1.4f : 1.0f);
+				else if (s.kind == 1)   // a stream: fuller at its leading end
+					r = s.radius * (0.7f + 0.6f * t);
+				else
+					r = s.radius * (1.0f + 0.6f * (1.0f - std::sin(kPi * t)));
 				if (s.breakAt >= 0 && (i == s.breakAt || i == s.breakAt + 1))
 					r = 0.0f;
 				r *= (std::max)(s.fade, 0.0f) * (std::min)(s.age / kFadeIn, 1.0f);
@@ -579,6 +699,134 @@ namespace Strands
 			}
 		}
 
+		// ---- climax (2026-10-16): the queue from Papyrus (AnatomyAim.Climax), shots and drips ----
+		std::mutex climaxLock;              // Papyrus' thread queues, the scan's Tick drains
+		std::vector<std::vector<UInt32>> climaxQueue;
+		std::unordered_map<UInt32, float> lastClimax;   // his formID -> seconds since; one climax per cooldown
+		struct Emitter
+		{
+			UInt32 him = 0, her = 0;
+			int left = 0;
+			float next = 0.0f, speed = 0.0f;
+		};
+		std::vector<Emitter> emitters;
+		struct Reservoir
+		{
+			UInt32 her = 0;
+			int kind = 0;
+			int drips = 0;
+			float next = 0.0f, age = 0.0f;
+		};
+		std::vector<Reservoir> reservoirs;
+
+		// one climax: each actor of the stage with a shaft chain; inside an opening Aim holds, drips from it after he is
+		// out; outside, pulses of shots from his tip toward whoever is with him
+		void StartClimax(const std::vector<UInt32>& a_actors)
+		{
+			for (UInt32 id : a_actors) {
+				Actor* him = ActorOf(id);
+				std::vector<NiAVObject*> chain;
+				if (!him || !AimChain(him, chain) || chain.size() < 2)
+					continue;
+				auto seen = lastClimax.find(id);
+				if (seen != lastClimax.end() && seen->second < P.climaxCooldown)
+					continue;
+				lastClimax[id] = 0.0f;
+				UInt32 other = 0;
+				for (UInt32 o : a_actors)
+					if (o != id)
+						other = o;
+				bool inside = false;
+				for (auto& [key, st] : pairs)
+					if (st.lastPartner == id && st.since < 1.5f) {
+						reservoirs.push_back(Reservoir{ (UInt32)(key >> 2), (int)(key & 3), P.drips, 0.6f, 0.0f });
+						inside = true;
+						Note("a climax inside", (UInt32)(key >> 2), (int)(key & 3), id, 0.0f);
+						break;
+					}
+				if (!inside) {
+					const int span = (std::max)(0, P.shotsMax - P.shotsMin);
+					const int pulses = P.shotsMin + (int)(Random01() * (span + 0.999f));
+					emitters.push_back(Emitter{ id, other, pulses, 0.0f, P.shotSpeed });
+					Note("a climax outside", other, -1, id, (float)pulses);
+				}
+			}
+		}
+
+		void SpawnShot(Emitter& e)
+		{
+			Actor* him = ActorOf(e.him);
+			std::vector<NiAVObject*> chain;
+			NiNode* parent = him ? G::AsNode(G::Root(him)) : nullptr;
+			if (!parent || !AimChain(him, chain) || chain.size() < 2)
+				return;
+			const NiPoint3 tip = G::World(chain.back()).pos;
+			NiPoint3 dir = Unit(tip - G::World(chain[chain.size() - 2]).pos);
+			const NiPoint3 jitter(Random01() - 0.5f, Random01() - 0.5f, Random01() - 0.5f);
+			dir = Unit(dir + jitter * (2.0f * P.shotSpread) + NiPoint3(0, 0, 0.1f));
+			if (Strand* s = Acquire()) {
+				StartFree(*s, 1, e.him, e.her, End::At(chain.back(), tip), dir * e.speed, P.shotRadius, parent);
+				Note("a shot", e.her, -1, e.him, e.speed);
+			}
+		}
+
+		void SpawnDrip(const Reservoir& r)
+		{
+			Actor* her = ActorOf(r.her);
+			NiNode* parent = her ? G::AsNode(G::Root(her)) : nullptr;
+			NiAVObject* node = her ? OpeningNode(her, r.kind) : nullptr;
+			if (!parent || !node)
+				return;
+			for (const AimOpening& o : AimOpenings())
+				if (o.owner == r.her && o.kind == r.kind) {
+					if (Strand* s = Acquire()) {
+						StartFree(*s, 2, r.her, 0, End::At(node, o.point), NiPoint3(0, 0, -8.0f), P.dripRadius, parent);
+						Note("a drip", r.her, r.kind, 0, 0.0f);
+					}
+					return;
+				}
+		}
+
+		void TickClimax(float dt)
+		{
+			std::vector<std::vector<UInt32>> queued;
+			{
+				std::lock_guard<std::mutex> l(climaxLock);
+				queued.swap(climaxQueue);
+			}
+			for (auto& c : lastClimax)
+				c.second += dt;
+			if (P.climax)
+				for (auto& q : queued)
+					StartClimax(q);
+			for (Emitter& e : emitters) {
+				e.next -= dt;
+				if (e.left > 0 && e.next <= 0.0f) {
+					SpawnShot(e);
+					e.left--;
+					e.next = P.shotInterval * (0.8f + 0.4f * Random01());
+					e.speed *= 0.8f;
+				}
+			}
+			emitters.erase(std::remove_if(emitters.begin(), emitters.end(), [](const Emitter& e) { return e.left <= 0; }),
+				emitters.end());
+			for (Reservoir& r : reservoirs) {
+				r.age += dt;
+				auto st = pairs.find(((std::uint64_t)r.her << 2) | (unsigned)r.kind);
+				if (st != pairs.end() && (st->second.partner || st->second.since < 1.0f))
+					continue;   // he is still in her (or was a moment ago: the lock flickers between strokes): it waits
+				r.next -= dt;
+				if (r.drips > 0 && r.next <= 0.0f) {
+					SpawnDrip(r);
+					r.drips--;
+					r.next = P.dripInterval * (0.7f + 0.6f * Random01());
+				}
+			}
+			reservoirs.erase(std::remove_if(reservoirs.begin(), reservoirs.end(),
+								 [](const Reservoir& r) { return r.drips <= 0 || r.age > 120.0f; }),
+				reservoirs.end());
+		}
+
 		void TickImpl()
 		{
 			std::lock_guard<std::mutex> guard(lock);
@@ -612,6 +860,11 @@ namespace Strands
 				NiNode* parent = her ? G::AsNode(G::Root(her)) : nullptr;
 				if (!parent)
 					continue;
+				if (partner) {
+					st.lastPartner = partner;
+					st.since = 0.0f;
+				} else
+					st.since += dt;
 				if (!partner) {
 					if (st.partner && st.partner != o.owner)
 						SpawnPullout(o, st.partner, her, parent);
@@ -640,25 +893,28 @@ namespace Strands
 					if (Actor* him = ActorOf(partner))
 						SpawnBridges(st, o, her, him, parent);
 			}
+			TickClimax(dt);   // before pairs are pruned: a climax reads who holds which opening this frame
 			for (auto it = pairs.begin(); it != pairs.end();)
 				it = it->second.seen != frame ? pairs.erase(it) : std::next(it);
 
-			std::vector<const Sphere*> spheres;
+			std::vector<Ball> spheres;
 			for (Strand& s : pool) {
 				if (!s.active)
 					continue;
-				Actor* her = ActorOf(s.owner);
-				NiNode* parent = her ? G::AsNode(G::Root(her)) : nullptr;
-				Actor* him = ActorOf(s.partner);
-				// her 3D replaced or gone, his gone, or an end's node no longer in a tree: the strand goes
-				if (!parent || parent != s.attachedTo || !him || !G::Root(him) || !s.top.node || !s.top.node->parent ||
-					!s.bottom.node || !s.bottom.node->parent) {
+				Actor* host = ActorOf(s.owner);
+				NiNode* parent = host ? G::AsNode(G::Root(host)) : nullptr;
+				Actor* other = s.partner ? ActorOf(s.partner) : nullptr;
+				// its carrier's 3D replaced or gone, the partner a bridge needs gone, or a fixed end's node no longer in a
+				// tree: the strand goes
+				if (!parent || parent != s.attachedTo || (s.kind == 0 && (!other || !G::Root(other))) ||
+					(s.topPinned && (!s.top.node || !s.top.node->parent)) ||
+					(s.bottomPinned && (!s.bottom.node || !s.bottom.node->parent))) {
 					Retire(s);
 					continue;
 				}
-				Spheres(her, him, spheres);
+				Spheres(host, other, spheres);
 				Simulate(s, dt, spheres);
-				if (s.breakAt >= 0 && s.fade <= 0.0f) {
+				if ((s.breakAt >= 0 || s.kind != 0) && s.fade <= 0.0f) {
 					Retire(s);
 					continue;
 				}
@@ -691,6 +947,23 @@ namespace Strands
 		P.life = (std::max)(0.5f, f("life", P.life));
 		P.fade = (std::max)(0.01f, f("fade", P.fade));
 		P.collide = reader.GetBoolean("Strands", "collide", true);
+		P.climax = reader.GetBoolean("Strands", "climax", true);
+		P.shotsMin = (std::clamp)(i("shotsMin", P.shotsMin), 0, kPool);
+		P.shotsMax = (std::clamp)(i("shotsMax", P.shotsMax), P.shotsMin, kPool);
+		P.shotInterval = (std::max)(0.05f, f("shotInterval", P.shotInterval));
+		P.shotSpeed = (std::max)(0.0f, f("shotSpeed", P.shotSpeed));
+		P.shotSpread = (std::max)(0.0f, f("shotSpread", P.shotSpread));
+		P.shotGravity = f("shotGravity", P.shotGravity);
+		P.shotRadius = (std::max)(0.01f, f("shotRadius", P.shotRadius));
+		P.shotRelease = (std::max)(0.0f, f("shotRelease", P.shotRelease));
+		P.shotLife = (std::max)(0.5f, f("shotLife", P.shotLife));
+		P.drips = (std::clamp)(i("drips", P.drips), 0, 50);
+		P.dripInterval = (std::max)(0.05f, f("dripInterval", P.dripInterval));
+		P.dripRadius = (std::max)(0.01f, f("dripRadius", P.dripRadius));
+		P.dripStretch = (std::max)(0.05f, f("dripStretch", P.dripStretch));
+		P.dripMax = (std::max)(0.5f, f("dripMax", P.dripMax));
+		P.dripLife = (std::max)(0.5f, f("dripLife", P.dripLife));
+		P.climaxCooldown = (std::max)(0.0f, f("climaxCooldown", P.climaxCooldown));
 		P.clearance = (std::max)(0.0f, f("clearance", P.clearance));
 	}
 
@@ -708,9 +981,23 @@ namespace Strands
 		}
 	}
 
+	void Climax(const std::vector<unsigned int>& a_actors)
+	{
+		std::lock_guard<std::mutex> l(climaxLock);
+		if (climaxQueue.size() < 16)
+			climaxQueue.push_back(a_actors);
+	}
+
 	void Reset()
 	{
+		{
+			std::lock_guard<std::mutex> l(climaxLock);
+			climaxQueue.clear();
+		}
 		std::lock_guard<std::mutex> guard(lock);
+		emitters.clear();
+		reservoirs.clear();
+		lastClimax.clear();
 		for (Strand& s : pool)
 			if (s.active || s.attachedTo)
 				Retire(s);

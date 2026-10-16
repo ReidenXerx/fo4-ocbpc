@@ -21,4 +21,7 @@ namespace Strands
 	void LoadConfig(INIReader& reader);   // ocbp.ini [Strands]
 	void Tick();                          // once per frame from the scan, after UpdateAims
 	void Reset();                         // a load or a new game: the old 3D is gone, so is our hold on its nodes
+	// a climax (AAF's CLIMAX-tagged stage; Anatomy:Arousal -> AnatomyAim.Climax, Papyrus' thread): the stage's actors.
+	// Each with a shaft chain: inside an opening Aim holds, drips from it once he is out; outside, shots from his tip
+	void Climax(const std::vector<unsigned int>& a_actors);
 }
