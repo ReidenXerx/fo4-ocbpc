@@ -54,12 +54,13 @@ namespace Fluid
 		constexpr float kCarry = 0.6f, kCarrySmoothing = 0.08f;
 		constexpr float kTailStart = 0.55f, kTailSlowdown = 0.85f;
 		constexpr float kOozeSpeed = 0.15f;
-		constexpr float kHoleRadius = 2.0f, kNozzleHole = 1.0f;   // units
+		constexpr float kHoleRadius = 3.0f, kNozzleHole = 1.0f;   // units (an opening sits inside the lower belly capsule)
 		constexpr float kExitDepth = 0.6f;       // units outside the entrance a reservoir comes out
 		constexpr float kGushShare = 0.35f, kGushRate = 40.0f, kSeep = 0.03f, kLeak = 0.12f, kLeakSpeed = 0.1f;
 		constexpr float kHangTime = 4.0f;
 		constexpr int kGlobMin = 12, kGlobMax = 40;
-		constexpr float kPlugLateral = 4.0f, kPlugDepth = 25.0f;  // units: his tip this near her axis, this deep, holds it in
+		constexpr float kPlugLateral = 6.0f, kPlugDepth = 40.0f;  // units: his tip this near her axis, this deep, holds it in
+		constexpr float kUnplugAfter = 0.6f;     // seconds out before it counts as a pull-out (Aim's lock flickers)
 		constexpr float kLostOpening = 2.0f;     // seconds an opening may be missing before its reservoir stops
 
 		constexpr int kBlobPool = 48;   // meshes\Anatomy\Fluid\Blob00..47.nif: one Demand prototype each (Strands.cpp)
@@ -87,6 +88,7 @@ namespace Fluid
 			float swallow = 0.5f;       // the chance a mouth swallows most of it when he pulls out (else it runs out)
 			bool collide = true;
 			float shaftRadius = 1.0f;   // units: his shaft as a capsule
+			float bodyScale = 1.0f;     // the body capsules' radii x this (Colliders)
 		} P;
 
 		// BSModelDB::Demand as Strands.cpp calls it (AE 2275154)
@@ -442,8 +444,12 @@ namespace Fluid
 			FluidSim::Solver solver{ kSpacing };
 			float accumulator = 0.0f;
 			float idle = 0.0f;               // seconds with nothing in it
+			float stat = 0.0f;
+			std::size_t lastCount = (std::size_t)-1;
+			bool listed = false;             // its colliders logged once
 		};
 		std::vector<std::unique_ptr<Domain>> domains;
+		bool collidersListed = false;   // the first pool's colliders, once a session
 		std::uint32_t nextId = 0;
 
 		V ToLocal(const Domain& d, const V& p) { return (p - d.origin) * (1.0f / kUnitsPerMeter); }
@@ -544,7 +550,7 @@ namespace Fluid
 			UInt32 her = 0, plug = 0;
 			int kind = 0;
 			std::vector<UInt32> hosts;
-			float volume = 0.0f, gush = 0.0f, release = 0.0f, age = 0.0f, lost = 0.0f;
+			float volume = 0.0f, gush = 0.0f, release = 0.0f, age = 0.0f, lost = 0.0f, out = 0.0f;
 			bool plugged = true;
 			std::uint32_t domain = 0, run = 0;
 			int glob = 0;
@@ -568,7 +574,7 @@ namespace Fluid
 		template <class... Args>
 		void Note(spdlog::format_string_t<Args...> a_fmt, Args&&... a_args)
 		{
-			if (logged >= 60)
+			if (logged >= 200)
 				return;
 			logged++;
 			spdlog::info(a_fmt, std::forward<Args>(a_args)...);
@@ -794,7 +800,12 @@ namespace Fluid
 			}
 			const V outward = inward * -1.0f;
 			const V exit = center + outward * kExitDepth;
-			const bool plugged = TipInside(r.plug, center, inward);
+			// in her: Aim's lock (his shaft in this opening this frame), else his tip past her entrance near her axis.
+			// The first test run (10-17) read every pulse as a pull-out: in Cowgirl his tip sat off the strict cone
+			const bool aim = r.kind == 2 ? AimOralPartner(r.her) == r.plug
+			                             : (((AimReceivedKinds(r.her) >> r.kind) & 1u) && AimPartner(r.her) == r.plug);
+			r.out = aim || TipInside(r.plug, center, inward) ? 0.0f : r.out + dt;
+			const bool plugged = r.out < kUnplugAfter;
 			if (r.plugged && !plugged && r.volume >= 1.0f) {
 				if (r.kind == 2 && Random01() < P.swallow) {
 					const float gulp = r.volume * 0.9f;
@@ -903,6 +914,41 @@ namespace Fluid
 						char key[96];
 						std::snprintf(key, sizeof(key), "%08X|%s|%zu", id, sp.NodeName.c_str(), k);
 						AddCollider(d, key, sp.worldPos, sp.worldPos, (float)sp.radius, dt);
+						if (!d.listed && !collidersListed)
+							Note("[fluid] pool {} collider {:08X} {} r {:.1f}", d.id, id, sp.NodeName, sp.radius);
+					}
+				}
+				d.listed = d.listed || !d.capsules.empty();
+				collidersListed = collidersListed || d.listed;
+				// the body itself, as capsules along the skeleton: OCBPCollisionConfig holds only what the physics needs
+				// (breasts, butt, hands), so a first test run (10-17) let everything fall through both of them to the
+				// floor. Radii in units for a scale-1 body, a little under the skin so drops sit on it, not above it
+				struct BodyPart
+				{
+					const char *a, *b;
+					float r;
+				};
+				static const BodyPart kParts[] = {
+					{ "SPINE1", "Chest", 7.0f }, { "Pelvis", "SPINE1", 5.0f },
+					{ "LLeg_Thigh", "LLeg_Calf", 5.0f }, { "RLeg_Thigh", "RLeg_Calf", 5.0f },
+					{ "LLeg_Calf", "LLeg_Foot", 3.2f }, { "RLeg_Calf", "RLeg_Foot", 3.2f },
+					{ "LArm_UpperArm", "LArm_ForeArm1", 3.0f }, { "RArm_UpperArm", "RArm_ForeArm1", 3.0f },
+					{ "LArm_ForeArm1", "LArm_Hand", 2.4f }, { "RArm_ForeArm1", "RArm_Hand", 2.4f },
+				};
+				for (UInt32 id : d.hosts) {
+					NiNode* root = RootOf(id);
+					if (!root)
+						continue;
+					const float scale = G::World(root).scale;
+					for (std::size_t k = 0; k < std::size(kParts); k++) {
+						const RE::BSFixedString na(kParts[k].a), nb(kParts[k].b);
+						NiAVObject* a = G::SkeletonNode(root, na);
+						NiAVObject* b = G::SkeletonNode(root, nb);
+						if (!a || !b)
+							continue;
+						char key[48];
+						std::snprintf(key, sizeof(key), "%08X|body|%zu", id, k);
+						AddCollider(d, key, G::World(a).pos, G::World(b).pos, kParts[k].r * P.bodyScale * scale, dt);
 					}
 				}
 				for (UInt32 id : d.hosts) {   // a shaft, segment by segment
@@ -1352,6 +1398,20 @@ namespace Fluid
 				Simulate(d, dt);
 				Expire(d, dt);
 				Draw(d, dt);
+				d.stat += dt;
+				if (d.stat >= 5.0f && d.particles.size() != d.lastCount) {   // stats: their own lines, not Note's budget
+					d.stat = 0.0f;
+					d.lastCount = d.particles.size();
+					int b = 0, rp = 0, touching = 0, asleep = 0;
+					for (const Slot& s : blobs)
+						b += s.used && s.domain == d.id;
+					for (const Slot& s : ropes)
+						rp += s.used && s.domain == d.id;
+					for (const auto& q : d.particles)
+						touching += q.touching, asleep += q.asleep;
+					spdlog::info("[fluid] pool {}: {} particles ({} on a body, {} asleep), {} blobs, {} ropes, {} colliders", d.id,
+						d.particles.size(), touching, asleep, b, rp, d.capsules.size());
+				}
 				i++;
 			}
 			for (Slot& s : blobs)
@@ -1390,6 +1450,7 @@ namespace Fluid
 		P.swallow = std::clamp(f("swallow", P.swallow), 0.0f, 1.0f);
 		P.collide = reader.GetBoolean("Fluid", "collide", true);
 		P.shaftRadius = std::clamp(f("shaftRadius", P.shaftRadius), 0.0f, 10.0f);
+		P.bodyScale = std::clamp(f("bodyScale", P.bodyScale), 0.0f, 3.0f);
 	}
 
 	void Tick()
