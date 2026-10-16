@@ -4,6 +4,7 @@
 // permission for F4SE stated in README.md.
 #include "Skirt.h"
 #include "Canal.h"
+#include "Strands.h"
 #include "config.h"
 #include "Game.h"
 #include "INIReader.h"
@@ -390,6 +391,7 @@ bool LoadConfig() {
     LoadEyeConfig(extrasSections.count("Eyes") ? anatomyExtras : configReader);
     LoadSkirtConfig(extrasSections.count("Skirt") ? anatomyExtras : configReader);   // roadmap 5
     LoadCanalConfig(extrasSections.count("Canal") ? anatomyExtras : configReader);
+    Strands::LoadConfig(extrasSections.count("Strands") ? anatomyExtras : configReader);
     LoadTubeConfig(extrasSections.count("Tube") ? anatomyExtras : configReader);
     Sound::LoadConfig(extrasSections.count("Sound") ? anatomyExtras : configReader);   // A-67
 

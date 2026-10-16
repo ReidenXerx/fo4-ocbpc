@@ -11,6 +11,7 @@
 #include "PapyrusOCBP.h"
 #include "Skirt.h"
 #include "Canal.h"
+#include "Strands.h"
 #include "CodeGuard.h"
 #include "Sound.h"
 #include "config.h"
@@ -86,6 +87,7 @@ namespace
 			Sound::Reset();   // fo4-anatomy (A-67): no moment or voice handle crosses into it
 			ResetSkirt();     // roadmap 5: nor any skirt's swing
 			ResetCanal();     // nor any canal held open
+			Strands::Reset(); // nor any strand on the old 3D
 			break;
 		case F4SE::MessagingInterface::kPreLoadGame:
 			ReleaseAllFaces("a save is loading");
@@ -93,6 +95,7 @@ namespace
 			Sound::Reset();
 			ResetSkirt();
 			ResetCanal();
+			Strands::Reset();
 			break;
 		case F4SE::MessagingInterface::kPostLoad:
 			ListenForFaces(F4SE::GetMessagingInterface());   // every plugin is loaded, Rapport too
