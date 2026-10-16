@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Game.h"
+#include "NiMath.h"   // only NiPoint3: the solver is game-free (tests/fluid builds it alone)
 
 namespace FluidSim
 {
@@ -31,6 +31,7 @@ namespace FluidSim
 		float life = 0.0f;         // seconds left
 		float link = 0.0f;         // rest length to the next particle of its run (0: not linked)
 		float idle = 0.0f;
+		float stuck = 0.0f;        // seconds it has touched a body without a break
 		float along = 0.0f;        // where on its capsule it touched (0 .. 1, a to b)
 		int surface = -1;          // the capsule it touches (-1: none)
 		std::uint32_t run = 0;     // the pulse or glob it came out in
@@ -65,8 +66,9 @@ namespace FluidSim
 		float viscosity = 50.0f;
 		float gravity = 9.81f;
 		float stretch = 5.0f;      // how fast a stretched link's rest follows its length (per second)
-		float friction = 30.0f;    // sliding on skin, lost per second
-		float grip = 0.4f;         // metres per second of sliding a contact holds back entirely
+		float friction = 60.0f;    // sliding on skin, lost per second (OStrands 30; 60 holds a landed shot, tests/fluid)
+		float grip = 2.5f;         // static friction: holds while the push along the skin is under grip (m/s^2): on our
+		                           // spheres up to sin(angle) = grip / (0.25 g), 2.5 about the equator (OStrands 0.4)
 	};
 
 	// a hash grid of points, cell = the search radius

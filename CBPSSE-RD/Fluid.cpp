@@ -75,7 +75,8 @@ namespace Fluid
 			float cohesion = 15.0f;
 			float viscosity = 50.0f;
 			float stretch = 5.0f;
-			float stickiness = 0.4f;    // the solver's grip
+			float stickiness = 2.5f;    // the solver's grip (tests/fluid: drops stay on a body, run past its equator)
+			float friction = 60.0f;     // the solver's sliding friction
 			float overflow = 0.5f;      // inside her: this share of each pulse backs out around his shaft at once
 			float lifetime = 45.0f;     // seconds a particle lasts
 			float fade = 6.0f;          // its last seconds it thins away
@@ -939,6 +940,7 @@ namespace Fluid
 			sp.viscosity = P.viscosity;
 			sp.stretch = P.stretch;
 			sp.grip = P.stickiness;
+			sp.friction = P.friction;
 			int steps = 0;
 			while (d.accumulator >= kStep && steps < kMaxSteps) {
 				d.solver.Step(d.particles, d.anchors, d.capsules, d.holeShapes, sp, kStep);
@@ -1375,6 +1377,7 @@ namespace Fluid
 		P.viscosity = std::clamp(f("viscosity", P.viscosity), 0.0f, 100.0f);
 		P.stretch = std::clamp(f("stretch", P.stretch), 0.0f, 30.0f);
 		P.stickiness = std::clamp(f("stickiness", P.stickiness), 0.0f, 10.0f);
+		P.friction = std::clamp(f("friction", P.friction), 0.0f, 200.0f);
 		P.overflow = std::clamp(f("overflow", P.overflow), 0.0f, 1.0f);
 		P.lifetime = std::clamp(f("lifetime", P.lifetime), 1.0f, 600.0f);
 		P.fade = std::clamp(f("fade", P.fade), 0.1f, P.lifetime);

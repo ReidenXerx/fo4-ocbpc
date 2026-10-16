@@ -26,6 +26,9 @@ namespace FluidSim
 		constexpr float kAnchorBreak = 12.0f, kAnchorFlow = 15.0f, kCreep = 0.035f;
 		constexpr std::size_t kMaxLoad = 64;
 		constexpr float kCohesionFloor = 1.0f;
+		// two linked particles both on a body this long: the thread has landed and is a smear now; its links let go,
+		// or the part hanging past a body's edge dragged all of it off through them, whatever the grip (tests/fluid)
+		constexpr float kLanded = 0.3f;
 
 		float Dot(const V& a, const V& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 		float Len2(const V& a) { return Dot(a, a); }
@@ -133,7 +136,11 @@ namespace FluidSim
 					p = closest + n * limit;
 				else if (a_pull && a_particles[i].touching && dist < c.r + reach && n.z > kHanging)
 					p = closest + n * limit;   // still wet on it: drawn back on (not under it, where it drips)
-				else
+				else if (!a_pull && dist < limit + 0.5f * h) {
+					// resting on it, not in it: still a contact. Counting only a particle pushed out let one that sat
+					// exactly on the surface lose its contact every other step, and with it the grip: every drop slid
+					// off a body-sized sphere in 5 s at any stickiness (tests/fluid, 10-17)
+				} else
 					continue;
 				contact[i] = (int)k;
 				along[i] = t;
@@ -197,10 +204,24 @@ namespace FluidSim
 			}
 			pull = pull * (a_params.cohesion / h);
 			V moving = p.vel;
-			if (p.touching)
-				moving = moving - p.carried + Carrier(a_capsules, p.surface, p.along);
 			const float g = p.touching ? a_params.gravity * kSkinGravity : a_params.gravity;
-			const V v = moving + (pull + V(0, 0, -g)) * a_dt;
+			V accel = pull + V(0, 0, -g);
+			if (p.touching && p.surface >= 0 && (std::size_t)p.surface < a_capsules.size()) {
+				const V carrier = Carrier(a_capsules, p.surface, p.along);
+				moving = moving - p.carried + carrier;
+				// static friction: when this step's push along the skin stays within the grip, it does not move the
+				// particle at all. The grip zeroed only the velocity, after gravity had already moved the position:
+				// every held drop crept down a sphere 0.1 degree a step (tests/fluid, 10-17)
+				const Capsule& c = a_capsules[p.surface];
+				const V n = Unit(p.pos - (c.a + (c.b - c.a) * p.along), V(0, 0, 1));
+				const V rel = moving - carrier;
+				const V relT = rel - n * Dot(rel, n), accT = accel - n * Dot(accel, n);
+				if (Len(relT + accT * a_dt) <= a_params.grip * a_dt) {
+					moving = carrier + n * Dot(rel, n);
+					accel = n * Dot(accel, n);
+				}
+			}
+			const V v = moving + accel * a_dt;
 			predicted[i] = p.pos + Limit(v, kMaxSpeed) * a_dt;
 			predicted[i].z = (std::max)(predicted[i].z, lift);
 		}
@@ -275,7 +296,7 @@ namespace FluidSim
 			const float l = Len(predicted[i + 1] - predicted[i]);
 			if (l > r)
 				r += (l - r) * flow;
-			if (r > kLinkBreak * h || l > kLinkSnap * r)
+			if (r > kLinkBreak * h || l > kLinkSnap * r || (a_particles[i].stuck > kLanded && a_particles[i + 1].stuck > kLanded))
 				r = 0.0f;
 		}
 		Collide(a_particles, a_capsules, a_holes, false);
@@ -349,6 +370,7 @@ namespace FluidSim
 			}
 			p.pos = predicted[i];
 			p.vel = v;
+			p.stuck = p.touching ? p.stuck + a_dt : 0.0f;
 			if (anchored[i] || p.touching || Len2(v) > kSleepSpeed * kSleepSpeed)
 				p.idle = 0.0f;
 			else if ((p.idle += a_dt) > kSleepTime)
