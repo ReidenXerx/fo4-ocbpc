@@ -17,6 +17,7 @@
 #include "ActorUtils.h"
 #include "Aim.h"
 #include "CollisionHub.h"
+#include "FaceAuthority.h"
 #include "FluidSim.h"
 #include "Hook.h"
 #include "NiMath.h"
@@ -577,6 +578,36 @@ namespace Fluid
 		// a mouth's state for faces (MouthState): her formID -> (state, until the clock)
 		std::mutex mouthLock;
 		std::unordered_map<UInt32, std::pair<int, float>> mouths;
+		std::unordered_map<UInt32, int> mouthsSent;   // what Rapport was last told (RFAM)
+
+		void SendMouths()
+		{
+			std::vector<std::pair<UInt32, int>> changed;
+			{
+				std::lock_guard<std::mutex> l(mouthLock);
+				for (auto it = mouths.begin(); it != mouths.end();) {
+					const int now = it->second.second > clock ? it->second.first : 0;
+					int& sent = mouthsSent[it->first];
+					if (now != sent) {
+						sent = now;
+						changed.emplace_back(it->first, now);
+					}
+					if (now == 0) {
+						mouthsSent.erase(it->first);
+						it = mouths.erase(it);
+					} else
+						++it;
+				}
+			}
+			auto* messaging = changed.empty() ? nullptr : F4SE::GetMessagingInterface();
+			for (const auto& [id, state] : changed) {
+				if (messaging) {
+					FaceAuthority::MouthFluidMessage m{ 1, id, (std::uint32_t)state };
+					messaging->Dispatch(FaceAuthority::kMouthFluid, &m, sizeof(m), nullptr);   // to everyone: Rapport keeps ours
+				}
+				spdlog::info("[fluid] {:08X}'s mouth: state {}", id, state);
+			}
+		}
 		void SetMouth(UInt32 a_her, int a_state, float a_for)
 		{
 			std::lock_guard<std::mutex> l(mouthLock);
@@ -1426,6 +1457,7 @@ namespace Fluid
 				else
 					i++;
 
+			SendMouths();
 			for (Slot& s : blobs)
 				s.used = false;
 			for (Slot& s : ropes)

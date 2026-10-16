@@ -1204,6 +1204,7 @@ void SayFaceHello()
 		FaceAuthority::kFeatureEngineLines | (react ? FaceAuthority::kFeatureReaction : 0u) |
 		FaceAuthority::kFeatureDepthBlend | FaceAuthority::kFeatureKnobs | FaceAuthority::kFeatureGenitalDepth |
 		FaceAuthority::kFeatureGlanceFace | FaceAuthority::kFeatureEasedFaces | FaceAuthority::kFeatureEyeRoll |
+		FaceAuthority::kFeatureMouthFluid |
 		(EyesTurn() ? FaceAuthority::kFeatureGlances : 0u) |
 		(Sound::Hooked() ? FaceAuthority::kFeatureSoundOverride : 0u) |
 		(Sound::CanPlay() ? FaceAuthority::kFeatureSoundEvents | FaceAuthority::kFeatureSoundPlay : 0u) };

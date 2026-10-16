@@ -99,6 +99,16 @@ namespace FaceAuthority
 		float volume;
 		std::uint32_t flags;
 	};
+	// 'RFAM' engine -> Rapport (ROADMAP 6, hello bit 13; agreed with Rapport 2026-10-17): her mouth's climax fluid, sent
+	// on every change (0 when it clears), from the scan thread; Rapport queues it. state 0 nothing, 1 full (his shaft
+	// in it), 2 running out of her lips, 3 swallowing (1.5 s). Rapport's faces hold it above the act's face
+	constexpr std::uint32_t kMouthFluid = 0x5246414D;
+	struct MouthFluidMessage
+	{
+		std::uint32_t version;   // 1
+		std::uint32_t formID;
+		std::uint32_t state;
+	};
 	constexpr std::uint32_t kVersion = 1;
 	// The hello's features: what this build does with a held face, so the sender can rely on it
 	constexpr std::uint32_t kFeatureSetClear = 1u << 0;      // set/clear, and the speaking bit (63)
@@ -118,6 +128,7 @@ namespace FaceAuthority
 	constexpr std::uint32_t kFeatureSoundOverride = 1u << 10;   // RFAU is applied: the SoundPlay mute is hooked (A-67)
 	constexpr std::uint32_t kFeatureSoundEvents = 1u << 11;     // RFAE is sent while the override is on (A-67)
 	constexpr std::uint32_t kFeatureSoundPlay = 1u << 12;       // RFAP is played at the actor's head (A-67)
+	constexpr std::uint32_t kFeatureMouthFluid = 1u << 13;      // RFAM is sent (the climax fluid's mouth, ROADMAP 6)
 	constexpr std::uint32_t kFeatureGenitalDepth = 1u << 6;  // the Deep face also blends by the depth of a shaft
 	                                                         // in her vagina or anus, and for him by his own
 	                                                         // depth in any opening (needs [Aim] on)
