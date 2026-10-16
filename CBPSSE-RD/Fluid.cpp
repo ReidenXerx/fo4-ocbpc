@@ -573,6 +573,18 @@ namespace Fluid
 		std::vector<Queued> queue;
 		std::uint32_t nextEmitter = 0, nextRun = 0;
 		LARGE_INTEGER lastTick{};
+		float clock = 0.0f;   // seconds of fluid ticks this session
+		// a mouth's state for faces (MouthState): her formID -> (state, until the clock)
+		std::mutex mouthLock;
+		std::unordered_map<UInt32, std::pair<int, float>> mouths;
+		void SetMouth(UInt32 a_her, int a_state, float a_for)
+		{
+			std::lock_guard<std::mutex> l(mouthLock);
+			auto& m = mouths[a_her];
+			if (m.first == 3 && m.second > clock && a_state != 3)
+				return;   // a swallow plays out
+			m = { a_state, clock + a_for };
+		}
 		int logged = 0;
 
 		template <class... Args>
@@ -828,6 +840,7 @@ namespace Fluid
 					const float gulp = r.volume * 0.9f;
 					r.volume -= gulp;
 					Note("[fluid] {:08X} swallows {:.0f}, {:.0f} left at her lips", r.her, gulp, r.volume);
+					SetMouth(r.her, 3, 1.5f);
 				}
 				const float gush = r.volume * kGushShare;
 				r.gush += gush;
@@ -835,6 +848,8 @@ namespace Fluid
 				Note("[fluid] {:08X} pulls out of {:08X}'s opening {}: {:.0f} gush, {:.0f} inside", r.plug, r.her, r.kind, gush, r.volume);
 			}
 			r.plugged = plugged;
+			if (r.kind == 2 && (r.volume >= 1.0f || r.gush >= 1.0f))
+				SetMouth(r.her, plugged ? 1 : 2, 0.3f);   // refreshed every frame while it lasts
 
 			Domain* d = FindDomain(r.domain);
 			if (!d) {
@@ -1370,6 +1385,7 @@ namespace Fluid
 			QueryPerformanceFrequency(&freq);
 			float dt = lastTick.QuadPart ? (float)(now.QuadPart - lastTick.QuadPart) / (float)freq.QuadPart : 0.0f;
 			lastTick = now;
+			clock += (std::min)((std::max)(dt, 0.0f), 0.05f);
 			dt = (std::min)((std::max)(dt, 0.0f), 0.05f);
 			if (dt <= 0.0f)
 				return;
@@ -1503,6 +1519,13 @@ namespace Fluid
 	{
 		std::lock_guard<std::mutex> guard(lock);
 		return P.enabled && LoadBlob(0) && LoadRope(0);
+	}
+
+	int MouthState(unsigned int her)
+	{
+		std::lock_guard<std::mutex> l(mouthLock);
+		auto it = mouths.find(her);
+		return it != mouths.end() && it->second.second > clock ? it->second.first : 0;
 	}
 
 	void Climax(unsigned int him, unsigned int other, unsigned int her, int kind)

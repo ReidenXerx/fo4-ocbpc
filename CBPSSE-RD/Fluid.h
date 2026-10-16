@@ -26,4 +26,7 @@ namespace Fluid
 	bool Ready();                         // [Fluid] on and the meshes load: Strands hands its climaxes over
 	// a climax: him, whoever is with him, and the opening he is in (her, 0 vagina 1 anus 2 mouth), or her = 0: outside
 	void Climax(unsigned int him, unsigned int other, unsigned int her, int kind);
+	// her mouth, for faces (Rapport, Papyrus AnatomyAim.MouthFluid): 0 nothing, 1 full (his shaft in it), 2 running
+	// out of her lips (he is out), 3 swallowing (1.5 s after she swallows)
+	int MouthState(unsigned int her);
 }

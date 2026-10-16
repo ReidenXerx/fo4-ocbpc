@@ -13,6 +13,7 @@
 #include "Mouth.h"
 #include "SimObj.h"
 #include "Strands.h"
+#include "Fluid.h"
 
 
 #include <windows.h>
@@ -485,6 +486,13 @@ namespace
 			G::Local(nodes[i]).scale = h.baseScale[i];
 		UpdateWorldFrom(nodes[0], G::World(G::Parent(nodes[0])));
 		h.wrote = false;
+	}
+
+	// MouthFluid(Actor akActor) -> Int: her mouth's fluid for faces (Fluid.h MouthState: 0 none, 1 full, 2 running out,
+	// 3 swallowing)
+	std::int32_t MouthFluid(std::monostate, Actor* actor)
+	{
+		return actor ? Fluid::MouthState(actor->formID) : 0;
 	}
 
 	// Climax(Actor[] akActors): a stage tagged CLIMAX began (Anatomy:Arousal, AAF's animation events); fluid strands
@@ -1069,6 +1077,7 @@ bool RegisterAimFuncs(RE::BSScript::IVirtualMachine* vm)
 {
 	vm->BindNativeMethod("AnatomyAim"sv, "SetBusy"sv, SetBusy, true);   // true: NoWait, as the classic flag
 	vm->BindNativeMethod("AnatomyAim"sv, "Climax"sv, Climax, true);
+	vm->BindNativeMethod("AnatomyAim"sv, "MouthFluid"sv, MouthFluid, true);
 	return true;
 }
 
