@@ -12,6 +12,7 @@
 
 #include "ActorEntry.h"
 #include "Aim.h"
+#include "CollisionHub.h"
 #include "Hook.h"
 #include "NiMath.h"
 
@@ -21,7 +22,10 @@ namespace Strands
 {
 	namespace
 	{
-		constexpr int kBones = 10;
+		// a strand's points: as many as its mesh has bones (Strand00, Strand01, ... read at load), at most kMaxBones; Anatomy
+		// 1.2.6 shipped 10, 1.2.7 ships 16 (smoother bends). Either engine runs either mesh
+		constexpr int kMaxBones = 32;
+		constexpr int kMinBones = 4;
 		constexpr int kPool = 8;   // meshes\Anatomy\Strand\Strand00..07.nif: one Demand prototype each (no clone yet)
 		constexpr float kPi = 3.14159265f;
 		// OStrands' StrandManager.cpp constants
@@ -32,6 +36,8 @@ namespace Strands
 		constexpr float kSwingRelax = 0.1f;
 		constexpr float kMinSwing = 0.6f;
 		constexpr float kStrokeNear = 0.1f, kStrokeNearMax = 0.6f, kStrokeGap = 0.1f, kStrokeGapMax = 0.6f;
+		constexpr float kSkinMargin = 0.15f;    // OStrands: kept this far off a body
+		constexpr float kSkinFriction = 0.3f;   // OStrands: of the velocity along a body, lost on touching it
 
 		// BSModelDB::DBTraits::ArgsType (CommonLibF4): lod fade mult, load level, then the flag bits. The AE callers
 		// set prepareAfterLoad, useErrorMarker, performProcess and loadTextures (byte 0x2D) and clear the rest.
@@ -70,6 +76,8 @@ namespace Strands
 			float viscosity = 4.0f;     // how fast a stretched segment's rest length follows it
 			float life = 4.0f;          // seconds: still whole by then, it snaps
 			float fade = 0.4f;          // seconds to thin away once snapped
+			bool collide = true;        // pushed out of both bodies' collision spheres (OCBPCollisionConfig's)
+			float clearance = 2.0f;     // points this near an end are not pushed: the ends sit on (in) the bodies
 		} P;
 
 		// one end: a point fixed in a node's frame (OStrands' End), so it rides her pelvis or his shaft
@@ -95,7 +103,8 @@ namespace Strands
 		{
 			// the mesh: its own Demand prototype, loaded at its first use
 			RE::NiPointer<NiNode> root;
-			std::array<NiAVObject*, kBones> bones{};
+			std::array<NiAVObject*, kMaxBones> bones{};
+			int n = 0;                   // its points: the mesh's bone count
 			NiNode* attachedTo = nullptr;
 			bool failed = false;
 			// the strand
@@ -104,8 +113,8 @@ namespace Strands
 			UInt32 partner = 0;
 			std::uint64_t pair = 0;      // owner << 2 | opening kind
 			End top, bottom;
-			std::array<NiPoint3, kBones> pos{}, prev{};
-			std::array<float, kBones - 1> rest{};
+			std::array<NiPoint3, kMaxBones> pos{}, prev{};
+			std::array<float, kMaxBones - 1> rest{};
 			float volume = 0.0f;
 			float startLength = 1.0f;
 			float radius = 0.0f;
@@ -254,15 +263,19 @@ namespace Strands
 					path, error);
 				return false;
 			}
-			for (int i = 0; i < kBones; i++) {
+			s.n = 0;
+			for (int i = 0; i < kMaxBones; i++) {
 				char name[16];
 				std::snprintf(name, sizeof(name), "Strand%02d", i);
-				s.bones[i] = G::Find(model.get(), name);
-				if (!s.bones[i]) {
-					spdlog::info("[strands] meshes\\{} has no {}: that strand stays off", path, name);
-					return false;
-				}
+				if (!(s.bones[i] = G::Find(model.get(), name)))
+					break;
+				s.n = i + 1;
 			}
+			if (s.n < kMinBones) {
+				spdlog::info("[strands] meshes\\{} has {} Strand bones (at least {}): that strand stays off", path, s.n, kMinBones);
+				return false;
+			}
+			G::Once("strands|bones|" + std::to_string(s.n), "[strands] a strand mesh with {} points", s.n);
 			// the identity, spelt out: NiTransform() zero-fills its matrix (NiMatrix43() : arr{}), and a zero rotation
 			// let the game's own update collapse every child onto the root each frame (2026-10-16, runs 1-6)
 			NiTransform identity;
@@ -341,9 +354,9 @@ namespace Strands
 			s.pair = a_pair;
 			s.top = std::move(a_top);
 			s.bottom = std::move(a_bottom);
-			for (int i = 0; i < kBones; i++)
-				s.pos[i] = s.prev[i] = a + (b - a) * ((float)i / (kBones - 1));
-			s.rest.fill((std::max)(length / (kBones - 1), 0.02f));
+			for (int i = 0; i < s.n; i++)
+				s.pos[i] = s.prev[i] = a + (b - a) * ((float)i / (s.n - 1));
+			s.rest.fill((std::max)(length / (s.n - 1), 0.02f));
 			s.volume = kPi * P.radius * P.radius * (std::max)(length, 1.0f);
 			s.startLength = length;
 			s.radius = P.radius;
@@ -359,20 +372,33 @@ namespace Strands
 		{
 			if (s.breakAt >= 0)
 				return;
-			const int mid = kBones / 2 - 2 + (int)(Random01() * 3.0f);   // OStrands: kBones / 2 - 2 .. kBones / 2
-			s.breakAt = (std::clamp)(mid, 0, kBones - 2);
+			const int mid = s.n / 2 - 2 + (int)(Random01() * 3.0f);   // OStrands: n / 2 - 2 .. n / 2
+			s.breakAt = (std::clamp)(mid, 0, s.n - 2);
 			s.fadeRate = 1.0f / (std::max)(a_fadeTime, 0.05f);
 		}
 
-		// OStrands' Simulate without the body collision: substeps of verlet under gravity, the ends pinned, a rope's
-		// constraints (none across a break), and viscosity: a stretched segment's rest length flows after it
-		void Simulate(Strand& s, float a_delta)
+		// both bodies' collision spheres this frame (CollisionHub's, positioned earlier in this scan)
+		void Spheres(const Actor* a_her, const Actor* a_him, std::vector<const Sphere*>& out)
+		{
+			out.clear();
+			if (!P.collide)
+				return;
+			for (const Collision& c : otherColliders)
+				if (!c.isProp && (c.colliderActor == a_her || c.colliderActor == a_him))
+					for (const Sphere& sp : c.collisionSpheres)
+						out.push_back(&sp);
+		}
+
+		// OStrands' Simulate: substeps of verlet under gravity, the ends pinned, a rope's constraints (none across a
+		// break), the points pushed out of the bodies (OStrands' capsules: here the engine's spheres; not within
+		// clearance of an end, which sits on or in a body), and viscosity: a stretched segment's rest flows after it
+		void Simulate(Strand& s, float a_delta, const std::vector<const Sphere*>& a_spheres)
 		{
 			const NiPoint3 a = s.top.World(), b = s.bottom.World();
 			const NiPoint3 gravity(0, 0, -P.gravity);
 			const float h = a_delta / kSubsteps;
 			const float damping = h > 0.0f ? std::pow((std::clamp)(P.damping, 0.0f, 1.0f), h * 120.0f) : 1.0f;
-			constexpr int last = kBones - 1;
+			const int last = s.n - 1;
 			for (int step = 0; step < kSubsteps; step++) {
 				const float scale = damping * (s.previousStep > 0.0f ? h / s.previousStep : 1.0f);
 				for (int i = 1; i < last; i++) {
@@ -402,6 +428,25 @@ namespace Strands
 						}
 					}
 				}
+				for (int i = 1; i < last && !a_spheres.empty(); i++) {
+					if (Length(s.pos[i] - a) < P.clearance || Length(s.pos[i] - b) < P.clearance)
+						continue;
+					const NiPoint3 before = s.pos[i];
+					bool moved = false;
+					for (const Sphere* sp : a_spheres) {
+						const NiPoint3 d = s.pos[i] - sp->worldPos;
+						const float dist = Length(d);
+						const float limit = (float)sp->radius + s.radius + kSkinMargin;
+						if (dist >= limit)
+							continue;
+						s.pos[i] = sp->worldPos + (dist > 1e-4f ? d * (1.0f / dist) : NiPoint3(0, 0, 1)) * limit;
+						moved = true;
+					}
+					if (moved) {
+						s.prev[i] = s.prev[i] + (s.pos[i] - before);
+						s.prev[i] = s.prev[i] + (s.pos[i] - s.prev[i]) * kSkinFriction;
+					}
+				}
 				const float flow = (std::min)(1.0f, P.viscosity * h);
 				for (int k = 0; k < last; k++) {
 					const float l = Length(s.pos[k + 1] - s.pos[k]);
@@ -426,7 +471,7 @@ namespace Strands
 		void Pose(Strand& s)
 		{
 			const NiTransform& pw = G::World(s.attachedTo);
-			constexpr int last = kBones - 1;
+			const int last = s.n - 1;
 			NiPoint3 lo = s.pos[0], hi = s.pos[0];
 			for (int i = 0; i <= last; i++) {
 				const float t = (float)i / last;
@@ -598,6 +643,7 @@ namespace Strands
 			for (auto it = pairs.begin(); it != pairs.end();)
 				it = it->second.seen != frame ? pairs.erase(it) : std::next(it);
 
+			std::vector<const Sphere*> spheres;
 			for (Strand& s : pool) {
 				if (!s.active)
 					continue;
@@ -610,7 +656,8 @@ namespace Strands
 					Retire(s);
 					continue;
 				}
-				Simulate(s, dt);
+				Spheres(her, him, spheres);
+				Simulate(s, dt, spheres);
 				if (s.breakAt >= 0 && s.fade <= 0.0f) {
 					Retire(s);
 					continue;
@@ -643,6 +690,8 @@ namespace Strands
 		P.viscosity = (std::max)(0.0f, f("viscosity", P.viscosity));
 		P.life = (std::max)(0.5f, f("life", P.life));
 		P.fade = (std::max)(0.01f, f("fade", P.fade));
+		P.collide = reader.GetBoolean("Strands", "collide", true);
+		P.clearance = (std::max)(0.0f, f("clearance", P.clearance));
 	}
 
 	void Tick()
