@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ActorEntry.h"
+#include "ActorUtils.h"
 #include "Aim.h"
 #include "CollisionHub.h"
 #include "FluidSim.h"
@@ -89,6 +90,8 @@ namespace Fluid
 			bool collide = true;
 			float shaftRadius = 1.0f;   // units: his shaft as a capsule
 			float bodyScale = 1.0f;     // the body capsules' radii x this (Colliders)
+			float dropScale = 1.8f;     // a drop drawn this much larger than its volume (only drawn: the physics keeps it)
+			float blobScale = 1.25f;    // a blob drawn this much larger about its middle
 		} P;
 
 		// BSModelDB::Demand as Strands.cpp calls it (AE 2275154)
@@ -922,24 +925,30 @@ namespace Fluid
 				collidersListed = collidersListed || d.listed;
 				// the body itself, as capsules along the skeleton: OCBPCollisionConfig holds only what the physics needs
 				// (breasts, butt, hands), so a first test run (10-17) let everything fall through both of them to the
-				// floor. Radii in units for a scale-1 body, a little under the skin so drops sit on it, not above it
+				// floor. Radii in units for a scale-1 body: the median distance of the skin from each segment, measured on
+				// the game's built women's (Anatomy 3BBB) and men's (BodyTalk) bodies (fo4-anatomy
+				// studies/fluid_body_capsules.py, 10-17): half the skin is outside the capsule, so fluid sits ON it. The
+				// lower belly takes the 25th percentile (7.5 / 4.0): its median (10.4 / 8.1) wrapped the crotch, and fluid
+				// leaving her opening was pushed away from it to the capsule's edge
 				struct BodyPart
 				{
 					const char *a, *b;
-					float r;
+					float woman, man;
 				};
 				static const BodyPart kParts[] = {
-					{ "SPINE1", "Chest", 7.0f }, { "Pelvis", "SPINE1", 5.0f },
-					{ "LLeg_Thigh", "LLeg_Calf", 5.0f }, { "RLeg_Thigh", "RLeg_Calf", 5.0f },
-					{ "LLeg_Calf", "LLeg_Foot", 3.2f }, { "RLeg_Calf", "RLeg_Foot", 3.2f },
-					{ "LArm_UpperArm", "LArm_ForeArm1", 3.0f }, { "RArm_UpperArm", "RArm_ForeArm1", 3.0f },
-					{ "LArm_ForeArm1", "LArm_Hand", 2.4f }, { "RArm_ForeArm1", "RArm_Hand", 2.4f },
+					{ "SPINE1", "Chest", 7.3f, 9.3f }, { "Pelvis", "SPINE1", 7.5f, 4.0f },
+					{ "LLeg_Thigh", "LLeg_Calf", 6.2f, 6.4f }, { "RLeg_Thigh", "RLeg_Calf", 6.2f, 6.4f },
+					{ "LLeg_Calf", "LLeg_Foot", 3.4f, 3.7f }, { "RLeg_Calf", "RLeg_Foot", 3.4f, 3.7f },
+					{ "LArm_UpperArm", "LArm_ForeArm1", 3.4f, 3.7f }, { "RArm_UpperArm", "RArm_ForeArm1", 3.4f, 3.7f },
+					{ "LArm_ForeArm1", "LArm_Hand", 2.25f, 2.9f }, { "RArm_ForeArm1", "RArm_Hand", 2.25f, 2.9f },
 				};
 				for (UInt32 id : d.hosts) {
 					NiNode* root = RootOf(id);
-					if (!root)
+					Actor* who = ActorOf(id);
+					if (!root || !who)
 						continue;
 					const float scale = G::World(root).scale;
+					const bool male = actorUtils::IsActorMale(who);
 					for (std::size_t k = 0; k < std::size(kParts); k++) {
 						const RE::BSFixedString na(kParts[k].a), nb(kParts[k].b);
 						NiAVObject* a = G::SkeletonNode(root, na);
@@ -948,7 +957,7 @@ namespace Fluid
 							continue;
 						char key[48];
 						std::snprintf(key, sizeof(key), "%08X|body|%zu", id, k);
-						AddCollider(d, key, G::World(a).pos, G::World(b).pos, kParts[k].r * P.bodyScale * scale, dt);
+						AddCollider(d, key, G::World(a).pos, G::World(b).pos, (male ? kParts[k].man : kParts[k].woman) * P.bodyScale * scale, dt);
 					}
 				}
 				for (UInt32 id : d.hosts) {   // a shaft, segment by segment
@@ -1077,12 +1086,16 @@ namespace Fluid
 		{
 			const NiTransform& pw = G::World(d.parent);
 			V lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+			V mid(0, 0, 0);   // drawn P.blobScale larger about its middle (the physics keeps the true volume)
+			for (const auto& sp : s.surface)
+				mid += sp.pos;
+			mid = mid * (1.0f / (float)(std::max<std::size_t>)(s.surface.size(), 1));
 			for (std::size_t i = 0; i < s.bones.size(); i++) {
 				NiTransform w;
 				float m[3][3];
 				ArcRotation(directions[i], s.surface[i].normal, m);
 				StoreRotation(w, m);
-				w.pos = ToWorld(d, s.surface[i].pos);
+				w.pos = ToWorld(d, mid + (s.surface[i].pos - mid) * P.blobScale);
 				w.scale = 1.0f;
 				Place(s.bones[i], w, pw);
 				lo = V((std::min)(lo.x, w.pos.x), (std::min)(lo.y, w.pos.y), (std::min)(lo.z, w.pos.z));
@@ -1092,8 +1105,11 @@ namespace Fluid
 		}
 
 		// a drop: a sphere of a_radius, drawn out along its flight and flattened where it touches
-		void PoseDrop(Domain& d, Slot& s, const V& a_center, float a_radius, const V& a_velocity, const V* a_contact)
+		void PoseDrop(Domain& d, Slot& s, const V& a_center, float a_trueRadius, const V& a_velocity, const V* a_contact)
 		{
+			// drawn P.dropScale larger than its volume: one particle's true sphere is 0.26 units, flattened to 0.45 on a
+			// body it vanished into the skin (in game, 10-17)
+			const float a_radius = a_trueRadius * P.dropScale;
 			const float flying = a_contact ? 0.0f : (std::max)(Length(a_velocity) - kStreakStart, 0.0f);
 			const float stretch = 1.0f + (std::min)(flying * kStreak, kMaxStretch - 1.0f);
 			const V alongV = Unit(a_velocity, V(0, 0, 1));
@@ -1451,6 +1467,8 @@ namespace Fluid
 		P.collide = reader.GetBoolean("Fluid", "collide", true);
 		P.shaftRadius = std::clamp(f("shaftRadius", P.shaftRadius), 0.0f, 10.0f);
 		P.bodyScale = std::clamp(f("bodyScale", P.bodyScale), 0.0f, 3.0f);
+		P.dropScale = std::clamp(f("dropScale", P.dropScale), 0.1f, 10.0f);
+		P.blobScale = std::clamp(f("blobScale", P.blobScale), 0.1f, 5.0f);
 	}
 
 	void Tick()
