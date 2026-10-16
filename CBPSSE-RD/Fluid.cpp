@@ -62,6 +62,7 @@ namespace Fluid
 		constexpr int kGlobMin = 12, kGlobMax = 40;
 		constexpr float kPlugLateral = 6.0f, kPlugDepth = 40.0f;  // units: his tip this near her axis, this deep, holds it in
 		constexpr float kUnplugAfter = 0.6f;     // seconds out before it counts as a pull-out (Aim's lock flickers)
+		constexpr float kDressedGrace = 2.5f;    // seconds dressed before her reservoir stops (OStrands)
 		constexpr float kLostOpening = 2.0f;     // seconds an opening may be missing before its reservoir stops
 
 		constexpr int kBlobPool = 48;   // meshes\Anatomy\Fluid\Blob00..47.nif: one Demand prototype each (Strands.cpp)
@@ -553,7 +554,7 @@ namespace Fluid
 			UInt32 her = 0, plug = 0;
 			int kind = 0;
 			std::vector<UInt32> hosts;
-			float volume = 0.0f, gush = 0.0f, release = 0.0f, age = 0.0f, lost = 0.0f, out = 0.0f;
+			float volume = 0.0f, gush = 0.0f, release = 0.0f, age = 0.0f, lost = 0.0f, out = 0.0f, dressed = 0.0f;
 			bool plugged = true;
 			std::uint32_t domain = 0, run = 0;
 			int glob = 0;
@@ -792,6 +793,19 @@ namespace Fluid
 				return r.lost < kLostOpening && r.age < P.reservoirLife;
 			}
 			r.lost = 0.0f;
+			// dressed: the body slot's armour replaces the naked body, our genitals shape with it, and what would leak
+			// would come out through her clothes (in game 10-17: AAF dresses her the moment the scene ends). As
+			// OStrands, it stops kDressedGrace seconds after. A mouth is never covered
+			if (r.kind != 2) {
+				Actor* her = ActorOf(r.her);
+				static const RE::BSFixedString genitals("AnatomyGenitals");
+				const bool bare = her && !actorUtils::IsActorMale(her) && G::Root(her) && G::Find(G::Root(her), genitals.c_str());
+				r.dressed = bare || (her && actorUtils::IsActorMale(her)) ? 0.0f : r.dressed + dt;
+				if (r.dressed > kDressedGrace) {
+					Note("[fluid] {:08X} is dressed: her opening {} stops, {:.0f} left", r.her, r.kind, r.volume);
+					return false;
+				}
+			}
 			bool holding = false;
 			for (auto& d : domains)
 				for (const FluidSim::Anchor& a : d->anchors)
