@@ -270,6 +270,33 @@ int main()
 		Expect(held > 0.9f * pulled, "it does not snap back like rubber when the pull stops");
 		Expect(0.5f - ps[5].pos.z > 0.005f, "held, it sags");
 	}
+	// 10. slime (the owner, 10-17: "all sex fluids are stringy"): a glob running round the underside of a ball lets go of it
+	//     on a string from where they left: it stretches several cm before it lets go, and in the end it does
+	{
+		Solver s(h);
+		std::vector<Particle> ps;
+		std::vector<Anchor> anchors;
+		const std::vector<Capsule> ball{ Capsule{ C, C, R } };
+		const float t = 115.0f * 3.14159265f / 180.0f;
+		for (int k = 0; k < 24; k++) {   // a glob (a lone drop is a film: it clings)
+			const float az = (k % 6) * 0.06f, up = t - (k / 6) * 0.06f, out = R + 0.5f * h + 0.0005f + (k / 12) * 0.9f * h;
+			ps.push_back(At(C + V(std::sin(up) * std::cos(az), std::sin(up) * std::sin(az), std::cos(up)) * out));
+		}
+		float longest = 0.0f;
+		int made = 0;
+		for (int step = 0; step < (int)(8.0f / dt); step++) {
+			const std::size_t before = anchors.size();
+			s.Step(ps, anchors, ball, {}, P, dt);
+			made += (int)(anchors.size() - before);
+			for (const auto& a : anchors)
+				if (a.surface >= 0 && a.rest > 0.0f)
+					longest = (std::max)(longest, Len(ps[a.particle].pos - a.point));
+			std::erase_if(anchors, [](const Anchor& a) { return a.rest <= 0.0f; });
+		}
+		std::printf("      %d slime string(s), longest %.1f cm, %zu left after 8 s\n", made, longest * 100.0f, anchors.size());
+		Expect(made >= 1 && longest > 0.03f, "a drop leaving a body hangs from it on a string several cm long");
+		Expect(anchors.empty(), "and the string lets go in the end");
+	}
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures ? 1 : 0;
 }

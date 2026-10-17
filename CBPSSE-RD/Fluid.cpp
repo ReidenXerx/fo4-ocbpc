@@ -82,6 +82,8 @@ namespace Fluid
 			float stickiness = 20.0f;   // the solver's film drag: how much a thin smear holds where a glob runs (10-17,
 			                            // "sticky liquid, not a gel"; it was the grip, which held everything still then let go)
 			float friction = 60.0f;     // the solver's sliding friction
+			float slime = 3.0f;         // how fast a slime string gives way (lower: longer strings, tests/fluid 18 cm at 3)
+			int strings = 24;           // slime strings at once
 			float overflow = 0.5f;      // inside her: this share of each pulse backs out around his shaft at once
 			float lifetime = 45.0f;     // seconds a particle lasts
 			float fade = 6.0f;          // its last seconds it thins away
@@ -1063,6 +1065,8 @@ namespace Fluid
 			sp.stretch = P.stretch;
 			sp.film = P.stickiness;
 			sp.friction = P.friction;
+			sp.slime = P.slime;
+			sp.strings = P.strings;
 			int steps = 0;
 			while (d.accumulator >= kStep && steps < kMaxSteps) {
 				d.solver.Step(d.particles, d.anchors, d.capsules, d.holeShapes, sp, kStep);
@@ -1548,6 +1552,8 @@ namespace Fluid
 		P.stretch = std::clamp(f("stretch", P.stretch), 0.0f, 30.0f);
 		P.stickiness = std::clamp(f("stickiness", P.stickiness), 0.0f, 100.0f);
 		P.friction = std::clamp(f("friction", P.friction), 0.0f, 200.0f);
+		P.slime = std::clamp(f("slime", P.slime), 0.1f, 30.0f);
+		P.strings = std::clamp((int)f("strings", (float)P.strings), 0, 64);
 		P.overflow = std::clamp(f("overflow", P.overflow), 0.0f, 1.0f);
 		P.lifetime = std::clamp(f("lifetime", P.lifetime), 1.0f, 600.0f);
 		P.fade = std::clamp(f("fade", P.fade), 0.1f, P.lifetime);

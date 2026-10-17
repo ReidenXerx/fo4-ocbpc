@@ -24,6 +24,10 @@ namespace FluidSim
 		constexpr float kHanging = -0.5f;       // under a body (normal pointing down more than this): no pull, it drips
 		constexpr float kSeparation = 0.1f;     // m/s off a body at most, per step
 		constexpr float kAnchorBreak = 12.0f, kAnchorFlow = 15.0f, kCreep = 0.035f;
+		constexpr float kStringBreak = 30.0f;   // a slime string lets go past this many spacings (18 cm)
+		constexpr float kStringAfter = 0.1f;    // seconds on a body before leaving it pulls a string (not a flicker)
+		constexpr float kStringLanded = 0.5f;   // seconds back on a body before its string lets go (a hanging drop brushes
+		                                        // the skin it hangs from: dropping the string at once cut every one at 0.7 cm)
 		constexpr std::size_t kMaxLoad = 64;
 		constexpr float kCohesionFloor = 1.0f;
 		// two linked particles both on a body this long: the thread has landed and is a smear now; its links let go,
@@ -174,9 +178,22 @@ namespace FluidSim
 		along.resize(n);
 		contact.assign(n, -1);
 		anchored.assign(n, 0);
-		for (const Anchor& a : a_anchors)
+		for (Anchor& a : a_anchors) {
+			if (a.surface >= 0) {   // a slime string's root rides its body
+				if ((std::size_t)a.surface < a_capsules.size())
+					a.point += Carrier(a_capsules, a.surface, a.along) * a_dt;
+				else
+					a.rest = 0.0f;
+			}
 			if (a.rest > 0.0f && a.particle < n)
 				anchored[a.particle] = 1;
+		}
+		lastSurface.resize(n);
+		lastAlong.resize(n);
+		lastStuck.resize(n);
+		for (std::size_t i = 0; i < n; i++)
+			lastSurface[i] = a_particles[i].touching ? a_particles[i].surface : -1, lastAlong[i] = a_particles[i].along,
+			lastStuck[i] = a_particles[i].stuck;
 		const float lift = 0.5f * h;   // the floor: z = lift (a particle's centre half a spacing above the plane)
 		for (std::size_t i = 0; i < n; i++)
 			predicted[i] = a_particles[i].pos;
@@ -314,7 +331,7 @@ namespace FluidSim
 			predicted[i].z = (std::max)(predicted[i].z, lift);
 
 		// anchors give way as the rope hangs: the heavier the run below, the faster
-		const float follow = (std::min)(1.0f, kAnchorFlow * a_dt);
+		const float follow = (std::min)(1.0f, kAnchorFlow * a_dt), stringFollow = (std::min)(1.0f, a_params.slime * a_dt);
 		for (Anchor& a : a_anchors) {
 			if (a.rest <= 0.0f || a.particle >= n) {
 				a.rest = 0.0f;
@@ -323,14 +340,14 @@ namespace FluidSim
 			const V d = predicted[a.particle] - a.point;
 			const float l = Len(d);
 			if (l > a.rest)
-				a.rest += (l - a.rest) * follow;
+				a.rest += (l - a.rest) * (a.surface >= 0 ? stringFollow : follow);
 			if (d.z < 0.0f) {
 				std::size_t load = 1;
 				for (std::size_t k = a.particle; k > 0 && load < kMaxLoad && a_particles[k - 1].link > 0.0f; k--)
 					load++;
 				a.rest += kCreep * std::sqrt((float)load) * a_dt;
 			}
-			if (a.rest > kAnchorBreak * h)
+			if (a.rest > (a.surface >= 0 ? kStringBreak : kAnchorBreak) * h)
 				a.rest = 0.0f;
 		}
 
@@ -385,6 +402,30 @@ namespace FluidSim
 				p.idle = 0.0f;
 			else if ((p.idle += a_dt) > kSleepTime)
 				p.asleep = true, p.vel = V(0, 0, 0);
+		}
+
+		// slime strings (10-17, the owner: "all sex fluids are stringy"): a particle that lay on a body a moment and left
+		// it stays tied to the spot it left, by a string that stretches like dough (a_params.slime) and lets go long; a
+		// particle back on a body drops its string. Drawn as a rope from the spot (Fluid.cpp: an anchored run)
+		int strings = 0;
+		for (Anchor& a : a_anchors)
+			if (a.surface >= 0 && a.rest > 0.0f) {
+				if (a.particle < n && a_particles[a.particle].stuck > kStringLanded)   // back on a body a while, not a brush
+					a.rest = 0.0f;
+				else
+					strings++;
+			}
+		for (std::size_t i = 0; i < n && strings < a_params.strings; i++) {
+			const Particle& p = a_particles[i];
+			const int s = lastSurface[i];
+			if (p.touching || s < 0 || (std::size_t)s >= a_capsules.size() || anchored[i] || lastStuck[i] < kStringAfter)
+				continue;
+			const Capsule& c = a_capsules[s];
+			const V axis = c.a + (c.b - c.a) * lastAlong[i];
+			const V point = axis + Unit(p.pos - axis, V(0, 0, 1)) * c.r;
+			a_anchors.push_back(Anchor{ i, point, (std::max)(Len(p.pos - point), 0.5f * h), kSkinString, s, lastAlong[i] });
+			anchored[i] = 1;
+			strings++;
 		}
 	}
 

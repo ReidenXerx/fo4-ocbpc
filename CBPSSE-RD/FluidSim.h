@@ -57,6 +57,8 @@ namespace FluidSim
 		V point;
 		float rest = 0.0f;         // 0: let go
 		std::uint32_t owner = 0;
+		int surface = -1;          // a slime string from a body (kSkinString): the capsule it hangs from, and where on it;
+		float along = 0.0f;        // the point rides that capsule
 	};
 
 	struct Params
@@ -71,6 +73,8 @@ namespace FluidSim
 		                           // spheres up to sin(angle) = grip / (0.25 g), 2.5 about the equator (OStrands 0.4)
 		float film = 20.0f;        // a thin film drags more (10-17, "sticky liquid, not a gel"): friction x (1 + film x
 		                           // thin^2), thin 1 for a lone particle, 0 for one inside a glob. A film stays, a glob runs
+		int strings = 24;          // slime strings at once: a particle leaving a body it lay on stays tied to it
+		float slime = 3.0f;        // how fast a slime string gives way (per second; the stream's own is 15): lower, longer
 		float skinCohesion = 0.2f;   // cohesion on a body, of the air's: a running glob leaves its thin edge behind
 	};
 
@@ -104,6 +108,8 @@ namespace FluidSim
 		std::unordered_map<std::uint64_t, std::vector<std::size_t>> cells;
 	};
 
+	constexpr std::uint32_t kSkinString = 0xFFFF0000u;   // the owner of a slime string's Anchor
+
 	class Solver
 	{
 	public:
@@ -125,7 +131,8 @@ namespace FluidSim
 		Grid grid;
 		std::vector<V> predicted, velocity, correction, normal;
 		std::vector<float> lambda, weights, along;
-		std::vector<int> contact;
+		std::vector<int> contact, lastSurface;
+		std::vector<float> lastAlong, lastStuck;
 		std::vector<char> anchored;
 		std::vector<std::vector<std::size_t>> near;
 	};
