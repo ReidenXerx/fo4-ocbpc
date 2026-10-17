@@ -297,6 +297,82 @@ int main()
 		Expect(made >= 1 && longest > 0.03f, "a drop leaving a body hangs from it on a string several cm long");
 		Expect(anchors.empty(), "and the string lets go in the end");
 	}
+	// 11-14. a canal (the owner, 10-17: "our holes lack a true container: it goes inside and drops through the body"):
+	//        her pelvis a capsule (r 8 cm), her canal inside it with its entrance down (she stands), 9 cm deep. Plugged by
+	//        his shaft it holds what is in it; when he is out and it closes (r 2.2 -> 0.9 cm in 1 s) it gushes, then what
+	//        is left seeps out slowly; nothing falls through her
+	{
+		const Capsule pelvis{ V(0, -0.05f, 0.45f), V(0, 0.05f, 0.45f), 0.08f };
+		const V entrance(0, 0, 0.40f), deep(0, 0, 0.49f);
+		auto fill = [&] {
+			std::vector<Particle> ps;
+			for (int k = 0; k < 60; k++) {
+				const float a = k * 2.39996f, r = 0.006f + 0.006f * ((k % 3) / 2.0f);
+				Particle p = At(V(r * std::cos(a), r * std::sin(a), 0.405f + 0.08f * k / 60.0f));
+				p.canal = 0;
+				ps.push_back(p);
+			}
+			return ps;
+		};
+		auto inside = [](const std::vector<Particle>& ps) {
+			int n = 0;
+			for (const auto& p : ps)
+				n += p.canal >= 0;
+			return n;
+		};
+		auto through = [&](const std::vector<Particle>& ps) {   // out of the canal but inside her body
+			int n = 0;
+			for (const auto& p : ps) {
+				const float d = std::sqrt(p.pos.x * p.pos.x + (p.pos.z - 0.45f) * (p.pos.z - 0.45f));
+				n += p.canal < 0 && d < 0.08f - 0.002f && std::fabs(p.pos.y) < 0.05f;
+			}
+			return n;
+		};
+		{   // plugged
+			Solver s(h);
+			std::vector<Particle> ps = fill();
+			std::vector<Anchor> anchors;
+			Capsule shaft{ V(0, 0, 0.37f), V(0, 0, 0.47f), 0.01f };
+			shaft.shaft = true;
+			const std::vector<Capsule> caps{ pelvis, shaft };
+			const std::vector<Canal> canal{ Canal{ entrance, deep, 0.022f } };   // his shaft + 2 spacings
+			for (int step = 0; step < (int)(3.0f / dt); step++)
+				s.Step(ps, anchors, caps, {}, P, dt, canal);
+			std::printf("      plugged: %d of 60 inside after 3 s, %d fell into her body\n", inside(ps), through(ps));
+			Expect(inside(ps) >= 36, "plugged, a canal holds most of what is in it");
+			Expect(through(ps) == 0 && AllFinite(ps), "nothing falls through her (plugged)");
+		}
+		{   // he is out: it closes, gushes, seeps
+			Solver s(h);
+			std::vector<Particle> ps = fill();
+			std::vector<Anchor> anchors;
+			const std::vector<Capsule> caps{ pelvis };
+			int at15 = 0, at3 = 0;
+			for (int step = 1; step <= (int)(12.0f / dt); step++) {
+				const float t = step * dt;
+				const float r = 0.022f - (0.022f - 0.009f) * (std::min)(t, 1.0f);
+				const std::vector<Canal> canal{ Canal{ entrance, deep, r } };
+				s.Step(ps, anchors, caps, {}, P, dt, canal);
+				if (std::getenv("FLUID_TRACE") && step % 60 == 0) {
+					float zs = 0.0f, vs = 0.0f;
+					int k = 0;
+					for (const auto& p : ps)
+						if (p.canal >= 0)
+							zs += p.pos.z, vs += p.vel.z, k++;
+					std::printf("      canal trace %.1f s: %d inside, mean z %.4f, mean vz %+.4f\n", t, k, k ? zs / k : 0.0f, k ? vs / k : 0.0f);
+				}
+				if (step == (int)(1.5f / dt))
+					at15 = inside(ps);
+				if (step == (int)(3.0f / dt))
+					at3 = inside(ps);
+			}
+			const int at12 = inside(ps);
+			std::printf("      out: %d inside at 1.5 s, %d at 3 s, %d at 12 s; %d fell into her body\n", at15, at3, at12, through(ps));
+			Expect(at15 <= 42, "when he pulls out and she closes, it gushes out");
+			Expect(at12 < at3 && at12 > 0, "what is left seeps out slowly, not all at once");
+			Expect(through(ps) == 0 && AllFinite(ps), "nothing falls through her (after)");
+		}
+	}
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures ? 1 : 0;
 }

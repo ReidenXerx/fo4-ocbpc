@@ -34,6 +34,7 @@ namespace FluidSim
 		float stuck = 0.0f;        // seconds it has touched a body without a break
 		float along = 0.0f;        // where on its capsule it touched (0 .. 1, a to b)
 		int surface = -1;          // the capsule it touches (-1: none)
+		int canal = -1;            // the canal it is inside (-1: none)
 		std::uint32_t run = 0;     // the pulse or glob it came out in
 		bool bulk = false, asleep = false, touching = false;
 	};
@@ -43,6 +44,13 @@ namespace FluidSim
 		V a, b;
 		float r = 0.0f;
 		V va, vb;                  // the velocities of its two ends
+		bool shaft = false;        // his shaft: it pushes fluid inside a canal too (a body's capsules do not)
+	};
+	struct Canal                   // the inside of an opening: fluid in it stays in, but for the open entrance
+	{
+		V a, b;                    // a: the entrance (open), b: the deep end (closed)
+		float r = 0.0f;
+		V va, vb;
 	};
 
 	struct Hole                    // capsules do not push in here: an opening, his tip
@@ -75,6 +83,7 @@ namespace FluidSim
 		                           // thin^2), thin 1 for a lone particle, 0 for one inside a glob. A film stays, a glob runs
 		int strings = 24;          // slime strings at once: a particle leaving a body it lay on stays tied to it
 		float slime = 3.0f;        // how fast a slime string gives way (per second; the stream's own is 15): lower, longer
+		float canalDrag = 3000.0f;  // flow along a canal's walls, lost per second: what is left inside seeps out slowly
 		float skinCohesion = 0.2f;   // cohesion on a body, of the air's: a running glob leaves its thin edge behind
 	};
 
@@ -115,7 +124,7 @@ namespace FluidSim
 	public:
 		explicit Solver(float a_spacing);
 		void Step(std::vector<Particle>& a_particles, std::vector<Anchor>& a_anchors, const std::vector<Capsule>& a_capsules,
-			const std::vector<Hole>& a_holes, const Params& a_params, float a_dt);
+			const std::vector<Hole>& a_holes, const Params& a_params, float a_dt, const std::vector<Canal>& a_canals = {});
 		float Spacing() const { return h; }
 
 	private:
@@ -125,6 +134,9 @@ namespace FluidSim
 		void Collide(const std::vector<Particle>& a_particles, const std::vector<Capsule>& a_capsules, const std::vector<Hole>& a_holes,
 			bool a_pull);
 		static V Carrier(const std::vector<Capsule>& a_capsules, int a_surface, float a_along);
+		// a canal keeps its particles (and takes in one at its entrance when a_join): inside its radius, short of its end
+		void Contain(std::vector<Particle>& a_particles, const std::vector<Canal>& a_canals, bool a_join);
+		static V CanalCarrier(const Canal& a_canal, const V& a_point);
 		float SkinDrag(const Params& a_params, float a_crowd) const;   // sliding friction on a body, more as it thins
 
 		float h, R2, rest = 0.0f;
@@ -132,8 +144,8 @@ namespace FluidSim
 		std::vector<V> predicted, velocity, correction, normal;
 		std::vector<float> lambda, weights, along;
 		std::vector<int> contact, lastSurface;
-		std::vector<float> lastAlong, lastStuck;
-		std::vector<char> anchored;
+		std::vector<float> lastAlong, lastStuck, squeeze;
+		std::vector<char> anchored, pushed;
 		std::vector<std::vector<std::size_t>> near;
 	};
 

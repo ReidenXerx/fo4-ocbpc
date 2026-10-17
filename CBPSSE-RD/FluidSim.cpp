@@ -24,6 +24,9 @@ namespace FluidSim
 		constexpr float kHanging = -0.5f;       // under a body (normal pointing down more than this): no pull, it drips
 		constexpr float kSeparation = 0.1f;     // m/s off a body at most, per step
 		constexpr float kAnchorBreak = 12.0f, kAnchorFlow = 15.0f, kCreep = 0.035f;
+		constexpr float kRoomSpacing = 1.5f;   // particles in a canal sit this many spacings apart (tests/fluid: a closed
+		                                       // canal keeps a quarter of what it held and gushes the rest)
+		constexpr float kSqueeze = 0.4f, kSqueezeMax = 0.3f;   // m/s out of a canal per share it is over its room, at most
 		constexpr float kStringBreak = 30.0f;   // a slime string lets go past this many spacings (18 cm)
 		constexpr float kStringAfter = 0.1f;    // seconds on a body before leaving it pulls a string (not a flicker)
 		constexpr float kStringLanded = 0.5f;   // seconds back on a body before its string lets go (a hanging drop brushes
@@ -107,6 +110,62 @@ namespace FluidSim
 		return a_params.friction * (1.0f + a_params.film * thin * thin);
 	}
 
+	V Solver::CanalCarrier(const Canal& a_canal, const V& a_point)
+	{
+		const V span = a_canal.b - a_canal.a;
+		const float l2 = Len2(span);
+		const float t = l2 > 1e-12f ? std::clamp(Dot(a_point - a_canal.a, span) / l2, 0.0f, 1.0f) : 0.0f;
+		return a_canal.va + (a_canal.vb - a_canal.va) * t;
+	}
+
+	void Solver::Contain(std::vector<Particle>& a_particles, const std::vector<Canal>& a_canals, bool a_join)
+	{
+		for (std::size_t i = 0; i < predicted.size(); i++) {
+			Particle& q = a_particles[i];
+			if (q.canal >= (int)a_canals.size())
+				q.canal = -1;
+			V& p = predicted[i];
+			if (q.canal < 0) {
+				if (!a_join)
+					continue;
+				for (std::size_t k = 0; k < a_canals.size() && q.canal < 0; k++) {   // in through the entrance
+					const Canal& c = a_canals[k];
+					const V span = c.b - c.a;
+					const float l2 = Len2(span);
+					if (l2 < 1e-12f)
+						continue;
+					const float t = Dot(p - c.a, span) / l2;
+					if (t >= 0.0f && t <= 1.5f && Len2(p - (c.a + span * std::min(t, 1.0f))) < c.r * c.r)   // past its end
+						// too: his tip can sit a little deeper than the canal reaches, and what leaves it belongs in her
+						q.canal = (int)k, q.asleep = false, q.touching = false, q.surface = -1;
+				}
+				if (q.canal < 0)
+					continue;
+			}
+			const Canal& c = a_canals[q.canal];
+			const V span = c.b - c.a;
+			const float len = Len(span);
+			if (len < 1e-6f) {
+				q.canal = -1;
+				continue;
+			}
+			const V axis = span * (1.0f / len);
+			float s = Dot(p - c.a, axis);
+			if (s < -0.5f * h) {   // out past the entrance: it is outside her now
+				q.canal = -1;
+				continue;
+			}
+			s = (std::min)(s, len - 0.5f * h);   // the deep end is closed
+			const V on = c.a + axis * s;
+			V off = p - on;
+			const float d = Len(off);
+			const float inner = (std::max)(c.r - 0.5f * h, 0.3f * h);
+			if (d > inner)
+				off = off * (inner / d);
+			p = on + off;
+		}
+	}
+
 	V Solver::Carrier(const std::vector<Capsule>& a_capsules, int a_surface, float a_along)
 	{
 		if (a_surface < 0 || (std::size_t)a_surface >= a_capsules.size())
@@ -124,6 +183,7 @@ namespace FluidSim
 			if (a_particles[i].asleep)
 				continue;
 			V& p = predicted[i];
+			const bool inCanal = a_particles[i].canal >= 0;
 			bool inHole = false;
 			for (const Hole& hole : a_holes)
 				inHole = inHole || Len2(p - hole.c) < hole.r * hole.r;
@@ -131,6 +191,8 @@ namespace FluidSim
 				continue;
 			for (std::size_t k = 0; k < a_capsules.size(); k++) {
 				const Capsule& c = a_capsules[k];
+				if (inCanal && !c.shaft)   // inside her: her body's capsules (a crude hull around the canal) do not push
+					continue;
 				const float ext = c.r + reach;
 				if (p.x < (std::min)(c.a.x, c.b.x) - ext || p.x > (std::max)(c.a.x, c.b.x) + ext ||
 					p.y < (std::min)(c.a.y, c.b.y) - ext || p.y > (std::max)(c.a.y, c.b.y) + ext ||
@@ -162,7 +224,7 @@ namespace FluidSim
 	}
 
 	void Solver::Step(std::vector<Particle>& a_particles, std::vector<Anchor>& a_anchors, const std::vector<Capsule>& a_capsules,
-		const std::vector<Hole>& a_holes, const Params& a_params, float a_dt)
+		const std::vector<Hole>& a_holes, const Params& a_params, float a_dt, const std::vector<Canal>& a_canals)
 	{
 		const std::size_t n = a_particles.size();
 		if (n == 0 || !(a_dt > 0.0f))
@@ -198,6 +260,36 @@ namespace FluidSim
 		for (std::size_t i = 0; i < n; i++)
 			predicted[i] = a_particles[i].pos;
 		Neighbours(a_particles, true);
+		for (Particle& p : a_particles)
+			if (p.canal >= (int)a_canals.size())
+				p.canal = -1;
+		// a canal holding more than it has room for pushes the extra out of its entrance: she closes after he pulls out
+		// (her canal narrows) and squeezes it out, a gush. Its room: its inside's volume over a particle's, loosely packed
+		// Only the extra goes, the ones nearest the entrance: pushing every one piled what stays at the entrance, and it all
+		// ran out in 6 s (tests/fluid)
+		squeeze.assign(a_canals.size(), 0.0f);
+		pushed.assign(n, 0);
+		if (!a_canals.empty()) {
+			std::vector<std::vector<std::pair<float, std::size_t>>> members(a_canals.size());
+			for (std::size_t i = 0; i < n; i++)
+				if (a_particles[i].canal >= 0)
+					members[a_particles[i].canal].emplace_back(Dot(a_particles[i].pos - a_canals[a_particles[i].canal].a,
+						Unit(a_canals[a_particles[i].canal].b - a_canals[a_particles[i].canal].a, V(0, 0, 1))), i);
+			for (std::size_t k = 0; k < a_canals.size(); k++) {
+				const Canal& c = a_canals[k];
+				const float inner = (std::max)(c.r - 0.5f * h, 0.3f * h);
+				const float room = (std::max)(1.0f, 3.14159265f * inner * inner * Len(c.b - c.a) / std::pow(kRoomSpacing * h, 3.0f));
+				auto& m = members[k];
+				const float over = (float)m.size() / room - 1.0f;
+				if (over <= 0.0f)
+					continue;
+				squeeze[k] = (std::min)(kSqueeze * over, kSqueezeMax);
+				const std::size_t extra = m.size() - (std::size_t)room;
+				std::partial_sort(m.begin(), m.begin() + extra, m.end());
+				for (std::size_t j = 0; j < extra; j++)
+					pushed[m[j].second] = 1;
+			}
+		}
 
 		// a sleeper wakes when it is held or a neighbour moves fast
 		for (std::size_t i = 0; i < n; i++) {
@@ -227,11 +319,19 @@ namespace FluidSim
 				const float shared = (std::max)(0.5f * (weights[i] + weights[j]), kCohesionFloor);
 				pull += d * (Kernel(d) / shared);
 			}
-			pull = pull * (a_params.cohesion * (p.touching ? a_params.skinCohesion : 1.0f) / h);
+			pull = pull * (a_params.cohesion * (p.touching || p.canal >= 0 ? a_params.skinCohesion : 1.0f) / h);   // in a canal too:
+			// what already ran out pulled the rest after it (tests/fluid: a closed canal emptied in 12 s at any drag)
 			V moving = p.vel;
 			const float g = p.touching ? a_params.gravity * kSkinGravity : a_params.gravity;
 			V accel = pull + V(0, 0, -g);
-			if (p.touching && p.surface >= 0 && (std::size_t)p.surface < a_capsules.size()) {
+			if (p.canal >= 0) {   // inside her: moves with the walls, flows along them slowly
+				const V carrier = CanalCarrier(a_canals[p.canal], p.pos);
+				moving = carrier + (moving - carrier + accel * a_dt) * (1.0f / (1.0f + a_params.canalDrag * a_dt));
+				const Canal& c = a_canals[p.canal];
+				if (pushed[i])
+					moving = moving - Unit(c.b - c.a, V(0, 0, 1)) * squeeze[p.canal];
+				accel = V(0, 0, 0);
+			} else if (p.touching && p.surface >= 0 && (std::size_t)p.surface < a_capsules.size()) {
 				const V carrier = Carrier(a_capsules, p.surface, p.along);
 				moving = moving - p.carried + carrier;
 				// sliding along the skin: drag taken implicitly here (the speed it settles at is the push over the drag,
@@ -253,6 +353,7 @@ namespace FluidSim
 			predicted[i].z = (std::max)(predicted[i].z, lift);
 		}
 		Collide(a_particles, a_capsules, a_holes, true);
+		Contain(a_particles, a_canals, true);
 
 		for (int it = 0; it < a_params.iterations; it++) {
 			Neighbours(a_particles, false);
@@ -312,6 +413,7 @@ namespace FluidSim
 			}
 			for (std::size_t i = 0; i < n; i++)
 				predicted[i].z = (std::max)(predicted[i].z, lift);
+			Contain(a_particles, a_canals, false);
 		}
 
 		// viscosity of a thread: a stretched link's rest flows after its length; too long, it lets go or snaps
@@ -327,6 +429,7 @@ namespace FluidSim
 				r = 0.0f;
 		}
 		Collide(a_particles, a_capsules, a_holes, false);
+		Contain(a_particles, a_canals, false);
 		for (std::size_t i = 0; i < n; i++)
 			predicted[i].z = (std::max)(predicted[i].z, lift);
 
@@ -375,8 +478,12 @@ namespace FluidSim
 				smooth += (velocity[j] - velocity[i]) * (Kernel(predicted[i] - predicted[j]) / shared);
 			}
 			V v = velocity[i] + smooth * visc;
-			p.touching = contact[i] >= 0;
-			if (p.touching) {
+			p.touching = contact[i] >= 0 && p.canal < 0;
+			if (p.canal >= 0) {
+				const V carrier = CanalCarrier(a_canals[p.canal], predicted[i]);
+				v = carrier + (v - carrier) * (1.0f / (1.0f + a_params.canalDrag * a_dt));
+				p.surface = -1;
+			} else if (p.touching) {
 				const V surf = Carrier(a_capsules, contact[i], along[i]);
 				const V rel = v - surf;
 				const float nv = Dot(rel, normal[i]);
@@ -398,7 +505,7 @@ namespace FluidSim
 			p.pos = predicted[i];
 			p.vel = v;
 			p.stuck = p.touching ? p.stuck + a_dt : 0.0f;
-			if (anchored[i] || p.touching || Len2(v) > kSleepSpeed * kSleepSpeed)
+			if (anchored[i] || p.touching || p.canal >= 0 || Len2(v) > kSleepSpeed * kSleepSpeed)
 				p.idle = 0.0f;
 			else if ((p.idle += a_dt) > kSleepTime)
 				p.asleep = true, p.vel = V(0, 0, 0);

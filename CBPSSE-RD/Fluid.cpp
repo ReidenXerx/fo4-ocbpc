@@ -56,7 +56,14 @@ namespace Fluid
 		constexpr float kCarry = 0.6f, kCarrySmoothing = 0.08f;
 		constexpr float kTailStart = 0.55f, kTailSlowdown = 0.85f;
 		constexpr float kOozeSpeed = 0.15f;
-		constexpr float kHoleRadius = 3.0f, kNozzleHole = 1.0f;   // units (an opening sits inside the lower belly capsule)
+		constexpr float kHoleRadius = 1.5f, kNozzleHole = 1.0f;   // units (an opening sits inside the lower belly capsule;
+		                                                         // 3 let what came out at her entrance fall through her)
+		// her canals (units): how deep (vagina, anus, mouth), how narrow when nothing is in it, how fast it closes after
+		// he pulls out (the squeeze that gushes), and the room it leaves around his shaft while he is in (2.5 spacings)
+		constexpr float kCanalDepth[3] = { 6.5f, 8.5f, 4.0f };
+		constexpr float kCanalShut[3] = { 0.65f, 0.55f, 0.7f };
+		constexpr float kCanalClose = 1.2f;
+		constexpr float kCanalAround = 2.5f;
 		constexpr float kExitDepth = 0.6f;       // units outside the entrance a reservoir comes out
 		constexpr float kGushShare = 0.35f, kGushRate = 40.0f, kSeep = 0.03f, kLeak = 0.12f, kLeakSpeed = 0.1f;
 		constexpr float kHangTime = 4.0f;
@@ -91,6 +98,7 @@ namespace Fluid
 			float capacity[3] = { 150.0f, 110.0f, 80.0f };   // particles a vagina, an anus, a mouth holds before it spills
 			float reservoirLife = 90.0f;   // seconds a reservoir leaks at most
 			float moveGain = 1.5f;      // leaking faster per m/s the opening moves (she stands, walks)
+			float seep = 3000.0f;       // her canal's hold on what is left in it after the gush: higher, it seeps slower
 			float swallow = 0.5f;       // the chance a mouth swallows most of it when he pulls out (else it runs out)
 			bool collide = true;
 			float shaftRadius = 1.0f;   // units: his shaft as a capsule
@@ -450,6 +458,9 @@ namespace Fluid
 			std::vector<UInt32> capsuleOwners;           // whose body each capsule is
 			std::unordered_map<UInt32, float> dressedFor;   // a woman's seconds without our genitals shape (dressed)
 			std::vector<FluidSim::Hole> holeShapes;
+			std::vector<FluidSim::Canal> canals;         // one per entry of holes, in its order (particles keep the index)
+			std::vector<float> canalRadius, canalOut;    // its radius now (units), seconds he has been out of it
+			std::vector<char> canalPlugged;
 			std::unordered_map<std::string, V> previous; // a collider's last world position: its velocity
 			FluidSim::Solver solver{ kSpacing };
 			float accumulator = 0.0f;
@@ -784,10 +795,10 @@ namespace Fluid
 					break;
 				if (e.emitted == 0 && e.slot <= 0.0f) {
 					e.run = ++nextRun;
-					e.oozing = e.inside && haveOpening;
-					e.count = e.oozing ? (std::max)(1, (int)std::lround(pulse.particles * P.overflow)) : pulse.particles;
-					if (e.oozing)
-						Deposit(e, (float)(pulse.particles - e.count));
+					// inside her too it leaves his tip as particles: her canal holds them, and what does not fit backs
+					// out around him (10-17; before, a reservoir counted it and oozed P.overflow at her entrance)
+					e.oozing = false;
+					e.count = pulse.particles;
 				}
 				const auto [origin, outlet] = source();
 				const bool oozing = e.oozing && haveOpening;
@@ -967,6 +978,75 @@ namespace Fluid
 			d.capsules.push_back(FluidSim::Capsule{ la, lb, a_radius / kUnitsPerMeter, va, vb });
 		}
 
+		// her canals, one per opening the domain knows: from her entrance inward, rebuilt every frame (it moves with her).
+		// Plugged (Aim's lock on his shaft in it, held kUnplugAfter): as wide as his shaft and kCanalAround spacings; out:
+		// it closes to kCanalShut at kCanalClose, squeezing out what no longer fits. An opening not found this frame keeps
+		// its last canal, still: particles hold their canal's index
+		void Canals(Domain& d, float dt)
+		{
+			const std::size_t n = d.holes.size();
+			d.canals.resize(n);
+			d.canalRadius.resize(n, 0.0f);
+			d.canalOut.resize(n, 1e9f);
+			d.canalPlugged.resize(n, 0);
+			for (std::size_t k = 0; k < n; k++) {
+				const auto [owner, kind] = d.holes[k];
+				const int kk = std::clamp(kind, 0, 2);
+				FluidSim::Canal& c = d.canals[k];
+				V center, inward;
+				if (!OpeningNow(owner, kind, center, inward)) {
+					c.va = c.vb = V(0, 0, 0);
+					continue;
+				}
+				// at least as deep as his tip is in her: his pulses leave it, and what leaves it must start inside
+				float depth = kCanalDepth[kk];
+				V tip, axis;
+				const UInt32 him = kind == 2 ? AimOralPartner(owner) : AimPartner(owner);
+				if (him && TipOf(him, tip, axis))
+					depth = (std::max)(depth, (std::min)(Dot(tip - center, inward) + 1.5f, 2.5f * kCanalDepth[kk]));
+				const V a = ToLocal(d, center), b = ToLocal(d, center + inward * depth);
+				const bool fresh = d.canalRadius[k] <= 0.0f;
+				c.va = fresh || dt <= 0.0f ? V(0, 0, 0) : (a - c.a) * (1.0f / dt);
+				c.vb = fresh || dt <= 0.0f ? V(0, 0, 0) : (b - c.b) * (1.0f / dt);
+				if (Length(c.va) > 6.0f || Length(c.vb) > 6.0f)   // a teleport
+					c.va = c.vb = V(0, 0, 0);
+				c.a = a, c.b = b;
+				const bool held = kind == 2 ? AimOralPartner(owner) != 0 : ((AimReceivedKinds(owner) >> kind) & 1u) != 0;
+				d.canalOut[k] = held ? 0.0f : d.canalOut[k] + dt;
+				d.canalPlugged[k] = d.canalOut[k] < kUnplugAfter;
+				const float open = P.shaftRadius + kCanalAround * kSpacing * kUnitsPerMeter;
+				float& r = d.canalRadius[k];
+				if (d.canalPlugged[k] || fresh)
+					r = d.canalPlugged[k] ? open : kCanalShut[kk];
+				else
+					r = (std::max)(kCanalShut[kk], r - kCanalClose * dt);
+				c.r = r / kUnitsPerMeter;
+			}
+		}
+
+		// what is in each canal: a mouth tells faces (Rapport) full / running out, and swallows most of it as he pulls out
+		void CanalStates(Domain& d)
+		{
+			for (std::size_t k = 0; k < d.canals.size(); k++) {
+				const auto [owner, kind] = d.holes[k];
+				int in = 0;
+				for (const FluidSim::Particle& p : d.particles)
+					in += p.canal == (int)k;
+				const bool plugged = d.canalPlugged[k] != 0;
+				if (kind == 2 && in > 0) {
+					if (!plugged && d.canalOut[k] >= kUnplugAfter && d.canalOut[k] < kUnplugAfter + 0.05f && Random01() < P.swallow) {
+						int gulp = 0;
+						for (FluidSim::Particle& p : d.particles)
+							if (p.canal == (int)k && Random01() < 0.9f)
+								p.life = 0.0f, gulp++;
+						Note("[fluid] {:08X} swallows {}, {} left at her lips", owner, gulp, in - gulp);
+						SetMouth(owner, 3, 1.5f);
+					} else
+						SetMouth(owner, plugged ? 1 : 2, 0.3f);
+				}
+			}
+		}
+
 		void Colliders(Domain& d, float dt)
 		{
 			d.capsules.clear();
@@ -1036,6 +1116,7 @@ namespace Fluid
 						char key[48];
 						std::snprintf(key, sizeof(key), "%08X|shaft|%zu", id, k);
 						AddCollider(d, id, key, G::World(chain[k]).pos, G::World(chain[k + 1]).pos, P.shaftRadius, dt);
+						d.capsules.back().shaft = true;
 					}
 				}
 			}
@@ -1047,9 +1128,11 @@ namespace Fluid
 				if (OpeningNow(owner, kind, center, inward))
 					d.holeShapes.push_back(FluidSim::Hole{ ToLocal(d, center), kHoleRadius / kUnitsPerMeter });
 			}
+			Canals(d, dt);
 		}
 
 		void Undress(Domain& d, float dt);
+		void CanalStates(Domain& d);
 
 		void Simulate(Domain& d, float dt)
 		{
@@ -1066,10 +1149,11 @@ namespace Fluid
 			sp.film = P.stickiness;
 			sp.friction = P.friction;
 			sp.slime = P.slime;
+			sp.canalDrag = P.seep;
 			sp.strings = P.strings;
 			int steps = 0;
 			while (d.accumulator >= kStep && steps < kMaxSteps) {
-				d.solver.Step(d.particles, d.anchors, d.capsules, d.holeShapes, sp, kStep);
+				d.solver.Step(d.particles, d.anchors, d.capsules, d.holeShapes, sp, kStep, d.canals);
 				d.accumulator -= kStep;
 				steps++;
 			}
@@ -1077,6 +1161,7 @@ namespace Fluid
 				d.accumulator = 0.0f;
 			std::erase_if(d.anchors, [](const FluidSim::Anchor& a) { return a.rest <= 0.0f; });
 			Undress(d, dt);
+			CanalStates(d);
 		}
 
 		// a woman who got dressed (our genitals shape gone: the body slot's armour replaced the naked body, as AAF does the
@@ -1092,6 +1177,12 @@ namespace Fluid
 				t = covered ? t + dt : 0.0f;
 			}
 			for (FluidSim::Particle& p : d.particles) {
+				if (p.canal >= 0 && (std::size_t)p.canal < d.holes.size() && d.holes[p.canal].second != 2) {
+					auto it = d.dressedFor.find(d.holes[p.canal].first);
+					if (it != d.dressedFor.end() && it->second > kDressedGrace)
+						p.life = (std::min)(p.life, 1.0f);
+					continue;
+				}
 				if (!p.touching || p.surface < 0 || (std::size_t)p.surface >= d.capsuleOwners.size())
 					continue;
 				auto it = d.dressedFor.find(d.capsuleOwners[p.surface]);
@@ -1304,9 +1395,17 @@ namespace Fluid
 			if (directions.empty() && !LoadBlob(0))
 				return;
 			auto& ps = d.particles;
-			const FluidSim::Density field(ps, kKernel, P.fade);
+			std::vector<FluidSim::Particle> shown = ps;   // inside her (a canal): weightless for the surfaces
+			for (FluidSim::Particle& q : shown)
+				if (q.canal >= 0)
+					q.life = 0.0f;
+			const FluidSim::Density field(shown, kKernel, P.fade);
 			std::vector<std::size_t> pooled;
 			for (std::size_t i = 0; i < ps.size(); i++) {
+				if (ps[i].canal >= 0) {
+					ps[i].bulk = false;
+					continue;
+				}
 				if (!ps[i].asleep) {
 					const float c = field.Count(ps[i].pos);
 					ps[i].bulk = ps[i].bulk ? c >= kBulkLeave : c >= kBulkEnter;
@@ -1418,6 +1517,8 @@ namespace Fluid
 						blobs[b].used = false, blobs[b].live = false;
 
 			for (const auto& run : FluidSim::FindRuns(ps)) {
+				if (ps[run.begin].canal >= 0 && ps[run.end - 1].canal >= 0)
+					continue;   // inside her
 				auto held = std::find_if(d.anchors.begin(), d.anchors.end(), [&](const FluidSim::Anchor& a) { return a.particle + 1 == run.end; });
 				const FluidSim::Anchor* anchor = held != d.anchors.end() ? &*held : nullptr;
 				if (run.Size() >= 2 || anchor) {
@@ -1564,6 +1665,7 @@ namespace Fluid
 		P.reservoirLife = std::clamp(f("reservoirLife", P.reservoirLife), 1.0f, 900.0f);
 		P.moveGain = std::clamp(f("moveGain", P.moveGain), 0.0f, 20.0f);
 		P.swallow = std::clamp(f("swallow", P.swallow), 0.0f, 1.0f);
+		P.seep = std::clamp(f("seep", P.seep), 50.0f, 50000.0f);
 		P.collide = reader.GetBoolean("Fluid", "collide", true);
 		P.shaftRadius = std::clamp(f("shaftRadius", P.shaftRadius), 0.0f, 10.0f);
 		P.bodyScale = std::clamp(f("bodyScale", P.bodyScale), 0.0f, 3.0f);
