@@ -180,6 +180,22 @@ namespace AimSolve
 		V3 u = Normalized(shaft);
 		V3 q = Sub(t.point, base);
 		float entrance = Length(q);
+		if (p.deep && !hand && t.kind != kMouth) {
+			const V3 rootRel = Sub(base, t.point);
+			const float rootIn = Dot(rootRel, t.in);
+			const float rootOff = Length(Sub(rootRel, Scale(t.in, rootIn)));
+			// kept more loosely than taken: a stroke draws his root back past her entrance (the 10-18 sweep let go
+			// "from the side or from inside" mid-stroke and took it again a moment later)
+			const float minIn = keep ? p.deepIn - 2.5f : p.deepIn, radius = keep ? p.deepRadius + 1.5f : p.deepRadius;
+			if (rootIn >= minIn && rootIn <= p.deepMax && rootOff <= radius) {
+				f.ok = true;
+				f.deep = true;
+				f.angle = std::acos((std::max)(-1.0f, (std::min)(1.0f, Dot(u, t.in))));
+				f.miss = rootOff;
+				f.stretch = 1.0f;
+				return f;
+			}
+		}
 		if (entrance < p.minReach || entrance > length * p.reach) {
 			f.why = entrance < p.minReach ? "too close to the root" : "out of reach";
 			return f;
@@ -287,7 +303,7 @@ namespace AimSolve
 		return false;
 	}
 
-	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch)
+	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch, bool deep)
 	{
 		size_t n = c.locals.size();
 		std::vector<Quat> out(n ? n - 1 : 0);
@@ -299,6 +315,16 @@ namespace AimSolve
 			line.insert(line.end(), t.path.begin(), t.path.end());
 		else
 			line.push_back(Add(t.point, Scale(t.in, 24.0f)));
+		if (deep) {   // taken from inside her: from the root straight to her canal deeper than it, never back out
+			const float rootIn = Dot(Sub(c.root, t.point), t.in);
+			std::vector<V3> inner{ c.root };
+			for (size_t k = 1; k < line.size(); k++)
+				if (Dot(Sub(line[k], t.point), t.in) > rootIn + 1.0f)
+					inner.push_back(line[k]);
+			if (inner.size() < 2)
+				inner.push_back(Add(c.root, Scale(t.in, 24.0f)));
+			line = inner;
+		}
 		// Each joint, root first, turned so the next lands ON the line, exactly a bone's length on from it:
 		// the next crossing of the line with a sphere of that radius. (A point that far ALONG the line
 		// would put the joint off it wherever a bone spans a bend: the chord is shorter than the arc.)
@@ -427,7 +453,7 @@ namespace AimSolve
 			s.fromFade = 1.0f;
 		}
 		if (chosen) {                               // exact, every frame: no lag behind a moving head
-			s.want = Bend(c, *chosen, best.stretch);
+			s.want = Bend(c, *chosen, best.stretch, best.deep);
 			s.wantStretch = best.stretch;
 		}
 		s.weight += ((chosen ? 1.0f : 0.0f) - s.weight) * a;

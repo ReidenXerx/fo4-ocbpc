@@ -459,6 +459,34 @@ int main()
 		Expect(stable, "22: a man's head is the same every time");
 	}
 
+	{   // 23. DEEP CAPTURE (the 10-17 sweep, BP70 Missionary Grind 3 measured: his root 3.3 units INTO her canal and 2.1 off
+		//     its axis, the shaft 75 degrees off it, through her side): the animation hilted him on another body's vulva.
+		//     Locked; the settled shaft runs from the root along her canal, deeper, not back out through the entrance
+		std::vector<V3> path{ { 0, 3, 0 }, { 0, 6, 0.3f }, { 0, 9, 0.6f }, { 0, 12, 0.9f } };
+		const float a75 = 75.0f / kDeg;
+		Chain c = Shaft({ std::sin(a75), std::cos(a75), 0 }, { 2.1f, 3.3f, 0 });
+		Target t = Opening(2, kVagina, { 0, 0, 0 }, { 0, 1, 0 }, true, path);
+		State s;
+		Result r = Settle(s, c, { t }, p);
+		Expect(r.locked && r.targetKind == kVagina, "23: a root already in her canal is taken (deep capture)");
+		std::vector<V3> j = Written(c, r);
+		std::vector<V3> line{ { 0, 0, 0 } };
+		line.insert(line.end(), path.begin(), path.end());
+		line.push_back({ 0, 30, 2.0f });
+		Expect(PolyDist(j.back(), line) < 1.0f, "23: the tip lies on her canal");
+		Expect(j.back().y > 3.3f + 10.0f, "23: the shaft goes deeper from the root, not back out of her");
+		bool forward = true;
+		for (size_t i = 1; i < j.size(); i++)
+			forward = forward && j[i].y > j[i - 1].y - 0.01f;
+		Expect(forward, "23: every joint is deeper than the last (no hook back to the entrance)");
+
+		// 24. not in her canal: the root as deep but 6 off its axis (his hips against her thigh) is not taken
+		Chain far = Shaft({ std::sin(a75), std::cos(a75), 0 }, { 6.0f, 3.3f, 0 });
+		State s2;
+		Result r2 = Settle(s2, far, { t }, p);
+		Expect(!r2.locked, "24: a root 6 off her canal's axis is not taken");
+	}
+
 	if (failures) {
 		std::printf("%d expectation(s) failed\n", failures);
 		return 1;

@@ -114,6 +114,13 @@ namespace AimSolve
 		float handRadius = 4.0f;      // a knuckle this close to the shaft's outer part: a hand holds it
 		float handHold = 1.0f;        // seconds a held shaft stays unaimed after the hand lets go
 		bool requireScene = true;     // both the chain's owner and the opening's in a scene
+		// DEEP CAPTURE (the 10-17 sweep): his root already past her entrance (deepIn units at least), at most deepRadius
+		// off her canal's axis and at most deepMax units into it (a hilt, not a shaft growing out of her): the animation
+		// hilted him on another body's vulva. Taken whatever the angle; the shaft is laid along her canal from the root on
+		bool deep = true;
+		float deepIn = 0.5f;
+		float deepRadius = 4.5f;      // the 10-18 sweep: BP70 Missionary hilted 3.3 in, 4.1 off
+		float deepMax = 6.0f;
 	};
 
 	// While locked, the bend is computed EXACTLY every frame: a correction that chased it at a fixed pace
@@ -160,6 +167,7 @@ namespace AimSolve
 		float angle = 0.0f;
 		float miss = 0.0f;
 		float stretch = 1.0f;
+		bool deep = false;            // taken from inside her (DEEP CAPTURE)
 		const char* why = "";         // why not, when not ok
 	};
 	Fit Judge(const Chain& c, const std::vector<V3>& joints, const Target& t, const Params& p, bool keep);
@@ -182,7 +190,7 @@ namespace AimSolve
 	float HeadFor(std::uint32_t formID, float lo, float hi);
 
 	// The corrections that lay the chain along root -> entrance -> path, joint by joint (no smoothing).
-	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch);
+	std::vector<Quat> Bend(const Chain& c, const Target& t, float stretch, bool deep = false);
 
 	Result Update(State& s, const Chain& c, const std::vector<Target>& targets, const std::vector<Hand>& hands,
 		const Params& p, float dt);

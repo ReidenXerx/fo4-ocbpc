@@ -544,6 +544,10 @@ void LoadAimConfig(INIReader& reader)
 	params.depth = (float)reader.GetReal("Aim", "depth", params.depth);
 	params.minInside = (float)reader.GetReal("Aim", "minInside", params.minInside);
 	params.maxStretch = (std::max)(1.0f, (float)reader.GetReal("Aim", "maxStretch", params.maxStretch));
+	params.deep = reader.GetBoolean("Aim", "deep", params.deep);
+	params.deepIn = (float)reader.GetReal("Aim", "deepIn", params.deepIn);
+	params.deepRadius = (float)reader.GetReal("Aim", "deepRadius", params.deepRadius);
+	params.deepMax = (float)reader.GetReal("Aim", "deepMax", params.deepMax);
 	params.rate = (std::max)(0.5f, (float)reader.GetReal("Aim", "rate", params.rate));
 	params.handRadius = (float)reader.GetReal("Aim", "handRadius", params.handRadius);
 	params.handHold = (std::max)(0.0f, (float)reader.GetReal("Aim", "handHold", params.handHold));
@@ -877,11 +881,19 @@ void UpdateAims()
 					auto deg = [](float c) { return std::acos((std::max)(-1.0f, (std::min)(1.0f, c))) * 57.29578f; };
 					char key[64];
 					_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|why|%08X|%d", a->formID, whyLines++);
+					// where his root and tip are against her canal (10-17 sweep: the root sat 3-5 units from her entrance at
+					// 70-150 degrees in most vaginal animations; hilted on another body's vulva, or through her?)
+					const V3 rootRel = AimSolve::Sub(base, nearT->point), tipRel = AimSolve::Sub(joints.back(), nearT->point);
+					const float rootIn = AimSolve::Dot(rootRel, nearT->in), tipIn = AimSolve::Dot(tipRel, nearT->in);
+					const float rootOff = AimSolve::Length(AimSolve::Sub(rootRel, AimSolve::Scale(nearT->in, rootIn)));
+					const float tipOff = AimSolve::Length(AimSolve::Sub(tipRel, AimSolve::Scale(nearT->in, tipIn)));
 					Note(key, "[aim] %08X: no opening taken; nearest %08X's %s: %s (miss %.1f of %.1f, turn %.0f of %.0f deg, "
-						"entry %.0f of %.0f deg, entrance %.1f, shaft %.1f x reach %.2f)\n", a->formID, nearT->owner,
+						"entry %.0f of %.0f deg, entrance %.1f, shaft %.1f x reach %.2f); along her canal root %+.1f (%.1f off), "
+						"tip %+.1f (%.1f off), shaft vs canal %.0f deg\n", a->formID, nearT->owner,
 						AimSolve::KindName(nearT->kind), f.ok ? "would lock now" : f.why, miss, params.captureMiss,
 						deg(AimSolve::Dot(u, d)), params.captureAngle * 57.29578f, deg(AimSolve::Dot(d, nearT->in)),
-						params.entryAngle * 57.29578f, nearD, AimSolve::ChainLength(c), params.reach);
+						params.entryAngle * 57.29578f, nearD, AimSolve::ChainLength(c), params.reach, rootIn, rootOff, tipIn, tipOff,
+						deg(AimSolve::Dot(u, nearT->in)));
 				}
 			}
 		}
