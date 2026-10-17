@@ -373,6 +373,46 @@ int main()
 			Expect(through(ps) == 0 && AllFinite(ps), "nothing falls through her (after)");
 		}
 	}
+	// 15-16. a smear drawn as one sheet (the owner, 10-17: "balls on strings"): a glob and a one-layer film on a thigh
+	//        capsule each draped by a 13 x 13 grid: it covers them, it is as thick as they are, its edge is under the skin
+	{
+		const std::vector<Capsule> thigh{ Capsule{ V(0, 0, 0.2f), V(0, 0, 0.8f), 0.08f } };
+		auto smear = [&](int a_w, int a_h, int a_layers) {
+			std::vector<Particle> ps;
+			for (int l = 0; l < a_layers; l++)
+				for (int y = 0; y < a_w; y++)
+					for (int z = 0; z < a_h; z++) {
+						Particle p = At(V(0.08f + 0.5f * h + l * 0.9f * h, (y - 0.5f * (a_w - 1)) * 0.9f * h, 0.6f + z * 0.9f * h));
+						p.touching = l == 0;
+						p.surface = 0;
+						ps.push_back(p);
+					}
+			return ps;
+		};
+		for (int film = 0; film < 2; film++) {
+			const std::vector<Particle> ps = film ? smear(3, 3, 1) : smear(4, 5, 2);
+			std::vector<std::size_t> members(ps.size());
+			for (std::size_t i = 0; i < members.size(); i++)
+				members[i] = i;
+			const Density field(ps, 2.0f * h, 6.0f);
+			std::vector<SurfacePoint> out;
+			const bool ok = Drape(field, ps, members, thigh, 13, 1.0f, 1.5f * h, 0.25f * h, out);
+			int wet = 0;
+			float top = 0.0f;
+			bool finite = true, cornersDry = true;
+			for (std::size_t k = 0; k < out.size(); k++) {
+				wet += out[k].dist > 0.0f;
+				top = (std::max)(top, out[k].dist);
+				finite = finite && std::isfinite(out[k].pos.x) && std::isfinite(out[k].pos.z);
+				const int i = (int)(k % 13), j = (int)(k / 13);
+				if ((i == 0 || i == 12) && (j == 0 || j == 12))
+					cornersDry = cornersDry && out[k].dist == 0.0f;
+			}
+			std::printf("      %s: %d of 169 grid points wet, %.1f mm at most\n", film ? "film" : "glob", wet, top * 1000.0f);
+			Expect(ok && finite && wet >= (film ? 9 : 30) && wet < 169, film ? "a one-layer film gets a sheet" : "a glob gets a sheet over it");
+			Expect(top > 0.5f * h && top < (film ? 2.5f : 4.0f) * h && cornersDry, film ? "thin, its edge under the skin" : "as thick as the glob, its edge under the skin");
+		}
+	}
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures ? 1 : 0;
 }

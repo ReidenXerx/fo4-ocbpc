@@ -209,4 +209,12 @@ namespace FluidSim
 	// False when a_center is not inside the field at all
 	bool Wrap(const Density& a_field, const V& a_center, float a_reach, float a_threshold, const std::vector<V>& a_dirs,
 		std::vector<SurfacePoint>& a_out);
+
+	// a smear on a body as one sheet: an a_n x a_n grid (row by row) over a_members' footprint on the capsule most of
+	// them touch, laid along their longest spread, a_margin past them. Each point sits on that capsule's surface, lifted
+	// along its normal to where the field falls under a_threshold, or a_sink under the skin where there is no fluid (the
+	// sheet's edge goes under it). a_out[k].dist: the fluid's height there (0: none). False: no capsule, or no fluid
+	bool Drape(const Density& a_field, const std::vector<Particle>& a_particles, const std::vector<std::size_t>& a_members,
+		const std::vector<Capsule>& a_capsules, int a_n, float a_threshold, float a_margin, float a_sink, std::vector<SurfacePoint>& a_out,
+		float a_flat = 1.0f);   // a_flat: the share of the fluid's height the points are lifted (draw only)
 }

@@ -712,6 +712,98 @@ namespace FluidSim
 		return Unit(g, a_fallback);
 	}
 
+	bool Drape(const Density& a_field, const std::vector<Particle>& a_particles, const std::vector<std::size_t>& a_members,
+		const std::vector<Capsule>& a_capsules, int a_n, float a_threshold, float a_margin, float a_sink, std::vector<SurfacePoint>& a_out,
+		float a_flat)
+	{
+		if (a_members.empty() || a_n < 2)
+			return false;
+		std::vector<int> votes(a_capsules.size(), 0);
+		V mid(0, 0, 0);
+		for (std::size_t m : a_members) {
+			const Particle& p = a_particles[m];
+			mid += p.pos;
+			if (p.surface >= 0 && (std::size_t)p.surface < a_capsules.size())
+				votes[p.surface]++;
+		}
+		mid = mid * (1.0f / (float)a_members.size());
+		const auto best = std::max_element(votes.begin(), votes.end());
+		if (best == votes.end() || *best == 0)
+			return false;
+		const Capsule& c = a_capsules[best - votes.begin()];
+		const V span = c.b - c.a;
+		const float l2 = Len2(span);
+		auto axisPoint = [&](const V& q) {
+			const float t = l2 > 1e-12f ? std::clamp(Dot(q - c.a, span) / l2, 0.0f, 1.0f) : 0.0f;
+			return c.a + span * t;
+		};
+		const V n = Unit(mid - axisPoint(mid), V(0, 0, 1));
+		// the footprint's longest spread: the principal axis of the members in the plane across n
+		V u0 = Unit(V(0, 0, 1) - n * n.z, V(1, 0, 0));
+		if (std::fabs(n.z) > 0.9f)
+			u0 = Unit(V(1, 0, 0) - n * n.x, V(0, 1, 0));
+		const V v0(n.y * u0.z - n.z * u0.y, n.z * u0.x - n.x * u0.z, n.x * u0.y - n.y * u0.x);
+		float sxx = 0.0f, syy = 0.0f, sxy = 0.0f;
+		for (std::size_t m : a_members) {
+			const V d = a_particles[m].pos - mid;
+			const float x = Dot(d, u0), y = Dot(d, v0);
+			sxx += x * x, syy += y * y, sxy += x * y;
+		}
+		const float th = 0.5f * std::atan2(2.0f * sxy, sxx - syy);
+		const V u = u0 * std::cos(th) + v0 * std::sin(th);
+		const V v(n.y * u.z - n.z * u.y, n.z * u.x - n.x * u.z, n.x * u.y - n.y * u.x);
+		float hu = 0.0f, hv = 0.0f;
+		for (std::size_t m : a_members) {
+			const V d = a_particles[m].pos - mid;
+			hu = (std::max)(hu, std::fabs(Dot(d, u))), hv = (std::max)(hv, std::fabs(Dot(d, v)));
+		}
+		hu += a_margin, hv += a_margin;
+		const float h = a_field.Radius() * 0.5f;   // the field's radius is two spacings
+		a_out.resize((std::size_t)a_n * a_n);
+		bool any = false;
+		for (int j = 0; j < a_n; j++)
+			for (int i = 0; i < a_n; i++) {
+				const float x = -hu + 2.0f * hu * i / (a_n - 1), y = -hv + 2.0f * hv * j / (a_n - 1);
+				const V g = mid + u * x + v * y;
+				const V on = axisPoint(g);
+				const V radial = Unit(g - on, n);
+				const V skin = on + radial * c.r;
+				SurfacePoint& sp = a_out[(std::size_t)j * a_n + i];
+				float inside = 0.0f, outside = -1.0f;
+				for (float t = 0.0f; t <= 5.0f * h; t += 0.5f * h) {   // up from the skin, through the fluid (its centres
+					if (a_field.Value(skin + radial * t) >= a_threshold) // sit half a spacing up)
+						inside = t, outside = -1.0f;
+					else if (inside > 0.0f || t >= 1.0f * h) {
+						outside = t;
+						if (inside > 0.0f)
+							break;
+					}
+				}
+				if (inside <= 0.0f && a_field.Value(skin + radial * (0.5f * h)) < a_threshold) {
+					sp.pos = skin - radial * a_sink;
+					sp.normal = radial;
+					sp.dist = 0.0f;
+					continue;
+				}
+				if (outside < 0.0f)
+					outside = inside + 0.5f * h;
+				for (int b = 0; b < 4; b++) {
+					const float half = 0.5f * (inside + outside);
+					if (a_field.Value(skin + radial * half) < a_threshold)
+						outside = half;
+					else
+						inside = half;
+				}
+				const float t = 0.5f * (inside + outside);
+				sp.pos = skin + radial * t;
+				sp.normal = Unit(a_field.Normal(sp.pos, radial) + radial, radial);   // half the skin's: a smear's top is flat
+				sp.pos = skin + radial * (t * a_flat);
+				sp.dist = t;
+				any = true;
+			}
+		return any;
+	}
+
 	bool Wrap(const Density& a_field, const V& a_center, float a_reach, float a_threshold, const std::vector<V>& a_dirs,
 		std::vector<SurfacePoint>& a_out)
 	{

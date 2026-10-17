@@ -75,6 +75,14 @@ namespace Fluid
 
 		constexpr int kBlobPool = 48;   // meshes\Anatomy\Fluid\Blob00..47.nif: one Demand prototype each (Strands.cpp)
 		constexpr int kRopePool = 32;   // meshes\Anatomy\Fluid\Rope00..31.nif
+		// a smear on a body: one sheet each (meshes\Anatomy\Fluid\Sheet00..15.nif, a 13 x 13 grid, FluidSim::Drape) over
+		// the particles on that body this near each other; drawn kSheetFlat of the field's height (a film read 9.5 mm)
+		constexpr int kSheetPool = 16;
+		constexpr std::size_t kSheetMinimum = 3;
+		constexpr float kSheetLink = 3.0f;        // spacings
+		constexpr float kSheetThreshold = 1.0f;   // the field's value at a sheet's top (a blob's is kThreshold)
+		constexpr float kSheetFlat = 0.4f;
+		constexpr float kSheetReuse = 0.04f;      // m: last frame's sheet this near a smear's middle draws it again
 		constexpr int kMaxRopeBones = 32;
 
 		struct Params
@@ -310,9 +318,12 @@ namespace Fluid
 			std::uint32_t domain = 0;       // whose particles it drew last
 			std::size_t seed = kNone;
 			std::vector<SurfacePoint> surface;
+			V center;                       // a sheet: the middle of the smear it drew last
 		};
 		std::array<Slot, kBlobPool> blobs;
 		std::array<Slot, kRopePool> ropes;
+		std::array<Slot, kSheetPool> sheets;
+		int sheetGrid = 0;                  // the sheet mesh's points per side
 		std::vector<V> directions;          // the blob mesh's bones' directions (its vertices, a unit sphere)
 
 		bool Load(Slot& s, const char* a_path, const char* a_prefix, int a_max)
@@ -385,6 +396,28 @@ namespace Fluid
 				s.failed = true;
 				return false;
 			}
+			return true;
+		}
+
+		bool LoadSheet(int i)
+		{
+			Slot& s = sheets[i];
+			if (s.root || s.failed)
+				return (bool)s.root;
+			char path[64];
+			std::snprintf(path, sizeof(path), "Anatomy\\Fluid\\Sheet%02d.nif", i);
+			if (!Load(s, path, "Sheet", 200)) {
+				s.failed = true;
+				return false;
+			}
+			const int n = (int)std::lround(std::sqrt((float)s.bones.size()));
+			if (n * n != (int)s.bones.size() || (sheetGrid && n != sheetGrid)) {
+				spdlog::info("[fluid] meshes\\{} has {} points, not a square grid like the first sheet: that slot stays off", path, s.bones.size());
+				s.root.reset();
+				s.failed = true;
+				return false;
+			}
+			sheetGrid = n;
 			return true;
 		}
 
@@ -498,6 +531,9 @@ namespace Fluid
 			for (Slot& s : ropes)
 				if (s.domain == d.id)
 					s.domain = 0, Hide(s), Detach(s);
+			for (Slot& s : sheets)
+				if (s.domain == d.id)
+					s.live = false, s.domain = 0, Hide(s), Detach(s);
 		}
 
 		// the domain at a_point for these people: an open one near enough on the same floor, or a new one whose floor is
@@ -1248,6 +1284,51 @@ namespace Fluid
 			return nullptr;
 		}
 
+		// last frame's sheet near this smear (it is drawn on from where it was), else a free one
+		Slot* AcquireSheet(Domain& d, const V& a_center)
+		{
+			Slot* best = nullptr;
+			float bestDist = kSheetReuse;
+			for (Slot& s : sheets)
+				if (!s.used && s.live && s.domain == d.id && s.root)
+					if (const float l = Length(s.center - a_center); l < bestDist)
+						best = &s, bestDist = l;
+			for (int i = 0; !best && i < kSheetPool; i++) {
+				Slot& s = sheets[i];
+				if (s.used || s.failed || (s.live && s.domain == d.id))
+					continue;
+				if (!s.root && !LoadSheet(i))
+					continue;
+				s.live = false;
+				best = &s;
+			}
+			if (!best)
+				return nullptr;
+			best->used = true;
+			best->domain = d.id;
+			Attach(*best, d.parent);
+			return best;
+		}
+
+		// a sheet over a smear: each bone on its grid point, turned so the vertex's normal (+z in the mesh) is the surface's
+		void PoseSheet(Domain& d, Slot& s)
+		{
+			const NiTransform& pw = G::World(d.parent);
+			V lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+			for (std::size_t i = 0; i < s.bones.size() && i < s.surface.size(); i++) {
+				NiTransform w;
+				float m[3][3];
+				ArcRotation(V(0, 0, 1), s.surface[i].normal, m);
+				StoreRotation(w, m);
+				w.pos = ToWorld(d, s.surface[i].pos);
+				w.scale = 1.0f;
+				Place(s.bones[i], w, pw);
+				lo = V((std::min)(lo.x, w.pos.x), (std::min)(lo.y, w.pos.y), (std::min)(lo.z, w.pos.z));
+				hi = V((std::max)(hi.x, w.pos.x), (std::max)(hi.y, w.pos.y), (std::max)(hi.z, w.pos.z));
+			}
+			Finish(s, pw, lo, hi);
+		}
+
 		Slot* AcquireRope(Domain& d)
 		{
 			for (int i = 0; i < kRopePool; i++) {
@@ -1400,9 +1481,44 @@ namespace Fluid
 				if (q.canal >= 0)
 					q.life = 0.0f;
 			const FluidSim::Density field(shown, kKernel, P.fade);
+			const float blend = 1.0f - std::exp(-dt / kSmoothing);
+			std::vector<char> onSheet(ps.size(), 0);
+			if (sheetGrid > 0 || LoadSheet(0)) {
+				std::vector<std::size_t> onBody;
+				for (std::size_t i = 0; i < ps.size(); i++)
+					if (ps[i].canal < 0 && ps[i].touching && ps[i].surface >= 0 && (std::size_t)ps[i].surface < d.capsules.size())
+						onBody.push_back(i);
+				std::vector<SurfacePoint> drape;
+				for (const auto& smear : FluidSim::FindClusters(ps, onBody, kSheetLink * kSpacing)) {
+					if (smear.members.size() < kSheetMinimum)
+						continue;
+					Slot* s = AcquireSheet(d, smear.center);
+					if (!s)
+						break;
+					if (!FluidSim::Drape(field, shown, smear.members, d.capsules, sheetGrid, kSheetThreshold, 1.5f * kSpacing, 0.25f * kSpacing,
+						    drape, kSheetFlat)) {
+						s->used = false;
+						continue;
+					}
+					if (s->live && s->surface.size() == drape.size())
+						for (std::size_t k = 0; k < drape.size(); k++) {
+							auto& cur = s->surface[k];
+							cur.pos = cur.pos + (drape[k].pos - cur.pos) * blend;
+							cur.normal = Unit(cur.normal + (drape[k].normal - cur.normal) * blend, drape[k].normal);
+							cur.dist = drape[k].dist;
+						}
+					else
+						s->surface = drape;
+					s->center = smear.center;
+					s->live = true;
+					PoseSheet(d, *s);
+					for (std::size_t m : smear.members)
+						onSheet[m] = 1;
+				}
+			}
 			std::vector<std::size_t> pooled;
 			for (std::size_t i = 0; i < ps.size(); i++) {
-				if (ps[i].canal >= 0) {
+				if (ps[i].canal >= 0 || onSheet[i]) {
 					ps[i].bulk = false;
 					continue;
 				}
@@ -1429,7 +1545,6 @@ namespace Fluid
 				} else
 					s.live = false;
 			}
-			const float blend = 1.0f - std::exp(-dt / kSmoothing);
 			std::vector<int> claimed;
 			struct Droplet
 			{
@@ -1519,6 +1634,8 @@ namespace Fluid
 			for (const auto& run : FluidSim::FindRuns(ps)) {
 				if (ps[run.begin].canal >= 0 && ps[run.end - 1].canal >= 0)
 					continue;   // inside her
+				if (onSheet[run.begin] && onSheet[run.end - 1])
+					continue;   // part of a smear's sheet
 				auto held = std::find_if(d.anchors.begin(), d.anchors.end(), [&](const FluidSim::Anchor& a) { return a.particle + 1 == run.end; });
 				const FluidSim::Anchor* anchor = held != d.anchors.end() ? &*held : nullptr;
 				if (run.Size() >= 2 || anchor) {
@@ -1599,6 +1716,8 @@ namespace Fluid
 				s.used = false;
 			for (Slot& s : ropes)
 				s.used = false;
+			for (Slot& s : sheets)
+				s.used = false;
 			for (std::size_t i = 0; i < domains.size();) {
 				Domain& d = *domains[i];
 				NiNode* parent = RootOf(d.parentId);
@@ -1622,10 +1741,13 @@ namespace Fluid
 						b += s.used && s.domain == d.id;
 					for (const Slot& s : ropes)
 						rp += s.used && s.domain == d.id;
+					int sh = 0;
+					for (const Slot& s : sheets)
+						sh += s.used && s.domain == d.id;
 					for (const auto& q : d.particles)
 						touching += q.touching, asleep += q.asleep;
-					spdlog::info("[fluid] pool {}: {} particles ({} on a body, {} asleep), {} blobs, {} ropes, {} colliders", d.id,
-						d.particles.size(), touching, asleep, b, rp, d.capsules.size());
+					spdlog::info("[fluid] pool {}: {} particles ({} on a body, {} asleep), {} blobs, {} ropes, {} sheets, {} colliders", d.id,
+						d.particles.size(), touching, asleep, b, rp, sh, d.capsules.size());
 				}
 				i++;
 			}
@@ -1635,6 +1757,9 @@ namespace Fluid
 			for (Slot& s : ropes)
 				if (!s.used && s.root)
 					Hide(s);
+			for (Slot& s : sheets)
+				if (!s.used && s.root)
+					s.live = false, Hide(s);
 		}
 	}
 
@@ -1724,6 +1849,8 @@ namespace Fluid
 			s.live = false, s.domain = 0, s.used = false, Detach(s);
 		for (Slot& s : ropes)
 			s.domain = 0, s.used = false, Detach(s);
+		for (Slot& s : sheets)
+			s.live = false, s.domain = 0, s.used = false, Detach(s);
 		lastTick.QuadPart = 0;
 	}
 }
