@@ -24,4 +24,6 @@ namespace Strands
 	// a climax (AAF's CLIMAX-tagged stage; Anatomy:Arousal -> AnatomyAim.Climax, Papyrus' thread): the stage's actors.
 	// Each with a shaft chain: inside an opening Aim holds, drips from it once he is out; outside, shots from his tip
 	void Climax(const std::vector<unsigned int>& a_actors);
+	// the opening a man's shaft is in now, as a climax would count it (0 vagina, 1 anus, 2 mouth), or -1 (Papyrus' thread)
+	int InsideOf(unsigned int a_him);
 }

@@ -740,11 +740,13 @@ namespace Strands
 				if (Fluid::Ready()) {   // the climax fluid (Fluid.h): the opening he is in, if any, and who is with him
 					UInt32 her = 0;
 					int kind = -1;
+					float best = 1.5f;   // of two openings he held within the moment, the one held last (10-17: a mouth
+					                     // scene read as the anus the aim had brushed a second before)
 					for (auto& [key, st] : pairs)
-						if (st.lastPartner == id && st.since < 1.5f) {
+						if (st.lastPartner == id && st.since < best) {
 							her = (UInt32)(key >> 2);
 							kind = (int)(key & 3);
-							break;
+							best = st.since;
 						}
 					Fluid::Climax(id, her ? her : other, her, kind);
 					Note(her ? "a climax inside (fluid)" : "a climax outside (fluid)", her ? her : other, kind, id, 0.0f);
@@ -993,6 +995,27 @@ namespace Strands
 			}
 			P.enabled = false;
 		}
+	}
+
+	int InsideOf(unsigned int a_him)
+	{
+		// Papyrus' thread: the scan's Tick holds the lock for a frame's work, so a busy lock answers what was last seen
+		static std::mutex cacheLock;
+		static std::unordered_map<UInt32, int> cache;
+		std::unique_lock<std::mutex> guard(lock, std::try_to_lock);
+		if (!guard.owns_lock()) {
+			std::lock_guard<std::mutex> l(cacheLock);
+			auto it = cache.find(a_him);
+			return it != cache.end() ? it->second : -1;
+		}
+		int kind = -1;
+		float best = 1.5f;   // the climax's own test (StartClimax), and of two openings the one he held last
+		for (auto& [key, st] : pairs)
+			if (st.lastPartner == a_him && st.since < best)
+				kind = (int)(key & 3), best = st.since;
+		std::lock_guard<std::mutex> l(cacheLock);
+		cache[a_him] = kind;
+		return kind;
 	}
 
 	void Climax(const std::vector<unsigned int>& a_actors)

@@ -67,8 +67,11 @@ namespace FluidSim
 		float gravity = 9.81f;
 		float stretch = 5.0f;      // how fast a stretched link's rest follows its length (per second)
 		float friction = 60.0f;    // sliding on skin, lost per second (OStrands 30; 60 holds a landed shot, tests/fluid)
-		float grip = 2.5f;         // static friction: holds while the push along the skin is under grip (m/s^2): on our
+		float grip = 0.5f;         // static friction: holds while the push along the skin is under grip (m/s^2): on our
 		                           // spheres up to sin(angle) = grip / (0.25 g), 2.5 about the equator (OStrands 0.4)
+		float film = 20.0f;        // a thin film drags more (10-17, "sticky liquid, not a gel"): friction x (1 + film x
+		                           // thin^2), thin 1 for a lone particle, 0 for one inside a glob. A film stays, a glob runs
+		float skinCohesion = 0.2f;   // cohesion on a body, of the air's: a running glob leaves its thin edge behind
 	};
 
 	// a hash grid of points, cell = the search radius
@@ -116,6 +119,7 @@ namespace FluidSim
 		void Collide(const std::vector<Particle>& a_particles, const std::vector<Capsule>& a_capsules, const std::vector<Hole>& a_holes,
 			bool a_pull);
 		static V Carrier(const std::vector<Capsule>& a_capsules, int a_surface, float a_along);
+		float SkinDrag(const Params& a_params, float a_crowd) const;   // sliding friction on a body, more as it thins
 
 		float h, R2, rest = 0.0f;
 		Grid grid;

@@ -111,7 +111,7 @@ int main()
 		Expect(top.finite && slope.finite && side.finite, "every particle stays finite");
 		Expect(top.inside == 0 && slope.inside == 0 && side.inside == 0, "none ends inside the ball");
 		Expect(top.on >= 24 && top.angle < 40.0f, "shots landing on top of a body stay near where they landed");
-		Expect(slope.on >= 24 && slope.angle > 65.0f, "shots landing on a slope stay on the body but run down it");
+		Expect(slope.on >= 24 && slope.angle > 52.0f, "shots landing on a slope stay on the body but run down it");   // thin runs (a film) run slower since 10-17
 		Expect(side.on < 30, "shots landing on a steep side run off and drip");
 	}
 	// 2. a puddle on the floor settles and sleeps
@@ -185,6 +185,90 @@ int main()
 			return all;
 		}(), 2.0f * h);
 		Expect(clusters.size() == 1 && clusters[0].members.size() == ps.size(), "one clump is one cluster");
+	}
+	// 6-8. a sticky liquid, not a gel (the owner, 2026-10-17: "more like sticky liquid but not like non newton liquid"):
+	//      on a thigh-sized upright capsule (r 8 cm) a glob of 20 runs down slowly and keeps running, it leaves a wet trail
+	//      behind (single particles that stay), and a lone particle (a film) barely moves
+	{
+		const std::vector<Capsule> thigh{ Capsule{ V(0, 0, 0.2f), V(0, 0, 0.8f), 0.08f } };
+		auto front = [](const std::vector<Particle>& ps, float& top, int& on) {
+			float lo = 1e9f;
+			top = -1e9f, on = 0;
+			for (const auto& p : ps)
+				if (std::sqrt(p.pos.x * p.pos.x + p.pos.y * p.pos.y) < 0.08f + 3.0f * h)
+					lo = (std::min)(lo, p.pos.z), top = (std::max)(top, p.pos.z), on++;
+			return lo;
+		};
+		Solver s(h);
+		std::vector<Particle> ps;
+		std::vector<Anchor> anchors;
+		for (int y = 0; y < 4; y++)
+			for (int z = 0; z < 5; z++)
+				ps.push_back(At(V(0.08f + 0.5f * h + 0.0005f, (y - 1.5f) * 0.9f * h, 0.6f + z * 0.9f * h)));
+		float z2 = 0.0f, z4 = 0.0f, top = 0.0f;
+		int on = 0;
+		for (int step = 1; step <= (int)(6.0f / dt); step++) {
+			s.Step(ps, anchors, thigh, {}, P, dt);
+			if (step == (int)(2.0f / dt))
+				z2 = front(ps, top, on);
+			if (step == (int)(4.0f / dt))
+				z4 = front(ps, top, on);
+		}
+		const float z6 = front(ps, top, on);
+		int trail = 0;
+		for (const auto& p : ps)
+			trail += std::sqrt(p.pos.x * p.pos.x + p.pos.y * p.pos.y) < 0.08f + 3.0f * h && p.pos.z > z6 + 0.02f;
+		std::printf("      glob front: %.3f at 2 s, %.3f at 4 s, %.3f at 6 s (%.1f cm/s); %d of 20 on it, %d left behind above it\n", z2,
+			z4, z6, (z2 - z6) / 4.0f * 100.0f, on, trail);
+		Expect(on >= 15, "a glob on an upright body stays on it as it runs");
+		Expect((z2 - z6) / 4.0f > 0.003f && (z2 - z6) / 4.0f < 0.04f, "it runs down slowly: 0.3 to 4 cm/s");
+		Expect(z4 - z6 > 0.005f, "it keeps running: no stop and hold");
+		Expect(trail >= 3, "it leaves a wet trail behind it");
+
+		Solver s1(h);
+		std::vector<Particle> one{ At(V(0.08f + 0.5f * h + 0.0005f, 0, 0.6f)) };
+		for (int step = 0; step < (int)(4.0f / dt); step++)
+			s1.Step(one, anchors, thigh, {}, P, dt);
+		std::printf("      a lone particle ran %.2f cm in 4 s\n", (0.6f - one[0].pos.z) * 100.0f);
+		Expect(0.6f - one[0].pos.z < 0.01f && one[0].touching, "a lone particle (a film) stays nearly where it is");
+	}
+	// 9. a thread pulled out between two hands stretches long and thin without snapping back, and sags when held
+	{
+		Solver s(h);
+		std::vector<Particle> ps;
+		std::vector<Anchor> anchors;
+		for (int k = 0; k < 10; k++) {
+			ps.push_back(At(V(k * 0.9f * h, 0, 0.5f)));
+			if (k < 9)
+				ps.back().link = 0.9f * h;
+		}
+		const V left = ps.front().pos, right = ps.back().pos;
+		auto length = [&] {
+			float l = 0.0f;
+			for (int k = 0; k < 9; k++)
+				l += Len(ps[k + 1].pos - ps[k].pos);
+			return l;
+		};
+		const float start = length();
+		float pulled = 0.0f;
+		for (int step = 1; step <= 240; step++) {   // 1 s apart at 0.1 m/s each, then 1 s held
+			const float t = (std::min)(step, 120) * dt;
+			const float sp = step <= 120 ? 0.1f : 0.0f;
+			s.Step(ps, anchors, {}, {}, P, dt);
+			ps.front().pos = left - V(0.1f * t, 0, 0), ps.front().vel = V(-sp, 0, 0);
+			ps.back().pos = right + V(0.1f * t, 0, 0), ps.back().vel = V(sp, 0, 0);
+			if (step == 120)
+				pulled = length();
+		}
+		int alive = 0;
+		for (int k = 0; k < 9; k++)
+			alive += ps[k].link > 0.0f;
+		const float held = length();
+		std::printf("      thread %.3f m -> %.3f pulled -> %.3f held, %d of 9 links, middle %.3f below the ends\n", start, pulled, held, alive,
+			0.5f - ps[5].pos.z);
+		Expect(alive == 9, "a thread pulled to 5x its length holds together");
+		Expect(held > 0.9f * pulled, "it does not snap back like rubber when the pull stops");
+		Expect(0.5f - ps[5].pos.z > 0.005f, "held, it sags");
 	}
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures ? 1 : 0;

@@ -490,6 +490,13 @@ namespace
 
 	// MouthFluid(Actor akActor) -> Int: her mouth's fluid for faces (Fluid.h MouthState: 0 none, 1 full, 2 running out,
 	// 3 swallowing)
+	// Inside(Actor akHim) -> Int: the opening his shaft is in now, as a climax counts it (Strands::InsideOf: 0 vagina,
+	// 1 anus, 2 mouth, -1 none); Anatomy:DebugScene waits for it before the climax
+	std::int32_t Inside(std::monostate, Actor* actor)
+	{
+		return actor ? Strands::InsideOf(actor->formID) : -1;
+	}
+
 	std::int32_t MouthFluid(std::monostate, Actor* actor)
 	{
 		return actor ? Fluid::MouthState(actor->formID) : 0;
@@ -1078,6 +1085,7 @@ bool RegisterAimFuncs(RE::BSScript::IVirtualMachine* vm)
 	vm->BindNativeMethod("AnatomyAim"sv, "SetBusy"sv, SetBusy, true);   // true: NoWait, as the classic flag
 	vm->BindNativeMethod("AnatomyAim"sv, "Climax"sv, Climax, true);
 	vm->BindNativeMethod("AnatomyAim"sv, "MouthFluid"sv, MouthFluid, true);
+	vm->BindNativeMethod("AnatomyAim"sv, "Inside"sv, Inside, true);
 	return true;
 }
 

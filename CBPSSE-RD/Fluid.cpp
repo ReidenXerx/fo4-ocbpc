@@ -49,7 +49,7 @@ namespace Fluid
 		constexpr int kMaxSteps = 6;
 		constexpr std::size_t kMaxDomains = 4;
 		constexpr float kDomainReach = 300.0f, kDomainStep = 80.0f;   // units
-		constexpr float kStreak = 1.5f, kStreakStart = 0.3f, kMaxStretch = 3.0f, kSquash = 0.45f;
+		constexpr float kStreak = 1.5f, kStreakStart = 0.3f, kMaxStretch = 3.0f, kSquash = 0.2f;
 		constexpr float kGlobDisc = 0.8f;
 		constexpr float kNozzleOffset = 0.4f;    // units past his tip
 		constexpr float kMaxNozzleSpeed = 2.0f;  // m/s of his tip carried into the stream at most
@@ -79,7 +79,8 @@ namespace Fluid
 			float cohesion = 15.0f;
 			float viscosity = 50.0f;
 			float stretch = 5.0f;
-			float stickiness = 2.5f;    // the solver's grip (tests/fluid: drops stay on a body, run past its equator)
+			float stickiness = 20.0f;   // the solver's film drag: how much a thin smear holds where a glob runs (10-17,
+			                            // "sticky liquid, not a gel"; it was the grip, which held everything still then let go)
 			float friction = 60.0f;     // the solver's sliding friction
 			float overflow = 0.5f;      // inside her: this share of each pulse backs out around his shaft at once
 			float lifetime = 45.0f;     // seconds a particle lasts
@@ -444,6 +445,8 @@ namespace Fluid
 			std::vector<FluidSim::Anchor> anchors;
 			std::vector<std::pair<UInt32, int>> holes;   // openings particles may enter
 			std::vector<FluidSim::Capsule> capsules;
+			std::vector<UInt32> capsuleOwners;           // whose body each capsule is
+			std::unordered_map<UInt32, float> dressedFor;   // a woman's seconds without our genitals shape (dressed)
 			std::vector<FluidSim::Hole> holeShapes;
 			std::unordered_map<std::string, V> previous; // a collider's last world position: its velocity
 			FluidSim::Solver solver{ kSpacing };
@@ -943,8 +946,9 @@ namespace Fluid
 
 		// ---- simulation
 
-		void AddCollider(Domain& d, const std::string& a_key, const V& a, const V& b, float a_radius, float dt)
+		void AddCollider(Domain& d, UInt32 a_owner, const std::string& a_key, const V& a, const V& b, float a_radius, float dt)
 		{
+			d.capsuleOwners.push_back(a_owner);
 			const V la = ToLocal(d, a), lb = ToLocal(d, b);
 			V va(0, 0, 0), vb(0, 0, 0);
 			auto pa = d.previous.find(a_key + "a"), pb = d.previous.find(a_key + "b");
@@ -964,6 +968,7 @@ namespace Fluid
 		void Colliders(Domain& d, float dt)
 		{
 			d.capsules.clear();
+			d.capsuleOwners.clear();
 			d.holeShapes.clear();
 			if (P.collide) {
 				for (const Collision& c : otherColliders) {
@@ -976,7 +981,7 @@ namespace Fluid
 						const Sphere& sp = c.collisionSpheres[k];
 						char key[96];
 						std::snprintf(key, sizeof(key), "%08X|%s|%zu", id, sp.NodeName.c_str(), k);
-						AddCollider(d, key, sp.worldPos, sp.worldPos, (float)sp.radius, dt);
+						AddCollider(d, id, key, sp.worldPos, sp.worldPos, (float)sp.radius, dt);
 						if (!d.listed && !collidersListed)
 							Note("[fluid] pool {} collider {:08X} {} r {:.1f}", d.id, id, sp.NodeName, sp.radius);
 					}
@@ -1017,7 +1022,7 @@ namespace Fluid
 							continue;
 						char key[48];
 						std::snprintf(key, sizeof(key), "%08X|body|%zu", id, k);
-						AddCollider(d, key, G::World(a).pos, G::World(b).pos, (male ? kParts[k].man : kParts[k].woman) * P.bodyScale * scale, dt);
+						AddCollider(d, id, key, G::World(a).pos, G::World(b).pos, (male ? kParts[k].man : kParts[k].woman) * P.bodyScale * scale, dt);
 					}
 				}
 				for (UInt32 id : d.hosts) {   // a shaft, segment by segment
@@ -1028,7 +1033,7 @@ namespace Fluid
 					for (std::size_t k = 0; k + 1 < chain.size(); k++) {
 						char key[48];
 						std::snprintf(key, sizeof(key), "%08X|shaft|%zu", id, k);
-						AddCollider(d, key, G::World(chain[k]).pos, G::World(chain[k + 1]).pos, P.shaftRadius, dt);
+						AddCollider(d, id, key, G::World(chain[k]).pos, G::World(chain[k + 1]).pos, P.shaftRadius, dt);
 					}
 				}
 			}
@@ -1042,6 +1047,8 @@ namespace Fluid
 			}
 		}
 
+		void Undress(Domain& d, float dt);
+
 		void Simulate(Domain& d, float dt)
 		{
 			if (d.particles.empty()) {
@@ -1054,7 +1061,7 @@ namespace Fluid
 			sp.cohesion = P.cohesion;
 			sp.viscosity = P.viscosity;
 			sp.stretch = P.stretch;
-			sp.grip = P.stickiness;
+			sp.film = P.stickiness;
 			sp.friction = P.friction;
 			int steps = 0;
 			while (d.accumulator >= kStep && steps < kMaxSteps) {
@@ -1065,6 +1072,28 @@ namespace Fluid
 			if (steps == kMaxSteps)
 				d.accumulator = 0.0f;
 			std::erase_if(d.anchors, [](const FluidSim::Anchor& a) { return a.rest <= 0.0f; });
+			Undress(d, dt);
+		}
+
+		// a woman who got dressed (our genitals shape gone: the body slot's armour replaced the naked body, as AAF does the
+		// moment a scene ends) for kDressedGrace: what lies on her skin is under her clothes now and goes within a second;
+		// it was drawn through them (in game, 10-17). A man is never "dressed" by this test, and his shaft is bare anyway
+		void Undress(Domain& d, float dt)
+		{
+			static const RE::BSFixedString genitals("AnatomyGenitals");
+			for (UInt32 id : d.hosts) {
+				Actor* who = ActorOf(id);
+				const bool covered = who && !actorUtils::IsActorMale(who) && G::Root(who) && !G::Find(G::Root(who), genitals.c_str());
+				float& t = d.dressedFor[id];
+				t = covered ? t + dt : 0.0f;
+			}
+			for (FluidSim::Particle& p : d.particles) {
+				if (!p.touching || p.surface < 0 || (std::size_t)p.surface >= d.capsuleOwners.size())
+					continue;
+				auto it = d.dressedFor.find(d.capsuleOwners[p.surface]);
+				if (it != d.dressedFor.end() && it->second > kDressedGrace)
+					p.life = (std::min)(p.life, 1.0f);
+			}
 		}
 
 		// particles whose life ran out go; links across them break, anchors and blob seeds follow the new indices
@@ -1175,7 +1204,10 @@ namespace Fluid
 			const V alongV = Unit(a_velocity, V(0, 0, 1));
 			const float squash = a_contact ? kSquash : 1.0f;
 			const V n = a_contact ? *a_contact : V(0, 0, 1);
-			const V center = a_contact ? a_center - n * (a_radius * (1.0f - squash) * 0.7f) : a_center;
+			// on a body: a flat disc (kSquash thick, 1 / sqrt(kSquash) wide, its volume kept) whose neighbours overlap into
+			// one smear. At 0.45 a landed run read as beads on a string, wriggling worms (the owner, 10-17: "like non
+			// newton liquid"); lowered toward the skin only so far that it still sits on top of it
+			const V center = a_contact ? a_center - n * (a_radius * (1.0f - squash) * 0.4f) : a_center;
 			const NiTransform& pw = G::World(d.parent);
 			V lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
 			for (std::size_t i = 0; i < s.bones.size(); i++) {
@@ -1514,7 +1546,7 @@ namespace Fluid
 		P.cohesion = std::clamp(f("cohesion", P.cohesion), 0.0f, 20.0f);
 		P.viscosity = std::clamp(f("viscosity", P.viscosity), 0.0f, 100.0f);
 		P.stretch = std::clamp(f("stretch", P.stretch), 0.0f, 30.0f);
-		P.stickiness = std::clamp(f("stickiness", P.stickiness), 0.0f, 10.0f);
+		P.stickiness = std::clamp(f("stickiness", P.stickiness), 0.0f, 100.0f);
 		P.friction = std::clamp(f("friction", P.friction), 0.0f, 200.0f);
 		P.overflow = std::clamp(f("overflow", P.overflow), 0.0f, 1.0f);
 		P.lifetime = std::clamp(f("lifetime", P.lifetime), 1.0f, 600.0f);

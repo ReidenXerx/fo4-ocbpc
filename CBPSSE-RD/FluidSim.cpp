@@ -95,6 +95,14 @@ namespace FluidSim
 		}
 	}
 
+	float Solver::SkinDrag(const Params& a_params, float a_crowd) const
+	{
+		// how thin the fluid is here: a lone particle 1, 0.8 of a lattice's neighbours or more 0 (tests/fluid: a glob runs at
+		// 2 cm/s and leaves 6 of 20 behind as its trail; 0.7 left 2, 0.6 with skinCohesion 0.15 left half)
+		const float thin = std::clamp(1.0f - a_crowd / (0.8f * rest), 0.0f, 1.0f);
+		return a_params.friction * (1.0f + a_params.film * thin * thin);
+	}
+
 	V Solver::Carrier(const std::vector<Capsule>& a_capsules, int a_surface, float a_along)
 	{
 		if (a_surface < 0 || (std::size_t)a_surface >= a_capsules.size())
@@ -202,24 +210,26 @@ namespace FluidSim
 				const float shared = (std::max)(0.5f * (weights[i] + weights[j]), kCohesionFloor);
 				pull += d * (Kernel(d) / shared);
 			}
-			pull = pull * (a_params.cohesion / h);
+			pull = pull * (a_params.cohesion * (p.touching ? a_params.skinCohesion : 1.0f) / h);
 			V moving = p.vel;
 			const float g = p.touching ? a_params.gravity * kSkinGravity : a_params.gravity;
 			V accel = pull + V(0, 0, -g);
 			if (p.touching && p.surface >= 0 && (std::size_t)p.surface < a_capsules.size()) {
 				const V carrier = Carrier(a_capsules, p.surface, p.along);
 				moving = moving - p.carried + carrier;
-				// static friction: when this step's push along the skin stays within the grip, it does not move the
-				// particle at all. The grip zeroed only the velocity, after gravity had already moved the position:
-				// every held drop crept down a sphere 0.1 degree a step (tests/fluid, 10-17)
+				// sliding along the skin: drag taken implicitly here (the speed it settles at is the push over the drag,
+				// whatever the step; drag applied only after the move let gravity creep everything a step's worth), then
+				// the grip: a push under it does not move the particle at all (10-17: the grip zeroed only the velocity,
+				// after gravity had already moved the position, and every held drop crept)
 				const Capsule& c = a_capsules[p.surface];
 				const V n = Unit(p.pos - (c.a + (c.b - c.a) * p.along), V(0, 0, 1));
 				const V rel = moving - carrier;
 				const V relT = rel - n * Dot(rel, n), accT = accel - n * Dot(accel, n);
-				if (Len(relT + accT * a_dt) <= a_params.grip * a_dt) {
-					moving = carrier + n * Dot(rel, n);
-					accel = n * Dot(accel, n);
-				}
+				V slide = (relT + accT * a_dt) * (1.0f / (1.0f + SkinDrag(a_params, weights[i]) * a_dt));
+				if (Len(slide) <= a_params.grip * a_dt)
+					slide = V(0, 0, 0);
+				moving = carrier + n * Dot(rel, n) + slide;
+				accel = n * Dot(accel, n);
 			}
 			const V v = moving + accel * a_dt;
 			predicted[i] = p.pos + Limit(v, kMaxSpeed) * a_dt;
@@ -356,7 +366,7 @@ namespace FluidSim
 				V slide = rel - normal[i] * nv;
 				const float slip = Len(slide);
 				const float grip = a_params.grip * a_dt;
-				slide = slip > grip ? slide * ((slip - grip) / slip * std::exp(-a_params.friction * a_dt)) : V(0, 0, 0);
+				slide = slip > grip ? slide * ((slip - grip) / slip / (1.0f + SkinDrag(a_params, weights[i]) * a_dt)) : V(0, 0, 0);
 				v = surf + slide + normal[i] * std::clamp(nv, 0.0f, kSeparation);
 				p.carried = surf;
 				p.surface = contact[i];
