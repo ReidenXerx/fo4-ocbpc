@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "ActorUtils.h"
+#include "Bones.h"
 #include "Game.h"
 #include "log.h"
 #include "Thing.h"
@@ -345,6 +346,34 @@ void Thing::Update(Actor *actor) {
             logger.Error("firstRun rot Set: \n");
             origLocalRot[boneName.c_str()][actor->formID] = G::Local(obj).rot;
             ShowRot(G::Local(obj).rot);
+        }
+    }
+
+    // fo4-anatomy (10-19): the rest above is taken ONCE per bone and form id for the whole session, and the player is
+    // 00000014 in every save. sgtlelmmiv via Watcher: pink shards out of the player's crotch, only when his old save was
+    // the first load after launch (a new game loaded first, then that save: none, until the next restart); cbp.log at
+    // that first load: AnatLipOuter_L/R "went non-finite or far off" and the skirt's leg nodes not under the pelvis
+    // yet - her skeleton half built when the rest was read, and every reset after went back to that wrong rest. A bone
+    // of ours rests where [Bones] puts it (the nodes are made there, EnsureLoadedActors puts them back there): a read
+    // rest far from that is not one
+    if (actor) {
+        NiPoint3 rest;
+        if (AnatomyBoneRest(boneName.c_str(), actorUtils::IsActorMale(actor), rest)) {
+            NiPoint3& kept = origLocalPos[boneName.c_str()][actor->formID];
+            const NiPoint3 d = kept - rest;
+            constexpr float kFar = 10.0f;               // our rests sit 2-5 units off Pelvis_skin
+            if (!FiniteNear(kept) || d.x * d.x + d.y * d.y + d.z * d.z > kFar * kFar ||
+                !Finite(origLocalRot[boneName.c_str()][actor->formID])) {
+                spdlog::info("[physics] {:08X}: {} read its rest at ({:.1f}, {:.1f}, {:.1f}) as it loaded: [Bones]' "
+                    "rest used", actor->formID, boneName.c_str(), kept.x, kept.y, kept.z);
+                kept = rest;
+                NiMatrix43& rot = origLocalRot[boneName.c_str()][actor->formID];
+                for (int r = 0; r < 3; r++)
+                    for (int c = 0; c < 4; c++)
+                        rot.data[r][c] = r == c ? 1.0f : 0.0f;
+                G::Local(obj).pos = kept;
+                G::Local(obj).rot = rot;
+            }
         }
     }
 
