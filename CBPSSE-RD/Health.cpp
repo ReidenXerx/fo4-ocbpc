@@ -492,6 +492,17 @@ namespace
 			const bool genitals = std::find(body.shapes.begin(), body.shapes.end(), "AnatomyGenitals") != body.shapes.end();
 			r.text << (genitals ? "Anatomy's genitals" : "no Anatomy genitals (clothed, or another body)") << ", " << body.ours
 			       << " of our bones in the skin; shapes " << Join(body.shapes) << "\n";
+			// a mannequin (Wasteland Workshop's armor rack, DLC05ArmorRackRace) stands on its own skeleton and never moves:
+			// a 3BBB outfit on it always lacks the breast bones there (killroy_was_here via Watcher, 2026-10-18: eight
+			// nameless armor racks raised the box on every load). Not a woman of the setup: not checked
+			{
+				std::string race = actorUtils::GetActorRaceEID(a);
+				std::transform(race.begin(), race.end(), race.begin(), [](unsigned char c) { return (char)tolower(c); });
+				if (race.find("armorrack") != std::string::npos || race.find("mannequin") != std::string::npos) {
+					r.text << "    a mannequin: its skeleton is not checked\n";
+					continue;
+				}
+			}
 			// body bones the skin found outside her skeleton (a Havok cloth bone of a garment is not a body bone: only
 			// *_skin names count)
 			std::vector<std::string> nailed, carried;
