@@ -463,6 +463,12 @@ namespace
 			const bool simulated = a != player || playerIn;
 			r.text << "  " << Form(a->formID) << " " << G::RefName(a) << " (" << (male ? "man" : "woman")
 			       << (simulated ? "" : ", NOT simulated") << ", race " << actorUtils::GetActorRaceEID(a) << "): ";
+			// in power armor the frame's skeleton holds no penis or breast bones by design, and the physics skips the
+			// wearer (SimObj): a save loaded in power armor blamed ZeX (demonjemiy via Watcher, 2026-10-22)
+			if (actorUtils::IsActorInPowerArmor(a)) {
+				r.text << "in power armor: the frame's skeleton, not checked\n";
+				continue;
+			}
 			if (male) {
 				const int s = AimChainState(a);
 				// only a man on the human skeleton says anything about ZeX's: a robot, a dog or a feral ghoul never has
