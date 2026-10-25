@@ -402,11 +402,42 @@ namespace
 		}
 	};
 	LoadedSink loadedSink;
-	bool watching = false;
+
+	// An actor whose gear just changed: the game re-binds the body, and until our nodes are pointed at again its skin
+	// follows the body file's own stranded copies, which hang off the actor's root at standing height. On a standing
+	// actor that is invisible; on a corpse it drew a flat blade up out of the butt crack for a split second
+	// (bundesgrenzschutz via Watcher, 2026-10-24: a BodyTalk Anatomy man, a dead raider stripped of his outfit). The
+	// round robin reached him only every few frames, so these are visited EVERY frame for a while
+	constexpr int kHotFrames = 90;
+	std::unordered_map<UInt32, int> hotActors;      // form id -> frames left
+
+	class EquipSink : public RE::BSTEventSink<RE::TESEquipEvent>
+	{
+	public:
+		RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent& evn,
+			RE::BSTEventSource<RE::TESEquipEvent>*) override
+		{
+			TESObjectREFR* ref = evn.actor.get();
+			if (!ref || ref->GetFormType() != RE::ENUM_FORM_ID::kACHR)
+				return RE::BSEventNotifyControl::kContinue;
+			std::lock_guard<std::mutex> guard(loadedLock);
+			hotActors[ref->formID] = kHotFrames;
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
+	EquipSink equipSink;
+	bool watching = false, watchingEquip = false;
 }
 
 void WatchLoadedActors()
 {
+	if (!watchingEquip) {
+		if (auto* equip = RE::TESEquipEvent::GetEventSource()) {
+			equip->RegisterSink(&equipSink);
+			watchingEquip = true;
+			Note("bones|watchequip", "[bones] watching gear changes (TESEquipEvent): a re-bound body is visited every frame\n");
+		}
+	}
 	if (watching)
 		return;
 	auto* source = RE::TESObjectLoadedEvent::GetEventSource();
@@ -481,8 +512,10 @@ void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated)
 	std::vector<UInt32> batch;
 	{
 		std::lock_guard<std::mutex> guard(loadedLock);
-		if (loadedActors.empty())
-			return;
+		for (auto it = hotActors.begin(); it != hotActors.end();) {   // gear just changed: every frame, outside the budget
+			batch.push_back(it->first);
+			it = --it->second <= 0 ? hotActors.erase(it) : std::next(it);
+		}
 		size_t n = loadedActors.size() < (size_t)budget ? loadedActors.size() : (size_t)budget;
 		for (size_t k = 0; k < n; k++) {
 			if (loadedCursor >= loadedActors.size())
