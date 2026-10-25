@@ -21,6 +21,7 @@
 #include <vector>
 #include <cstdarg>
 #include <cstdio>
+#include <filesystem>
 #include <mutex>
 #include <string>
 
@@ -76,6 +77,8 @@ namespace
 	std::string source = "on by default";   // who last set the override
 	DWORD faultCode = 0;
 	void* faultAt = nullptr;
+	float iniBodyVolume = 1.0f;   // [Sound] bodyVolume / bodyRange: used while Rapport's MCM has none
+	float iniBodyRange = 1500.0f;
 
 	void Note(const std::string& key, const char* fmt, ...)
 	{
@@ -221,6 +224,8 @@ namespace Sound
 	{
 		enabled = reader.GetBoolean("Sound", "enabled", true);
 		force = (int)reader.GetInteger("Sound", "force", -1);
+		iniBodyVolume = (float)reader.GetReal("Sound", "bodyVolume", 1.0);
+		iniBodyRange = (float)reader.GetReal("Sound", "bodyRange", 1500.0);
 		if (force == 0 || force == 1)
 			SetOverride(force == 1, "[Sound] force");
 	}
@@ -353,10 +358,71 @@ namespace
 		return 0.95f + 0.1f * (float)((rng >> 8) & 0xFFFF) / 65535.0f;
 	}
 
+	// the player's body-sound volume and hearing range (alasdairn via Watcher 10-25, beside Rapport 0.2.22's moans:
+	// cityofinvid heard a Vault 81 depot scene from Residential, deafening up close). Rapport's MCM > Bodies & faces >
+	// Sounds keeps them ([Anatomy] fBodyVolume, fBodyRange), the shipped defaults under the player's own; without
+	// them ocbp.ini [Sound] bodyVolume, bodyRange. The same fade as the moans: full up to half the range, silent beyond.
+	float bodyVolume = 1.0f, bodyRange = 1500.0f;   // the scan thread's
+	ULONGLONG nextSettingsCheck = 0;
+	std::filesystem::file_time_type settingsStamp{};
+	bool settingsRead = false;
+
+	void ReadBodySettings(ULONGLONG now)
+	{
+		if (settingsRead && now < nextSettingsCheck)
+			return;
+		nextSettingsCheck = now + 2000;   // MCM writes the player's file when a slider moves: looked at every 2 s
+		const std::filesystem::path player = std::filesystem::path("Data") / "MCM" / "Settings" / "Rapport.ini";
+		std::error_code ec;
+		auto stamp = std::filesystem::last_write_time(player, ec);
+		if (ec)
+			stamp = std::filesystem::file_time_type{};
+		if (settingsRead && stamp == settingsStamp)
+			return;
+		settingsStamp = stamp;
+		settingsRead = true;
+		float volume = iniBodyVolume, range = iniBodyRange;
+		const char* from = "ocbp.ini [Sound]";
+		for (const auto& path : { std::filesystem::path("Data") / "MCM" / "Config" / "Rapport" / "settings.ini", player }) {
+			INIReader ini(path.string());
+			if (ini.ParseError() != 0)
+				continue;
+			const double v = ini.GetReal("Anatomy", "fBodyVolume", -1.0), r = ini.GetReal("Anatomy", "fBodyRange", -1.0);
+			if (v >= 0.0) {
+				volume = (float)v;
+				from = "Rapport's MCM";
+			}
+			if (r > 0.0) {
+				range = (float)r;
+				from = "Rapport's MCM";
+			}
+		}
+		bodyVolume = std::isfinite(volume) ? (std::min)(2.0f, (std::max)(0.0f, volume)) : 1.0f;
+		bodyRange = std::isfinite(range) ? (std::min)(10000.0f, (std::max)(100.0f, range)) : 1500.0f;
+		char key[96];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "sound|body|%.2f|%.0f", bodyVolume, bodyRange);
+		Note(key, "[sound] body sounds at %.0f%%, heard up to %.0f units (%s)\n", bodyVolume * 100.0f, bodyRange, from);
+	}
+
+	float Heard(RE::NiAVObject* node)   // this sound's volume share at the player's distance
+	{
+		Actor* player = RE::PlayerCharacter::GetSingleton();
+		if (!player)
+			return bodyVolume;
+		const RE::NiPoint3 p = player->GetPosition();
+		const NiPoint3 q = G::World(node).pos;
+		const float dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z;
+		const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+		return bodyVolume * std::clamp(2.0f - 2.0f * d / bodyRange, 0.0f, 1.0f);
+	}
+
 	bool PlayByName(const char* edid, RE::NiAVObject* node, float volume, float frequency)
 	{
 		if (!canPlay || !node)
 			return false;
+		volume *= Heard(node);
+		if (volume < 0.01f)
+			return false;   // out of earshot, or turned all the way down
 		void* manager = getManager();
 		if (!manager)
 			return false;
@@ -831,6 +897,7 @@ namespace Sound
 			return;
 		}
 		frame++;
+		ReadBodySettings(now);
 		const float deep = MouthDeepDepth();
 		std::vector<Actor*> inScene;
 		for (auto& e : actorEntries)
