@@ -458,6 +458,7 @@ namespace
 			seen.insert(seen.begin(), player);
 		const int aim = AimChainState(nullptr);
 		int men = 0, menChained = 0, menBroken = 0;
+		bool raceTold = false;   // HumanRace's women's skeleton: one problem line, however many women show it
 		for (Actor* a : seen) {
 			const bool male = actorUtils::IsActorMale(a);
 			const bool simulated = a != player || playerIn;
@@ -600,6 +601,29 @@ namespace
 					", or make a patch that keeps that path.";
 				r.Problem(G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
 					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). " + fix);
+			}
+			// HumanRace sends women to the base skeleton although the women's skeleton is set up (DiscreteFemaleSkeleton.esp
+			// loaded, or Skeletal Adjustments' female\skeleton.nif in Data): a later HumanRace override undid it, and
+			// 3BBB-weighted outfits stay nailed while the body's own bones still move, so the line above never fired
+			// (dacky_4175 via Watcher, 2026-10-27: PinUpRedLipstick LMCC.esp last, "No problems found", nailed nipples).
+			// Custom races (_HalfSuperMutant...) point at their own skeletons on purpose: HumanRace only
+			if (!raceOk && nailed.empty() && !raceTold && _stricmp(raceName.c_str(), "HumanRace") == 0) {
+				auto* data = RE::TESDataHandler::GetSingleton();
+				const bool dfs = data && (data->LookupLoadedModByName("DiscreteFemaleSkeleton.esp") ||
+				                          data->LookupLoadedLightModByName("DiscreteFemaleSkeleton.esp"));
+				std::error_code ec;
+				const bool file = std::filesystem::exists(
+					"Data\\Meshes\\Actors\\Character\\CharacterAssets\\female\\skeleton.nif", ec);
+				if (dfs || file) {
+					raceTold = true;
+					r.Problem("HumanRace sends women to the men's base skeleton, not the women's skeleton (last edited by " +
+						owner + ").",
+						std::string(dfs ? "DiscreteFemaleSkeleton.esp is loaded, but " : "The women's skeleton (female\\skeleton.nif, "
+						"Skeletal Adjustments for CBBE) is installed, but ") + owner + " overrides HumanRace after it and sends "
+						"women to " + skel + ". Outfits made for 3BBB stay nailed in place (breasts and nipples fixed while she "
+						"moves). " + (dfs ? "Load DiscreteFemaleSkeleton.esp after " + owner + "." :
+						"Enable DiscreteFemaleSkeleton.esp and load it after " + owner + "."));
+				}
 			}
 		}
 		if (player && !playerIn && !actorUtils::IsActorMale(player))
