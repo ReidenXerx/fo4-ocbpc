@@ -608,9 +608,17 @@ namespace
 			// (dacky_4175 via Watcher, 2026-10-27: PinUpRedLipstick LMCC.esp last, "No problems found", nailed nipples).
 			// Custom races (_HalfSuperMutant...) point at their own skeletons on purpose: HumanRace only
 			if (!raceOk && nailed.empty() && !raceTold && _stricmp(raceName.c_str(), "HumanRace") == 0) {
-				auto* data = RE::TESDataHandler::GetSingleton();
-				const bool dfs = data && (data->LookupLoadedModByName("DiscreteFemaleSkeleton.esp") ||
-				                          data->LookupLoadedLightModByName("DiscreteFemaleSkeleton.esp"));
+				// any DiscreteFemaleSkeleton* plugin: it ships in versions (the player above ran its LMCC one)
+				std::string dfsName = "DiscreteFemaleSkeleton.esp";
+				bool dfs = false;
+				if (auto* data = RE::TESDataHandler::GetSingleton()) {
+					for (auto* list : { &data->compiledFileCollection.files, &data->compiledFileCollection.smallFiles })
+						for (RE::TESFile* f : *list)
+							if (!dfs && f && _strnicmp(f->filename, "DiscreteFemaleSkeleton", 22) == 0) {
+								dfs = true;
+								dfsName = f->filename;
+							}
+				}
 				std::error_code ec;
 				const bool file = std::filesystem::exists(
 					"Data\\Meshes\\Actors\\Character\\CharacterAssets\\female\\skeleton.nif", ec);
@@ -618,11 +626,12 @@ namespace
 					raceTold = true;
 					r.Problem("HumanRace sends women to the men's base skeleton, not the women's skeleton (last edited by " +
 						owner + ").",
-						std::string(dfs ? "DiscreteFemaleSkeleton.esp is loaded, but " : "The women's skeleton (female\\skeleton.nif, "
-						"Skeletal Adjustments for CBBE) is installed, but ") + owner + " overrides HumanRace after it and sends "
+						(dfs ? dfsName + " is loaded, but " : std::string("The women's skeleton (female\\skeleton.nif, "
+						"Skeletal Adjustments for CBBE) is installed, but ")) + owner + " overrides HumanRace after it and sends "
 						"women to " + skel + ". Outfits made for 3BBB stay nailed in place (breasts and nipples fixed while she "
-						"moves). " + (dfs ? "Load DiscreteFemaleSkeleton.esp after " + owner + "." :
-						"Enable DiscreteFemaleSkeleton.esp and load it after " + owner + "."));
+						"moves). " + (dfs ? "Load " + dfsName + " after " + owner + "." :
+						"Enable DiscreteFemaleSkeleton.esp (or its LooksMenu Customization Compendium version) and load it "
+						"after " + owner + "."));
 				}
 			}
 		}
