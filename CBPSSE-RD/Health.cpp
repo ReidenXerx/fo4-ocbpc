@@ -140,6 +140,17 @@ namespace
 			if (!detail.empty())
 				text << "           " << detail << "\n";
 		}
+		// the file only, never the box: what one mod's own NPC shows, not the player's setup
+		void Note(const std::string& line, const std::string& detail = {})
+		{
+			text << "  NOTE: " << line << "\n";
+			if (!detail.empty())
+				text << "        " << detail << "\n";
+		}
+		void Finding(bool box, const std::string& line, const std::string& detail = {})
+		{
+			box ? Problem(line, detail) : Note(line, detail);
+		}
 	};
 
 	// the bones the preset moves that are not Anatomy's own genital bones (those come from Anatomy's ini)
@@ -509,7 +520,17 @@ namespace
 					r.text << "    a mannequin: its skeleton is not checked\n";
 					continue;
 				}
+				// a race that IS power armor (The Glowing Nightmare, PowerArmorGhoulRace_Glowing: a ghoul sealed in T-45 as
+				// her race's skin, on the base skeleton by design, never out of it): no frame furniture, so the check above
+				// misses her (a player via alasdairn and Watcher, 2026-10-28: the box named her breast and thigh bones)
+				if (race.find("powerarmor") != std::string::npos) {
+					r.text << "    a power armor race: its skeleton is not checked\n";
+					continue;
+				}
 			}
+			// a woman of a race other than HumanRace stands on the skeleton her mod gave that race: what she lacks goes to
+			// the file, not the box (a load-time box for one mod's NPC is heavy; the player is always told)
+			const bool box = a == player || _stricmp(actorUtils::GetActorRaceEID(a).c_str(), "HumanRace") == 0;
 			// body bones the skin found outside her skeleton (a Havok cloth bone of a garment is not a body bone: only
 			// *_skin names count)
 			std::vector<std::string> nailed, carried;
@@ -581,7 +602,7 @@ namespace
 				if (!copies.empty()) {
 					r.text << "    her left breast hangs: LBreast_01_skin" << chain << "\n";
 					if (!chest)
-						r.Problem(G::RefName(a) + "'s breast bones do not hang under her chest.",
+						r.Finding(box, G::RefName(a) + "'s breast bones do not hang under her chest.",
 							"Her skeleton (" + skel + ", race last edited by " + owner + ") hangs LBreast_01_skin" + chain +
 							", not under Chest: her breasts do not lean with her torso and sink into it when she runs or "
 							"bends. Women need Skeletal Adjustments for CBBE's female\\skeleton.nif (3BBB).");
@@ -599,7 +620,7 @@ namespace
 					"Actors\\Character\\CharacterAssets\\female\\skeleton.nif (DiscreteFemaleSkeleton.esp sets it, and the "
 					"file comes from Skeletal Adjustments for CBBE): load DiscreteFemaleSkeleton.esp after " + owner +
 					", or make a patch that keeps that path.";
-				r.Problem(G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
+				r.Finding(box, G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
 					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). " + fix);
 			}
 			// HumanRace sends women to the base skeleton although the women's skeleton is set up (DiscreteFemaleSkeleton.esp
