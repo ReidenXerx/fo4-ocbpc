@@ -454,7 +454,7 @@ namespace
 				std::string("The preset changed after the builder ran. ") + kFix);
 	}
 
-	void Actors(Report& r)
+	void Actors(Report& r, const std::string& kind)
 	{
 		r.text << "\nActors the physics runs on: " << actorEntries.size() << "\n";
 		Actor* player = G::LookupActor(0x14);
@@ -607,6 +607,21 @@ namespace
 							", not under Chest: her breasts do not lean with her torso and sink into it when she runs or "
 							"bends. Women need Skeletal Adjustments for CBBE's female\\skeleton.nif (3BBB).");
 				}
+				// no 3BBB breast bone at all, though her race names the women's skeleton and the body is 3BBB: the skeleton
+				// she stands on is not that file (hockhult via Watcher, 2026-10-29: Ivy, a new character, legs, butt and breasts
+				// stretched from the mirror on, the vault women fine, "No problems found"; slm 14 mended her). Clothed in a
+				// CBBE-weighted suit no bone is loose, so the nailed line below cannot see it
+				else if (kind == "3bbb" && raceOk && !prewarSpouse) {
+					r.text << "    her skeleton has no LBreast_01_skin: not the 3BBB skeleton her race names\n";
+					r.Finding(box, G::RefName(a) + "'s skeleton has none of 3BBB's breast bones, though her race sends women to "
+						"the women's skeleton.",
+						a == player ?
+						"Your character stands on the men's base skeleton, so the 3BBB body stretches at the legs, butt and "
+						"breasts. Type slm 14 in the console (it reloads her with the women's skeleton), then save and load. If "
+						"it comes back after a load, another skeleton mod overwrites " + skel + "." :
+						"The file " + skel + " lacks 3BBB's bones: another skeleton mod overwrites Skeletal Adjustments for "
+						"CBBE's female\\skeleton.nif. Make Skeletal Adjustments for CBBE (3BBB) win that file.");
+				}
 			}
 			if (!nailed.empty()) {
 				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n";
@@ -720,7 +735,7 @@ namespace
 		BodyMorphs(r);
 		SkeletonPatches(r);
 		Builder(r, bones, kind);
-		Actors(r);
+		Actors(r, kind);
 		r.text << "\n" << (r.problems.empty() ? "No problems found.\n" : std::to_string(r.problems.size()) + " problem(s) found.\n");
 
 		std::string where = "Anatomy_Health.txt";
