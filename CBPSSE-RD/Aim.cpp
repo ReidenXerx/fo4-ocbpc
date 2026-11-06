@@ -102,9 +102,11 @@ namespace
 		ULONGLONG since = 0;
 		int lines = 0;
 	};
-	const float kRotNear = 2e-4f;     // largest matrix entry difference still ours
-	const float kPosNear = 2e-3f;     // game units
-	const float kScaleNear = 2e-4f;
+	// 0 = exact, as before 1.2.31: cad7753's own flap counts showed the chain re-keyed in full every frame (near 0,
+	// worst 0.69), so a tolerance fixed nothing there; kept at 0 to change nothing else (the counters stay)
+	const float kRotNear = 0.0f;
+	const float kPosNear = 0.0f;
+	const float kScaleNear = 0.0f;
 
 	float RotDev(const NiMatrix43& a, const NiMatrix43& b)
 	{
