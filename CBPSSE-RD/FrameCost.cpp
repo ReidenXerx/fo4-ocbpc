@@ -12,7 +12,7 @@ namespace FrameCost
 	{
 		using Clock = std::chrono::steady_clock;
 		const char* kNames[kParts] = { "scan", "aim", "sound", "colliders", "mouth", "tubes", "hash", "loaded actors",
-			"ticks", "bones", "physics", "skirt", "canal", "other" };
+			"ticks", "bones", "physics", "skirt", "canal", "other", "config" };
 
 		struct Window
 		{

@@ -222,8 +222,11 @@ static void ReadBoneSections(INIReader& configReader, bool anatomy)
 
 }
 
+unsigned configGeneration = 0;
+
 bool LoadConfig() {
     logger.Info("loadConfig\n");
+    configGeneration++;
 
     std::set<std::string> bonesSet;
 

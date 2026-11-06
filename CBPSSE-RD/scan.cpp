@@ -373,14 +373,12 @@ void UpdateActors() {
         else {
             auto &simObj = objIterator->second;
             if (simObj.IsBound()) {
-                // need better system for update config
-                if (IsActorTorsoArmorEquipped(a.actor) && detectArmor) {
-//                    logger.Info("torso armor detected on actor %x\n", a.actor->formID);
-                    simObj.UpdateConfig(a.actor, boneNames, configArmor);
-                }
-                else {
-                    simObj.UpdateConfig(a.actor, boneNames, config);
-                }
+                // fo4-anatomy (h_wushen, 2026-11-06): the config only when it changed or every 30 frames
+                // (SimObj::ConfigDue); detectArmor first, so the armor walk runs only where it is on
+                const bool armorNow = detectArmor && IsActorTorsoArmorEquipped(a.actor);
+                if (simObj.ConfigDue(configGeneration, armorNow, a.id))
+                    simObj.UpdateConfig(a.actor, boneNames, armorNow ? configArmor : config);
+                FrameCost::Lap(FrameCost::kConfig);
                 const auto t0 = std::chrono::steady_clock::now();
                 simObj.Update(a.actor);
                 physUs += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();

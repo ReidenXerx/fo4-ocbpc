@@ -22,6 +22,7 @@ namespace FrameCost
 		kSkirt,      // UpdateSkirt
 		kCanal,      // UpdateCanal
 		kOther,      // the rest (config reload)
+		kConfig,     // SimObj::UpdateConfig (bone lookups + settings), when due
 		kParts
 	};
 

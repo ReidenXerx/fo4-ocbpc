@@ -48,6 +48,7 @@ extern whitelist_t whitelist;
 extern std::vector<std::string> raceWhitelist;
 extern std::unordered_map<UInt32, bool> armorIgnore;
 bool LoadConfig();
+extern unsigned configGeneration;   // fo4-anatomy: +1 on every LoadConfig (SimObj::ConfigDue)
 // the health check (Health.cpp): the preset LoadConfig read last, and whether it is Anatomy's own (no ocbp.ini)
 const std::string& PresetInUse(bool& anatomys);
 void DumpWhitelistToLog();

@@ -64,13 +64,11 @@ void SimObj::Update(Actor *actor) {
         logger.Info("SimObj update: doing thing %s\n", t.first.c_str());
         
         // Might be a better way to do this
-        if (boneIgnores.find(actor->formID) != boneIgnores.end()) {
-            auto actorBoneMap = boneIgnores.at(actor->formID);
-            if (actorBoneMap.find(t.first) != actorBoneMap.end()) {
-                if (actorBoneMap.at(t.first)) {
-                    continue;
-                }
-            }
+        // fo4-anatomy (2026-11-06): by reference; the copy was made per bone, per frame
+        if (auto ign = boneIgnores.find(actor->formID); ign != boneIgnores.end()) {
+            auto it = ign->second.find(t.first);
+            if (it != ign->second.end() && it->second)
+                continue;
         }
 
         if (!useWhitelist || ((IsBoneInWhitelist(actor, t.first) || anatomyBones.count(t.first)) && useWhitelist) &&
@@ -133,6 +131,21 @@ void SimObj::UpdateStretch(Actor* actor) {
         float m = Length(across);
         G::Local(child).pos = (m > 1e-4f && extra > 0.0f) ? across * (extra / m) : NiPoint3(0, 0, 0);
     }
+}
+
+bool SimObj::ConfigDue(unsigned a_generation, bool a_armor, UInt32 a_formID) {
+    if (cfgGeneration != a_generation || cfgArmor != a_armor) {
+        if (cfgGeneration == ~0u)
+            cfgFrames = a_formID % kConfigEvery;   // first time: spread the actors' refreshes over the frames
+        cfgGeneration = a_generation;
+        cfgArmor = a_armor;
+        return true;
+    }
+    if (++cfgFrames >= kConfigEvery) {
+        cfgFrames = 0;
+        return true;
+    }
+    return false;
 }
 
 bool SimObj::UpdateConfig(Actor* actor, std::vector<std::string>& boneNames, config_t& config) {
