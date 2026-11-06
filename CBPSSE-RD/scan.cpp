@@ -45,6 +45,7 @@
 #include "Sound.h"
 #include "TubeCollide.h"
 #include "Utility.hpp"
+#include "FrameCost.h"
 
 #pragma warning(disable : 4996)
 
@@ -120,6 +121,7 @@ void UpdateActors() {
     // We scan the cell and build the list every time - only look up things by ID once
     // we retain all state by actor ID, in a map - it's cleared on cell change
     actorEntries.clear();
+    FrameCost::BeginFrame();   // fo4-anatomy (2026-11-06): what this frame costs, by part (FrameCost.h)
 
 
 	//if (tuningModeCollision != 0)
@@ -241,19 +243,25 @@ void UpdateActors() {
         zHigh += 100.0;
 
         //SaveLastColliderPositions();
+        FrameCost::Lap(FrameCost::kScan);
 
         UpdateAims();     // fo4-anatomy (A-28): every shaft onto its opening, before the colliders are built from it
+        FrameCost::Lap(FrameCost::kAim);
         Sound::Update();  // fo4-anatomy (A-67): the engine's own sex sounds and Rapport's events, from those depths
+        FrameCost::Lap(FrameCost::kSound);
 
         otherColliders.clear();
 
         CreateOtherColliders();
 
         UpdateColliderPositions(otherColliders);
+        FrameCost::Lap(FrameCost::kColliders);
 
         UpdateMouths();   // fo4-anatomy: every mouth against every penis chain, after the colliders moved
+        FrameCost::Lap(FrameCost::kMouth);
 
         BuildTubes();     // fo4-anatomy: the penis chains as tubes for this frame's collisions ([Tube])
+        FrameCost::Lap(FrameCost::kTubes);
 
         //LoadLastColliderPositions();
 
@@ -294,7 +302,9 @@ void UpdateActors() {
         }
         //LOG_INFO("End of collider hashing");
         //LOG_INFO("Partitions size=%d", partitions.size());
+        FrameCost::Lap(FrameCost::kHash);
     }
+    FrameCost::Lap(FrameCost::kScan);   // no actor in reach: the scan alone
 
     //static bool done = false;
     //if (!done && player->loadedState->node) {
@@ -334,12 +344,14 @@ void UpdateActors() {
 
     // fo4-anatomy (A-44, A-45): our bones on every loaded actor, not only this cell's, and at rest on those
     // OCBPC does not move this frame
+    FrameCost::Lap(FrameCost::kOther);
     {
         std::vector<UInt32> simulated;
         for (auto& a : actorEntries)
             simulated.push_back(a.id);
         EnsureLoadedActors(12, simulated);
     }
+    FrameCost::Lap(FrameCost::kLoaded);
 
     //logger.error("Updating %d entities\n", actorEntries.size());
     G::Once("scan|entries|" + std::to_string(actorEntries.size() > 1), "diag: actor entries {} (cell {})",
@@ -347,11 +359,13 @@ void UpdateActors() {
     Health::Tick();   // fo4-anatomy: the health check after a save load (Health.h)
     Strands::Tick();   // fo4-anatomy (2026-10-16): fluid strands after a pull-out (Strands.h)
     Fluid::Tick();     // and the climax fluid (Fluid.h)
+    FrameCost::Lap(FrameCost::kTicks);
     // fo4-anatomy (A-57): what the physics costs per frame, to put numbers on a 3BBB body against CBBE's
     double physUs = 0.0;
     size_t physActors = 0, physBones = 0;
     for (auto &a : actorEntries) {
         EnsureAnatomyBones(a.actor);   // fo4-anatomy (A-21): our bones exist before OCBPC looks them up by name
+        FrameCost::Lap(FrameCost::kBones);
         auto objIterator = actors.find(a.id);
         if (objIterator == actors.end()) {
             //logger.error("Sim Object not found in tracked actors\n");
@@ -383,9 +397,13 @@ void UpdateActors() {
                 }
             }
         }
+        FrameCost::Lap(FrameCost::kPhysics);
         UpdateSkirt(a.actor);   // fo4-anatomy (roadmap 5): the skirt nodes, after the body's own physics
+        FrameCost::Lap(FrameCost::kSkirt);
         UpdateCanal(a.actor);   // fo4-anatomy (2026-10-07): the canal wraps the shaft UpdateAims laid in her
+        FrameCost::Lap(FrameCost::kCanal);
     }
+    FrameCost::EndFrame(actorEntries.size());
     {
         // every 1800 frames (~30 s at 60 fps): the physics' average and worst cost per frame, and what it moved
         static size_t frames = 0, actorSum = 0, boneSum = 0;

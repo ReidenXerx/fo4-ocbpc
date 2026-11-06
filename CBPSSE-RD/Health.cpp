@@ -6,6 +6,7 @@
 #include "ActorEntry.h"
 #include "ActorUtils.h"
 #include "Aim.h"
+#include "FrameCost.h"
 #include "Sound.h"
 #include "Bones.h"
 #include "CodeGuard.h"
@@ -681,6 +682,8 @@ namespace
 		r.text << "  aim: " << (AimOn() ? "on" : "off") << ", chain " << AimChainText() << "; human men simulated " << men
 		       << ", with a working chain " << menChained << (men == 0 ? " (no human man loaded: the men's skeleton is "
 		       "not checked)" : "") << "\n";
+		// what the engine's frame costs (h_wushen, 2026-11-06: 140 fps without the engine, 70 with it)
+		r.text << "  engine frame: " << FrameCost::Text() << "\n";
 		// the sex sounds (A-67): the mute, the engine's own audio calls, Rapport's override and what it muted
 		r.text << "\nSex sounds: the packs' SoundPlay mute " << (Sound::Hooked() ? "hooked" : "NOT hooked (this build)")
 		       << "; the engine's audio calls " << (Sound::CanPlay() ? "ready" : "not resolved") << "; override "
