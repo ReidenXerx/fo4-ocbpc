@@ -91,9 +91,39 @@ namespace
 	ULONGLONG busyAt = 0;
 	const ULONGLONG kBusyStaleMs = 10000;
 
+	// What touched the chain between our frames (cad7753, 2026-11-06): counted per man, logged every 2 s in a scene.
+	// "moved" = not exactly what we wrote; "near" = within the tolerance below, so still taken as ours.
+	struct Flap
+	{
+		unsigned frames = 0, rotMoved = 0, rotNear = 0, posMoved = 0, posNear = 0, scaleMoved = 0, scaleNear = 0;
+		unsigned locks = 0, releases = 0;
+		float rotDevMax = 0.0f, posDevMax = 0.0f, scaleDevMax = 0.0f;
+		float baseScaleMin = 1e9f, baseScaleMax = -1e9f;   // the tip's "animation" scale this window
+		ULONGLONG since = 0;
+		int lines = 0;
+	};
+	const float kRotNear = 2e-4f;     // largest matrix entry difference still ours
+	const float kPosNear = 2e-3f;     // game units
+	const float kScaleNear = 2e-4f;
+
+	float RotDev(const NiMatrix43& a, const NiMatrix43& b)
+	{
+		float d = 0.0f;
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				d = (std::max)(d, std::fabs(a.data[i][j] - b.data[i][j]));
+		return d;
+	}
+
+	float PosDev(const NiPoint3& a, const NiPoint3& b)
+	{
+		return (std::max)({ std::fabs(a.x - b.x), std::fabs(a.y - b.y), std::fabs(a.z - b.z) });
+	}
+
 	struct Held
 	{
 		AimSolve::State state;
+		Flap flap;
 		std::vector<NiMatrix43> baseRot, wroteRot;   // per joint but the tip: the animation's, and ours
 		std::vector<NiPoint3> basePos, wrotePos;     // per joint after the root: its offset, the same way
 		std::vector<float> baseScale, wroteScale;    // per node: its local scale, the same way (the shape)
@@ -716,29 +746,60 @@ void UpdateAims()
 		h.seenAt = ms;
 		size_t n = nodes.size();
 
-		// the animation's pose: what is there now, unless it is still exactly what we wrote (then the
-		// animation did not key it this frame, and ours must not be taken for the animation's)
+		// the animation's pose: what is there now, unless it is still what we wrote (then the animation did not
+		// key it this frame, and ours must not be taken for the animation's). NEAR what we wrote counts as ours
+		// (cad7753, 2026-11-06: UAP keys no penis bone, and with the aim or the shape alone the penis flapped
+		// between bent and straight and between sizes in every animation, both off calm): taking a nudged copy
+		// of our own output for the animation's pose stacks the shape and the turns on themselves every frame.
 		h.baseRot.resize(n - 1);
 		h.basePos.resize(n - 1);
 		bool keyed = false;
+		Flap& fl = h.flap;
+		fl.frames++;
 		for (size_t i = 0; i + 1 < n; i++) {
 			const NiMatrix43& cur = G::Local(nodes[i]).rot;
-			if (!(h.wrote && i < h.wroteRot.size() && SameRot(cur, h.wroteRot[i]))) {
+			const bool mine = h.wrote && i < h.wroteRot.size();
+			const float dev = mine ? RotDev(cur, h.wroteRot[i]) : 0.0f;
+			if (mine && dev > 0.0f) {
+				fl.rotMoved++;
+				fl.rotDevMax = (std::max)(fl.rotDevMax, dev);
+				if (dev <= kRotNear)
+					fl.rotNear++;
+			}
+			if (!(mine && dev <= kRotNear)) {
 				keyed = keyed || h.wrote;
 				h.baseRot[i] = cur;
 			}
 		}
 		for (size_t k = 1; k < n; k++) {
 			const NiPoint3& cur = G::Local(nodes[k]).pos;
-			if (!(h.wrote && k - 1 < h.wrotePos.size() && SamePos(cur, h.wrotePos[k - 1])))
+			const bool mine = h.wrote && k - 1 < h.wrotePos.size();
+			const float dev = mine ? PosDev(cur, h.wrotePos[k - 1]) : 0.0f;
+			if (mine && dev > 0.0f) {
+				fl.posMoved++;
+				fl.posDevMax = (std::max)(fl.posDevMax, dev);
+				if (dev <= kPosNear)
+					fl.posNear++;
+			}
+			if (!(mine && dev <= kPosNear))
 				h.basePos[k - 1] = cur;
 		}
 		h.baseScale.resize(n, 1.0f);
 		for (size_t i = 0; i < n; i++) {
 			float cur = G::Local(nodes[i]).scale;
-			if (!(h.wrote && i < h.wroteScale.size() && cur == h.wroteScale[i]))
+			const bool mine = h.wrote && i < h.wroteScale.size();
+			const float dev = mine ? std::fabs(cur - h.wroteScale[i]) : 0.0f;
+			if (mine && dev > 0.0f) {
+				fl.scaleMoved++;
+				fl.scaleDevMax = (std::max)(fl.scaleDevMax, dev);
+				if (dev <= kScaleNear)
+					fl.scaleNear++;
+			}
+			if (!(mine && dev <= kScaleNear))
 				h.baseScale[i] = cur;
 		}
+		fl.baseScaleMin = (std::min)(fl.baseScaleMin, h.baseScale.back());
+		fl.baseScaleMax = (std::max)(fl.baseScaleMax, h.baseScale.back());
 		if (h.wrote && !h.toldKeyed) {
 			Note("aim|keyed|" + std::to_string(a->formID) + (keyed ? "|1" : "|0"), keyed ?
 				"[aim] %08X: the animation keys %s every frame - the correction is laid on its pose each frame\n" :
@@ -844,6 +905,29 @@ void UpdateAims()
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|lock|%08X|%08X|%d", a->formID, r.targetOwner, r.targetKind);
 			Note(key, "[aim] %08X: shaft onto %08X's %s, %.1f degrees and %.1f off, stretch %.2f\n", a->formID,
 				r.targetOwner, AimSolve::KindName(r.targetKind), r.angle * 57.29578f, r.miss, r.stretch);
+		}
+		{
+			// every 2 s in a scene, 30 lines per man: how often the chain was not as we left it, by how much, and how
+			// often the aim took and let go (a flapping penis shows hundreds of either per window); fl is h.flap
+			fl.locks += r.newLock ? 1u : 0u;
+			fl.releases += r.released ? 1u : 0u;
+			if (!fl.since)
+				fl.since = ms;
+			if (ms - fl.since >= 2000) {
+				if (c.inScene && fl.lines < 30) {
+					char key[64];
+					_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|flap|%08X|%d", a->formID, fl.lines++);
+					Note(key, "[aim] %08X flap: %u frames; not as we left it: turns %u (%u near, worst %.5f), offsets %u "
+						"(%u near, worst %.4f), scales %u (%u near, worst %.5f); tip scale taken %.4f .. %.4f; locks %u, "
+						"releases %u\n", a->formID, fl.frames, fl.rotMoved, fl.rotNear, fl.rotDevMax, fl.posMoved,
+						fl.posNear, fl.posDevMax, fl.scaleMoved, fl.scaleNear, fl.scaleDevMax, fl.baseScaleMin,
+						fl.baseScaleMax, fl.locks, fl.releases);
+				}
+				const int lines = fl.lines;
+				fl = Flap{};
+				fl.lines = lines;
+				fl.since = ms;
+			}
 		}
 		// In a scene with no opening taken for 3 s: why not, every 5 s, for the nearest vagina or anus (the owner,
 		// 2026-10-09: BP70 Romantic Cowgirl kept the penis straight past both holes for two minutes, and the log only
