@@ -14,6 +14,8 @@
 // OCBPC's per-frame UpdateConfig then binds the new nodes by name like any other bone.
 #include "INIReader.h"
 
+#include <map>
+
 #include "Game.h"
 void LoadBonesConfig(INIReader& reader);
 // where a node of ours rests under its parent on this sex ([BonesMale] on a man, else [Bones]); false: not ours
@@ -44,6 +46,8 @@ struct BodyView
 	// of those, the ones her skeleton DOES have: the skin was bound to a copy the worn mesh carries itself (an outfit
 	// mod's fault, not the skeleton's), with the shapes that use them
 	std::vector<std::string> copied, copiedBy;
+	// each loose bone -> the shapes whose skin uses it (a 3BBB outfit on a CBBE setup names its pieces, 11-07)
+	std::map<std::string, std::vector<std::string>> looseBy;
 };
 bool DescribeBody(Actor* actor, BodyView& out);
 // true when a skinned shape under the actor's 3D is bound to one of these bones (a worn penis rides the chain); a fault

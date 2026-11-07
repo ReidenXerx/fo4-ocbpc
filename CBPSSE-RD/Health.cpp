@@ -686,6 +686,28 @@ namespace
 						"CBBE's female\\skeleton.nif. Make Skeletal Adjustments for CBBE (3BBB) win that file.");
 				}
 			}
+			// a CBBE setup (body and preset on LBreast_skin) has no 3BBB bones by design: a worn piece weighted to them was
+			// built in BodySlide for 3BBB, and the skeleton is not at fault (maikel747 via Watcher, 2026-11-07: right breast
+			// still, left moving, under a VTAC set on CBBE; the box sent him hunting for a skeleton mod)
+			const auto only3bbb = [](const std::string& n) {
+				return n.find("Breast_0") != std::string::npos || n.find("Butt_0") != std::string::npos ||
+				       n.find("Thigh_01_") != std::string::npos;
+			};
+			if (!nailed.empty() && kind == "cbbe" && std::all_of(nailed.begin(), nailed.end(), only3bbb)) {
+				std::vector<std::string> pieces;
+				for (const auto& bn : nailed)
+					if (auto it = body.looseBy.find(bn); it != body.looseBy.end())
+						for (const auto& s : it->second)
+							if (std::find(pieces.begin(), pieces.end(), s) == pieces.end())
+								pieces.push_back(s);
+				r.text << "    worn pieces built for 3BBB on a CBBE setup: " << Join(pieces) << " (weighted to " << Join(nailed)
+				       << ", which a CBBE skeleton never has)\n";
+				r.Finding(box, Who(a) + " wears pieces built for 3BBB, but your body is CBBE (" + Join(pieces) + ").",
+					"Those pieces are weighted to " + Join(nailed) + ", 3BBB's bones, which your CBBE skeleton does not have, so "
+					"they stay nailed in place (one breast still, the other moving). Your skeleton is fine. Rebuild that outfit "
+					"in BodySlide with the same CBBE body/preset as your body (not a 3BBB one), or leave those pieces off.");
+				nailed.clear();
+			}
 			if (!nailed.empty()) {
 				r.text << "    her skeleton lacks " << Join(nailed) << ": the skin is bound to loose copies\n";
 				// the race already names the women's skeleton: then the FILE there lacks the bones (another skeleton
