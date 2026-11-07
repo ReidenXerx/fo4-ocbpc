@@ -657,6 +657,69 @@ bool SkinUsesBone(Actor* actor, const std::vector<std::string>& names)
 	return SkinUsesBoneGuarded(actor, &names, &out) ? out : true;
 }
 
+// the health check (11-07, Ivy Rev 28, a woman New Game with Ace Male Race): her body bound 114 of our bones, yet no node
+// named LBreast_01_skin hung anywhere under her 3D. Where the skin's own bone nodes hang says which skeleton the body
+// really rides: the parent chain of the node a skin entry points at, up to its top, and whether that top is her 3D root
+static void SkinBoneWhereImpl(Actor* actor, const char* name, std::string& out)
+{
+	NiAVObject* root = actor ? G::Root(actor) : nullptr;
+	if (!root)
+		return;
+	VisitGeometry(root, [&](BSGeometry* geo) {
+		if (!out.empty())
+			return;
+		Layout::CheckSkin(geo);
+		if (Layout::Skin() != Layout::State::kGood)
+			return;
+		G::SkinInstance* skin = G::Skin(geo);
+		if (!skin || !G::SkinBones(skin).entries)
+			return;
+		for (UInt32 i = 0; i < G::SkinBones(skin).count; i++) {
+			NiNode* b = G::SkinBones(skin).entries[i];
+			const char* bn = b ? G::Name(b) : nullptr;
+			if (!bn || _stricmp(bn, name) != 0)
+				continue;
+			const char* gn = G::Name(geo);
+			out = std::string("skin of ") + (gn ? gn : "?") + " binds " + name + ": " + bn;
+			NiAVObject* top = b;
+			bool underRoot = b == root;
+			int hops = 0;
+			for (NiAVObject* q = G::Parent(b); q && hops < 48; q = G::Parent(q), ++hops) {
+				const char* qn = G::Name(q);
+				out += std::string(" <- ") + (qn && *qn ? qn : "(unnamed)");
+				top = q;
+				underRoot = underRoot || q == root;
+			}
+			char tail[160];
+			NiNode* topNode = G::AsNode(top);
+			_snprintf_s(tail, sizeof(tail), _TRUNCATE, " | top %p (%u children)%s", (void*)top,
+				topNode ? G::ChildCount(topNode) : 0u,
+				underRoot ? ", inside her 3D" : top == b ? ", hangs nowhere (no parent)" : ", NOT inside her 3D");
+			out += tail;
+			return;
+		}
+	});
+	if (out.empty())
+		out = std::string("no skin binds ") + name;
+}
+
+static bool SkinBoneWhereGuarded(Actor* actor, const char* name, std::string* out)
+{
+	__try {
+		SkinBoneWhereImpl(actor, name, *out);
+		return true;
+	} __except (1) {
+		NoteFault(actor, "SkinBoneWhere");
+		return false;
+	}
+}
+
+std::string SkinBoneWhere(Actor* actor, const char* name)
+{
+	std::string out;
+	return SkinBoneWhereGuarded(actor, name, &out) ? out : std::string("(her 3D faulted while it was read)");
+}
+
 // fo4-anatomy (the owner, 2026-10-08: "make it universally being able wear 3bbb, even a male servitron"): an outfit's
 // armour addons list the races that may wear them, and ServitronRace borrows none, so human clothes never showed on a
 // Servitron. Its armour race becomes HumanRace at load (no record of anyone's overridden): every human outfit's addons

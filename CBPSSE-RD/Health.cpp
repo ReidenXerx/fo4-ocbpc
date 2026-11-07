@@ -64,6 +64,20 @@ namespace
 				FindAll(G::Child(node, i), a_name, a_out, a_depth + 1);
 	}
 
+	// who a finding is about: her name, or for a player not named yet (a New Game in the vault, 11-07: the box read
+	// "'s skeleton has none...") "Your character", else her form id
+	std::string Who(Actor* a_actor)
+	{
+		std::string n = G::RefName(a_actor);
+		if (!n.empty())
+			return n;
+		if (a_actor && a_actor->formID == 0x14)
+			return "Your character";
+		char id[16];
+		_snprintf_s(id, sizeof(id), _TRUNCATE, "%08X", a_actor ? a_actor->formID : 0u);
+		return id;
+	}
+
 	std::string Lower(std::string s)
 	{
 		for (auto& c : s)
@@ -578,6 +592,37 @@ namespace
 				// Every copy is looked at: while an outfit goes on, the first one found can be the outfit's own
 				std::vector<NiAVObject*> copies;
 				FindAll(G::Root(a), "LBreast_01_skin", copies);
+				// a walk of her 3D can miss her skeleton's bones that the game's own lookup finds (11-07, Ivy Rev 28: a woman
+				// New Game with Ace Male Race; her body was bound to LBreast_01_skin under Chest inside her skeleton.nif,
+				// and the walk found neither it nor COM: a false "skeleton has none of 3BBB's breast bones" on every load,
+				// solarvelocity "only the pop up"). The game's lookup is what the physics binds by, so it decides
+				std::string walkMiss;
+				if (copies.empty()) {
+					static const BSFixedString lb01("LBreast_01_skin");
+					if (NiAVObject* n = G::SkeletonNode(G::Root(a), lb01)) {
+						copies.push_back(n);
+						// where the walk stopped: the first parent that is not a node to the walk, or does not list its child
+						for (NiAVObject* c = n; c && c != G::Root(a); c = G::Parent(c)) {
+							NiAVObject* p = G::Parent(c);
+							NiNode* pn = G::AsNode(p);
+							bool listed = false;
+							if (pn)
+								for (std::uint32_t i = 0; i < G::ChildCount(pn) && !listed; ++i)
+									listed = G::Child(pn, i) == c;
+							if (!pn || !listed) {
+								const char* pnm = p ? G::Name(p) : nullptr;
+								const char* cnm = G::Name(c);
+								walkMiss = std::string(pnm && *pnm ? pnm : "(unnamed)") + (pn ? " does not list " : " is not a node above ") +
+								           (cnm && *cnm ? cnm : "(unnamed)");
+								break;
+							}
+						}
+						if (walkMiss.empty())
+							walkMiss = "the walk stopped early";
+					}
+				}
+				if (!walkMiss.empty())
+					r.text << "    (her breast bone found by the game's lookup, not by a walk of her 3D: " << walkMiss << ")\n";
 				bool chest = false;
 				std::string chain;
 				for (NiAVObject* n : copies) {
@@ -603,7 +648,7 @@ namespace
 				if (!copies.empty()) {
 					r.text << "    her left breast hangs: LBreast_01_skin" << chain << "\n";
 					if (!chest)
-						r.Finding(box, G::RefName(a) + "'s breast bones do not hang under her chest.",
+						r.Finding(box, Who(a) + "'s breast bones do not hang under her chest.",
 							"Her skeleton (" + skel + ", race last edited by " + owner + ") hangs LBreast_01_skin" + chain +
 							", not under Chest: her breasts do not lean with her torso and sink into it when she runs or "
 							"bends. Women need Skeletal Adjustments for CBBE's female\\skeleton.nif (3BBB).");
@@ -614,7 +659,24 @@ namespace
 				// CBBE-weighted suit no bone is loose, so the nailed line below cannot see it
 				else if (kind == "3bbb" && raceOk && !prewarSpouse) {
 					r.text << "    her skeleton has no LBreast_01_skin: not the 3BBB skeleton her race names\n";
-					r.Finding(box, G::RefName(a) + "'s skeleton has none of 3BBB's breast bones, though her race sends women to "
+					// where her 3D and her body's skin really hang (11-07, Ace Male Race women: the skin bound our bones,
+					// no LBreast_01_skin under her 3D at all, and the body looked right): the root, its children, and the
+					// nodes the skin's own entries point at
+					{
+						NiAVObject* root = G::Root(a);
+						const char* rn = root ? G::Name(root) : nullptr;
+						r.text << "    her 3D root: " << (rn && *rn ? rn : "(unnamed)") << ", children:";
+						if (NiNode* rnode = G::AsNode(root))
+							for (std::uint32_t i = 0; i < G::ChildCount(rnode) && i < 24; ++i) {
+								NiAVObject* c = G::Child(rnode, i);
+								const char* cn = c ? G::Name(c) : nullptr;
+								r.text << " " << (c ? (cn && *cn ? cn : "(unnamed)") : "-");
+							}
+						r.text << "\n";
+						for (const char* bn : { "LBreast_01_skin", "Pelvis_skin", "Chest" })
+							r.text << "    " << SkinBoneWhere(a, bn) << "\n";
+					}
+					r.Finding(box, Who(a) + "'s skeleton has none of 3BBB's breast bones, though her race sends women to "
 						"the women's skeleton.",
 						a == player ?
 						"Your character stands on the men's base skeleton, so the 3BBB body stretches at the legs, butt and "
@@ -636,7 +698,7 @@ namespace
 					"Actors\\Character\\CharacterAssets\\female\\skeleton.nif (DiscreteFemaleSkeleton.esp sets it, and the "
 					"file comes from Skeletal Adjustments for CBBE): load DiscreteFemaleSkeleton.esp after " + owner +
 					", or make a patch that keeps that path.";
-				r.Finding(box, G::RefName(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
+				r.Finding(box, Who(a) + "'s skeleton lacks bones her body is weighted to (" + Join(nailed) + ").",
 					"Those parts stay nailed in place while she moves (breasts fixed at one height, worst when she sits). " + fix);
 			}
 			// HumanRace sends women to the base skeleton although the women's skeleton is set up (DiscreteFemaleSkeleton.esp
