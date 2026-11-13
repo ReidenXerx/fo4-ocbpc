@@ -29,8 +29,13 @@ namespace
 		std::string name;
 		std::string parent;
 		NiPoint3 local;
+		std::string lname;                           // name lowercased once at load
 	};
 	std::vector<BoneDef> table;                      // parents before children (sorted at load)
+	// lowercase name -> its entry in table, built once at load. evillasagna (Discord, 2026-11-13): AnatomyBoneRest
+	// scanned the whole table and lowercased every name on each call - every physics bone of every actor, every
+	// frame (and the skirt and canal per node): heavy lag in crowded cells. One hash lookup now.
+	std::unordered_map<std::string, size_t> tableIndex;
 	std::unordered_set<std::string> ours;           // lowercase names, for the skin scan
 	// A-69: [BonesMale] the same nodes on a man where his body differs (the anus: BodyTalk's is lower and further
 	// back than the women's); lowercase name -> offset under its parent
@@ -102,6 +107,7 @@ void LoadBonesConfig(INIReader& reader)
 	srvPelvisFallback = reader.GetBoolean("Servitron", "pelvisFallback", true);
 	srvHumanClothes = reader.GetBoolean("Servitron", "humanClothes", false);
 	table.clear();
+	tableIndex.clear();
 	ours.clear();
 	maleLocal.clear();
 	std::vector<BoneDef> pending;
@@ -143,6 +149,10 @@ void LoadBonesConfig(INIReader& reader)
 	for (auto& orphan : pending)
 		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin nor one of ours; "
 			"skipped\n", orphan.name.c_str(), orphan.parent.c_str());
+	for (size_t i = 0; i < table.size(); i++) {
+		table[i].lname = Lower(table[i].name);
+		tableIndex.emplace(table[i].lname, i);       // first wins, as the old scan did
+	}
 	// Section() throws on a section the file lacks: an older Anatomy ini has no [BonesMale]
 	const auto haveMale = reader.Sections().count("BonesMale") > 0;
 	for (auto& entry : haveMale ? reader.Section("BonesMale") : std::unordered_map<std::string, std::string>()) {   // name=parent,x,y,z: only the offset is a man's own
@@ -170,7 +180,7 @@ void LoadBonesConfig(INIReader& reader)
 static NiPoint3 RestOf(const BoneDef& def, bool male)
 {
 	if (male) {
-		auto it = maleLocal.find(Lower(def.name));
+		auto it = maleLocal.find(def.lname);
 		if (it != maleLocal.end())
 			return it->second;
 	}
@@ -179,14 +189,11 @@ static NiPoint3 RestOf(const BoneDef& def, bool male)
 
 bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest)
 {
-	const std::string want = Lower(name);
-	for (auto& def : table) {
-		if (Lower(def.name) == want) {
-			rest = RestOf(def, male);
-			return true;
-		}
-	}
-	return false;
+	auto it = tableIndex.find(Lower(name));
+	if (it == tableIndex.end())
+		return false;
+	rest = RestOf(table[it->second], male);
+	return true;
 }
 
 // fo4-anatomy (A-51): true when this node hangs, parent by parent, from the actor's live 3D root. A body being

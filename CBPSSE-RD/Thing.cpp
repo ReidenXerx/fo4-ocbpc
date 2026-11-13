@@ -323,7 +323,9 @@ void Thing::Update(Actor *actor) {
         ShowPos(G::Local(obj).pos);
     }
     else {
-        auto actorPosMap = origLocalPos.at(boneName.c_str());
+        // a reference: `auto` copied this bone's whole rest table (every actor's entry) on every frame for every bone
+        // (evillasagna, 2026-11-13)
+        const auto& actorPosMap = origLocalPos_iter->second;
         auto actor_iter = actorPosMap.find(actor->formID);
         if (actor_iter == actorPosMap.end()) {
             logger.Error("for bone %s, actor %08x: \n", boneName.c_str(), actor->formID);
@@ -339,7 +341,7 @@ void Thing::Update(Actor *actor) {
         ShowRot(G::Local(obj).rot);
     }
     else {
-        auto actorRotMap = origLocalRot.at(boneName.c_str());
+        const auto& actorRotMap = origLocalRot_iter->second;      // a reference, not a copy (see above)
         auto actor_iter = actorRotMap.find(actor->formID);
         if (actor_iter == actorRotMap.end()) {
             logger.Error("for bone %s, actor %08x: \n", boneName.c_str(), actor->formID);
