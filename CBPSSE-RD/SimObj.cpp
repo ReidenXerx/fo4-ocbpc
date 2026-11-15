@@ -120,7 +120,12 @@ void SimObj::UpdateStretch(Actor* actor) {
             continue;
         BSFixedString childName((t.first + "_Stretch").c_str());
         NiAVObject* child = G::SkeletonNode(root, childName);
-        if (!child)
+        // only OUR stretch node, the child of the simulated bone. After a sexchange round trip (Fo4-mcp 11-15) the
+        // game leaves the re-made body skin half-bound, Bones waits, our nodes are never made, and the name search
+        // falls back to the body's own stranded copy hanging off the actor's root: zeroing ITS position put it at the
+        // feet and drew the vertices weighted to it as a rod to the floor (with the engine off, none)
+        NiAVObject* parent = child ? G::Parent(child) : nullptr;
+        if (!parent || !G::Name(parent) || _stricmp(G::Name(parent), t.first.c_str()) != 0)
             continue;
         float extra = t.second.stretchGain * (smallest[g] - t.second.stretchKnee);
         if (members[g] < 2 || extra < 0.0f)
