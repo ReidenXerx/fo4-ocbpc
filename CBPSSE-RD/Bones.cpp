@@ -480,6 +480,12 @@ void WatchLoadedActors()
 	Note("bones|watch", "[bones] watching every actor whose 3D loads (TESObjectLoadedEvent), not only the player's cell\n");
 }
 
+std::vector<UInt32> LoadedActorIds()
+{
+	std::lock_guard<std::mutex> guard(loadedLock);
+	return loadedActors;
+}
+
 // A-45: our nodes under the skeleton's Pelvis_skin back where [Bones] rests them; the farthest was off, or -1
 static float RestOurBones(Actor* actor)
 {

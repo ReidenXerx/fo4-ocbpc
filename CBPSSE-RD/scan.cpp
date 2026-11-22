@@ -39,6 +39,7 @@
 #include "config.h"
 #include "PapyrusOCBP.h"
 #include "SimObj.h"
+#include "BoneOffsets.h"
 #include "Bones.h"
 #include "Mouth.h"
 #include "Aim.h"
@@ -231,6 +232,8 @@ void UpdateActors() {
             }
         }
     }
+
+    UpdateBoneOffsets();   // fo4-anatomy (2026-11-23): per-actor bone lengths, after the animation, before the aim and physics
 
     // If valid actorPos?
     if (xLow < 9999999 && yLow < 9999999 && zLow < 9999999 && xHigh > -9999999 && yHigh > -9999999 && zHigh > -9999999)

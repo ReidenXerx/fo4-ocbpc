@@ -36,6 +36,7 @@ void WatchLoadedActors();                      // once, at kMessage_GameDataRead
 // actor not simulated this frame has our bones put back where [Bones] rests them (identity rotation).
 // `simulated` holds the form ids OCBPC updates this frame (actorEntries).
 void EnsureLoadedActors(int budget, const std::vector<UInt32>& simulated);
+std::vector<UInt32> LoadedActorIds();            // every actor whose 3D is loaded (TESObjectLoadedEvent), a copy
 // The health check (Health.cpp): the shapes under an actor's 3D, and how many skin entries of those bound to
 // Pelvis_skin name our bones. False when her 3D faulted while it was read.
 struct BodyView
