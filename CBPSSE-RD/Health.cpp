@@ -148,9 +148,11 @@ namespace
 	{
 		std::ostringstream text;
 		std::vector<std::string> problems;   // one line each, for the message box
+		std::vector<std::string> details;    // each problem's why + fix, for the WHAT TO DO block (Actions)
 		void Problem(const std::string& line, const std::string& detail = {})
 		{
 			problems.push_back(line);
+			details.push_back(detail);
 			text << "  PROBLEM: " << line << "\n";
 			if (!detail.empty())
 				text << "           " << detail << "\n";
@@ -167,6 +169,55 @@ namespace
 			box ? Problem(line, detail) : Note(line, detail);
 		}
 	};
+
+	// The steps in a problem's detail, for the WHAT TO DO block at the top of the file (avj2222 via Watcher, 2026-11-22:
+	// a player could not read the report; "logs meant to help ID issues should have a TL;DR"): the detail's sentences,
+	// and clauses after a colon, that start with a verb the fixes use. The whole detail when none does.
+	std::string Actions(const std::string& detail)
+	{
+		static constexpr const char* kVerbs[] = { "add", "build", "check", "choose", "delete", "disable", "enable", "hide",
+			"install", "keep", "let", "load", "make", "move", "open", "pick", "put", "rebuild", "reinstall", "remove", "run",
+			"send", "set", "start", "tick", "try", "turn", "type", "uninstall", "untick", "update", "use" };
+		std::string out;
+		size_t at = 0;
+		while (at < detail.size()) {
+			// the next ". " or ": " outside brackets ("(in MO2: right-click ...)" stays in its step)
+			size_t end = detail.size();
+			int depth = 0;
+			for (size_t p = at; p + 1 < detail.size(); ++p) {
+				const char c = detail[p];
+				depth += (c == '(' || c == '[') - (c == ')' || c == ']');
+				if (depth <= 0 && (c == '.' || c == ':') && detail[p + 1] == ' ') {
+					end = p + 1;
+					break;
+				}
+			}
+			std::string s = detail.substr(at, end - at);
+			at = end + 1;
+			const size_t lead = s.find_first_not_of(' ');
+			if (lead == std::string::npos)
+				continue;
+			s.erase(0, lead);
+			std::string word;
+			for (char c : s) {
+				if (!std::isalpha(static_cast<unsigned char>(c)))
+					break;
+				word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			}
+			bool verb = false;
+			for (const char* v : kVerbs)
+				verb = verb || word == v;
+			if (!verb)
+				continue;
+			s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+			if (s.back() == ':')
+				s.back() = '.';
+			else if (s.back() != '.')
+				s += '.';
+			out += (out.empty() ? "" : " ") + s;
+		}
+		return out.empty() ? detail : out;
+	}
 
 	// the bones the preset moves that are not Anatomy's own genital bones (those come from Anatomy's ini)
 	std::vector<std::string> PresetBones()
@@ -825,11 +876,22 @@ namespace
 		Actors(r, kind);
 		r.text << "\n" << (r.problems.empty() ? "No problems found.\n" : std::to_string(r.problems.size()) + " problem(s) found.\n");
 
+		// WHAT TO DO first: each problem in one line and only its steps; the full report (why, what was read) below
+		std::string top;
+		if (!r.problems.empty()) {
+			top = "WHAT TO DO (" + std::to_string(r.problems.size()) + " problem(s); the details are further down)\n";
+			for (size_t i = 0; i < r.problems.size(); ++i) {
+				top += "  " + std::to_string(i + 1) + ") " + r.problems[i] + "\n";
+				if (!r.details[i].empty())
+					top += "     Do: " + Actions(r.details[i]) + "\n";
+			}
+			top += "\n";
+		}
 		std::string where = "Anatomy_Health.txt";
 		if (auto dir = rdlog::log_directory()) {
 			*dir /= "Anatomy_Health.txt"sv;
 			std::ofstream out(*dir, std::ios::binary | std::ios::trunc);
-			out << r.text.str();
+			out << top << r.text.str();
 			where = dir->string();
 		}
 		rdlog::info("health: {} problem(s); report {}{}", r.problems.size(), where, confirming ? " (second pass)" : "");
@@ -849,7 +911,7 @@ namespace
 		std::string box = "Anatomy found " + std::to_string(r.problems.size()) + " problem(s):\n";
 		for (auto& p : r.problems)
 			box += "\n- " + p;
-		box += "\n\nDetails and fixes: Documents\\My Games\\Fallout4\\F4SE\\Anatomy_Health.txt";
+		box += "\n\nWhat to do: the top of Documents\\My Games\\Fallout4\\F4SE\\Anatomy_Health.txt";
 		shown = ShowBox(box);
 		if (!shown)
 			rdlog::warn("health: the message box could not be shown on this runtime");
