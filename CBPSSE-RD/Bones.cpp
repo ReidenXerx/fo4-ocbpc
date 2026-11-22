@@ -228,8 +228,17 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		if (Layout::Skin() != Layout::State::kGood)
 			return;
 		G::SkinInstance* skin = G::Skin(geo);
-		if (!skin || !G::SkinBones(skin).entries || !G::SkinWorldTransforms(skin).entries)
+		if (!skin || !G::SkinBones(skin).entries || !G::SkinWorldTransforms(skin).entries) {
+			// 2026-11-22 (Ilham test1: his head's skin never showed in the Servitron lines below): say which shape of a
+			// Servitron is skipped here and why
+			if (actorUtils::IsServitron(actor)) {
+				char key[160];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|srvskip|%08X|%s", actor->formID, G::Name(geo));
+				Note(key, "[bones] %08X Servitron: '%s' skipped: %s\n", actor->formID, G::Name(geo),
+					!skin ? "no skin instance" : !G::SkinBones(skin).entries ? "no bones array" : "no world transforms");
+			}
 			return;
+		}
 		UInt32 count = G::SkinBones(skin).count;
 		if (G::SkinWorldTransforms(skin).count < count)
 			count = G::SkinWorldTransforms(skin).count;
@@ -319,7 +328,10 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		for (auto& def : table) {
 			auto p = nodes.find(Lower(def.parent));
 			if (p == nodes.end() && _stricmp(def.parent.c_str(), kHead) == 0) {
-				// the skeleton's own HEAD (under COM: a worn head carries a flat copy of the name)
+				// the skeleton's own HEAD (under COM: a worn head carries a flat copy of the name); only a Servitron's
+				// head has a mouth panel, so nobody else gets these nodes (or a per-frame mouth visit)
+				if (!actorUtils::IsServitron(actor))
+					continue;
 				BSFixedString headName(kHead);
 				p = nodes.emplace(Lower(kHead), G::SkeletonNode(G::Root(actor), headName)).first;
 			}
@@ -833,6 +845,66 @@ namespace
 		} __except (1) {
 		}
 	}
+
+	// Ilham test1 (2026-11-22): his head's panel sat open at rest and no head skin showed in the [bones] lines, so its
+	// entries were never pointed at our nodes. Every 2 s per robot: each skin entry named AnatSrvMouth_* that is not our
+	// node under the skeleton's HEAD is pointed at it, and what was found is said once per shape and state.
+	std::unordered_map<UInt32, std::uint64_t> mouthChecked;
+
+	void BindMouthSkins(Actor* actor)
+	{
+		BSFixedString headName(kHead);
+		NiAVObject* head = G::SkeletonNode(G::Root(actor), headName);
+		if (!head)
+			return;
+		NiNode* ours[2] = { nullptr, nullptr };
+		for (int side = 0; side < 2; side++) {
+			BSFixedString wanted(side ? "AnatSrvMouth_R" : "AnatSrvMouth_L");
+			NiAVObject* n = head->GetObjectByName(wanted);
+			ours[side] = (n && G::Parent(n) == head) ? G::AsNode(n) : nullptr;
+		}
+		VisitGeometry(G::Root(actor), [&](BSGeometry* geo) {
+			G::SkinInstance* skin = G::Skin(geo);
+			if (!skin || !G::SkinBones(skin).entries || !G::SkinWorldTransforms(skin).entries)
+				return;
+			UInt32 count = G::SkinBones(skin).count;
+			if (G::SkinWorldTransforms(skin).count < count)
+				count = G::SkinWorldTransforms(skin).count;
+			int named = 0, already = 0, moved = 0;
+			for (UInt32 i = 0; i < count; i++) {
+				NiNode* b = G::SkinBones(skin).entries[i];
+				const char* name = b ? G::Name(b) : nullptr;
+				if (!name || _strnicmp(name, "AnatSrvMouth_", 13) != 0)
+					continue;
+				named++;
+				NiNode* target = ours[_stricmp(name, "AnatSrvMouth_R") == 0 ? 1 : 0];
+				if (!target)
+					continue;
+				if (b == target) {
+					already++;
+					continue;
+				}
+				G::SkinBones(skin).entries[i] = target;
+				G::SkinWorldTransforms(skin).entries[i] = &G::World(target);
+				moved++;
+			}
+			if (named) {
+				char key[160];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|mouthskin|%08X|%s|%d|%d|%d", actor->formID, G::Name(geo), named,
+					already, moved);
+				Note(key, "[servitron] %08X: '%s' names the mouth bones (%d entries): %d already ours, %d pointed at ours now%s\n",
+					actor->formID, G::Name(geo), named, already, moved, ours[0] && ours[1] ? "" : " (our nodes missing)");
+			}
+		});
+	}
+
+	void BindMouthSkinsGuarded(Actor* actor)
+	{
+		__try {
+			BindMouthSkins(actor);
+		} __except (1) {
+		}
+	}
 }
 
 void LoadServitronMouthConfig(INIReader& reader)
@@ -877,6 +949,11 @@ void UpdateServitronMouths()
 			const float step = mouthSpeed * (dt > 0.1f ? 0.1f : dt);
 			m.open += target > m.open ? (std::min)(step, target - m.open) : -(std::min)(step, m.open - target);
 			open = m.open;
+		}
+		auto& checked = mouthChecked[id];
+		if (now - checked > 2000) {
+			checked = now;
+			BindMouthSkinsGuarded(actor);
 		}
 		MoveMouthGuarded(actor, open, actorUtils::IsActorMale(actor));
 	}
