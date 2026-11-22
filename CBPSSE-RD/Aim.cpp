@@ -852,6 +852,11 @@ void UpdateAims()
 		// pose, took her anus only because his root sat near it, and let go ("the turn it needs is too wide"). In a scene,
 		// his root is first turned toward his partner's nearest opening (her vagina preferred), as an animation would
 		// have put it; the aim then locks and follows as on a man whose animation keys the chain
+		// Ilham test3 (11-23): the turn went toward her vagina, yet the aim still caught her anus first (his root sits by
+		// it) and the animation's hand "held" a shaft the animation never placed. So the robot's aim gets only the
+		// opening the turn chose, and no hands
+		std::vector<AimSolve::Target> seekOnly;
+		bool seeking = false;
 		if (aimOn && c.inScene && h.wrote && !keyed && n >= 2 && actorUtils::IsServitron(a)) {
 			std::vector<V3> joints;
 			std::vector<AimSolve::Quat> world;
@@ -875,6 +880,8 @@ void UpdateAims()
 				const V3 d = AimSolve::Normalized(AimSolve::Sub(goal, joints.front()));
 				const AimSolve::Quat turn = AimSolve::FromTo(u, d);
 				c.locals[0] = AimSolve::Mul(AimSolve::Conj(c.parent), AimSolve::Mul(turn, AimSolve::Mul(c.parent, c.locals[0])));
+				seekOnly.push_back(*best);
+				seeking = true;
 				char key[96];
 				_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|srvseek|%08X|%08X|%d", a->formID, best->owner, best->kind);
 				Note(key, "[aim] %08X: a robot's unkeyed shaft turned toward %08X's %s (%.0f degrees) before the aim\n",
@@ -928,7 +935,8 @@ void UpdateAims()
 		int wasKind = h.state.lockedKind;
 		AimSolve::Result r;
 		if (aimOn)
-			r = AimSolve::Update(h.state, c, targets, hands, params, dt);
+			r = seeking ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, params, dt)
+				: AimSolve::Update(h.state, c, targets, hands, params, dt);
 		if (r.released) {
 			char key[128];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|release|%08X|%08X|%d|%s", a->formID, wasOwner, wasKind, r.why);

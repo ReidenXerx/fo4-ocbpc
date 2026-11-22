@@ -69,7 +69,7 @@ namespace
 
 	void Note(const std::string& key, const char* fmt, ...)
 	{
-		char line[512];
+		char line[1024];
 		va_list args;
 		va_start(args, fmt);
 		_vsnprintf_s(line, sizeof(line), _TRUNCATE, fmt, args);
@@ -840,6 +840,16 @@ namespace
 					continue;
 				const NiPoint3& t = side ? mouthTravelR : mouthTravelL;
 				G::Local(node).pos = rest + t * open;
+				if (open > 0.98f) {   // Ilham test3: only one half moved; once per robot and side, what this one drives
+					char key[64];
+					_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|mouthopen|%08X|%d", actor->formID, side);
+					NiAVObject* parent = G::Parent(node);
+					const NiPoint3& w = G::World(node).pos;
+					Note(key, "[servitron] %08X: %s open: node %p under '%s', local %.2f,%.2f,%.2f (rest %.2f,%.2f,%.2f), "
+						"world %.2f,%.2f,%.2f\n", actor->formID, name, (void*)node,
+						parent && G::Name(parent) ? G::Name(parent) : "-", G::Local(node).pos.x, G::Local(node).pos.y,
+						G::Local(node).pos.z, rest.x, rest.y, rest.z, w.x, w.y, w.z);
+				}
 			}
 		}
 	}
@@ -876,7 +886,8 @@ namespace
 			UInt32 count = G::SkinBones(skin).count;
 			if (G::SkinWorldTransforms(skin).count < count)
 				count = G::SkinWorldTransforms(skin).count;
-			int named = 0, already = 0, moved = 0;
+			int named = 0, already = 0, moved = 0, worldFixed = 0;
+			char detail[256] = "";
 			for (UInt32 i = 0; i < count; i++) {
 				NiNode* b = G::SkinBones(skin).entries[i];
 				const char* name = b ? G::Name(b) : nullptr;
@@ -884,10 +895,19 @@ namespace
 					continue;
 				named++;
 				NiNode* target = ours[_stricmp(name, "AnatSrvMouth_R") == 0 ? 1 : 0];
+				const bool worldOk = G::SkinWorldTransforms(skin).entries[i] == &G::World(b);
+				NiNode* parent = G::Parent(b);
+				const size_t used = strlen(detail);
+				_snprintf_s(detail + used, sizeof(detail) - used, _TRUNCATE, " [slot %u %s %p under '%s', world %s]", i, name,
+					(void*)b, parent && G::Name(parent) ? G::Name(parent) : "-", worldOk ? "its own" : "ANOTHER's");
 				if (!target)
 					continue;
 				if (b == target) {
 					already++;
+					if (!worldOk) {   // Ilham test3 suspect: the entry names our node but draws from another's world
+						G::SkinWorldTransforms(skin).entries[i] = &G::World(target);
+						worldFixed++;
+					}
 					continue;
 				}
 				G::SkinBones(skin).entries[i] = target;
@@ -896,10 +916,12 @@ namespace
 			}
 			if (named) {
 				char key[160];
-				_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|mouthskin|%08X|%s|%d|%d|%d", actor->formID, G::Name(geo), named,
-					already, moved);
-				Note(key, "[servitron] %08X: '%s' names the mouth bones (%d entries): %d already ours, %d pointed at ours now%s\n",
-					actor->formID, G::Name(geo), named, already, moved, ours[0] && ours[1] ? "" : " (our nodes missing)");
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|mouthskin|%08X|%s|%d|%d|%d|%d", actor->formID, G::Name(geo), named,
+					already, moved, worldFixed);
+				Note(key, "[servitron] %08X: '%s' names the mouth bones (%d entries): %d already ours, %d pointed at ours now, "
+					"%d drew from another node's world (fixed)%s; ours L %p R %p;%s\n", actor->formID, G::Name(geo), named,
+					already, moved, worldFixed, ours[0] && ours[1] ? "" : " (our nodes missing)", (void*)ours[0],
+					(void*)ours[1], detail);
 			}
 		});
 	}
