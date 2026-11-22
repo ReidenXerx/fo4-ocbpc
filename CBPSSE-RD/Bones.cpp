@@ -17,6 +17,8 @@
 #include <mutex>
 #include <new>
 #include <sstream>
+#include <chrono>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -41,6 +43,10 @@ namespace
 	// back than the women's); lowercase name -> offset under its parent
 	std::unordered_map<std::string, NiPoint3> maleLocal;
 	const char* kPelvis = "Pelvis_skin";
+	// fo4-anatomy (2026-11-22, Ilham's Servitron head): [Bones] may also hang nodes under the skeleton's own HEAD (the
+	// mouth panel's AnatSrvMouth_L/_R); the Servitron mouth driver below moves them
+	const char* kHead = "HEAD";
+	std::unordered_set<UInt32> mouthActors;          // actors whose skeleton got our mouth nodes
 	// a skin already pointed at our nodes: one of its entries and the node it must still hold. A
 	// re-equipped body is a NEW skin (possibly at a reused address), which fails this check.
 	// Skins that need nothing (they do not name ours) are remembered too, with index = none. The
@@ -131,7 +137,7 @@ void LoadBonesConfig(INIReader& reader)
 		pending.push_back(def);
 	}
 	// INIReader keeps a section's keys sorted, so order parents before children here
-	std::unordered_set<std::string> placed{ Lower(kPelvis) };
+	std::unordered_set<std::string> placed{ Lower(kPelvis), Lower(kHead) };
 	for (bool progress = true; progress && !pending.empty();) {
 		progress = false;
 		for (auto it = pending.begin(); it != pending.end();) {
@@ -147,7 +153,7 @@ void LoadBonesConfig(INIReader& reader)
 		}
 	}
 	for (auto& orphan : pending)
-		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin nor one of ours; "
+		Note("bones|orphan|" + orphan.name, "[bones] %s: its parent %s is neither Pelvis_skin, HEAD nor one of ours; "
 			"skipped\n", orphan.name.c_str(), orphan.parent.c_str());
 	for (size_t i = 0; i < table.size(); i++) {
 		table[i].lname = Lower(table[i].name);
@@ -312,6 +318,11 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		nodes[Lower(kPelvis)] = pelvis;
 		for (auto& def : table) {
 			auto p = nodes.find(Lower(def.parent));
+			if (p == nodes.end() && _stricmp(def.parent.c_str(), kHead) == 0) {
+				// the skeleton's own HEAD (under COM: a worn head carries a flat copy of the name)
+				BSFixedString headName(kHead);
+				p = nodes.emplace(Lower(kHead), G::SkeletonNode(G::Root(actor), headName)).first;
+			}
 			if (p == nodes.end() || !p->second)
 				continue;
 			BSFixedString wanted(def.name.c_str());
@@ -346,6 +357,8 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				created++;
 			}
 			nodes[Lower(def.name)] = found;
+			if (_stricmp(def.parent.c_str(), kHead) == 0)
+				mouthActors.insert(actor->formID);
 		}
 		// point the skin's entries for our names at those nodes
 		for (UInt32 i = 0; i < count; i++) {
@@ -755,4 +768,116 @@ void ServitronClothes()
 	}
 	servitron->armorParentRace = human;
 	Note("srv|clothes", "[servitron] ServitronRace wears HumanRace's outfits ([Servitron] humanClothes=1)\n");
+}
+
+// ---- fo4-anatomy (2026-11-22, Dudu via Watcher): a Servitron head's sliding mouth panel (Ilham's head, General-mods)
+// The panel halves are skinned to AnatSrvMouth_L / _R, which [Bones] hangs under the skeleton's HEAD (EnsureAnatomyBones
+// above). Each frame the panel eases toward open while the robot talks or while a hold is running (AnatomyAim.ServitronMouth,
+// called by a script before a laser shot), and back to closed; open = [Bones] rest + [ServitronMouth] L/R (HEAD's local
+// axes, full travel). A robot without the head never gets the nodes, so nothing here touches it.
+namespace
+{
+	struct MouthState { float open = 0.0f; std::uint64_t holdUntil = 0; };
+	std::mutex mouthLock;
+	std::unordered_map<UInt32, MouthState> mouths;
+	NiPoint3 mouthTravelL(-0.065f, -0.998f, 2.5f), mouthTravelR(-0.065f, -0.998f, -2.5f);   // placeholder, General-mods 11-22
+	float mouthSpeed = 4.0f;                         // of the full travel per second
+	std::uint64_t mouthLast = 0;
+
+	std::uint64_t MouthNowMs()
+	{
+		return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+
+	NiPoint3 ReadPoint(INIReader& reader, const char* key, const NiPoint3& fallback)
+	{
+		const std::string v = reader.Get("ServitronMouth", key, "");
+		float x, y, z;
+		return sscanf_s(v.c_str(), "%f,%f,%f", &x, &y, &z) == 3 ? NiPoint3(x, y, z) : fallback;
+	}
+
+	bool TalkingGuarded(Actor* actor)
+	{
+		__try {
+			return actor->IsTalking();
+		} __except (1) {
+			return false;
+		}
+	}
+
+	void MoveMouth(Actor* actor, float open, bool male)
+	{
+		{
+			BSFixedString headName(kHead);
+			NiAVObject* head = G::SkeletonNode(G::Root(actor), headName);
+			if (!head)
+				return;
+			for (int side = 0; side < 2; side++) {
+				const char* name = side ? "AnatSrvMouth_R" : "AnatSrvMouth_L";
+				BSFixedString wanted(name);
+				NiAVObject* node = head->GetObjectByName(wanted);
+				NiPoint3 rest;
+				if (!node || !AnatomyBoneRest(name, male, rest))
+					continue;
+				const NiPoint3& t = side ? mouthTravelR : mouthTravelL;
+				G::Local(node).pos = rest + t * open;
+			}
+		}
+	}
+
+	void MoveMouthGuarded(Actor* actor, float open, bool male)
+	{
+		__try {
+			MoveMouth(actor, open, male);
+		} __except (1) {
+		}
+	}
+}
+
+void LoadServitronMouthConfig(INIReader& reader)
+{
+	mouthTravelL = ReadPoint(reader, "L", mouthTravelL);
+	mouthTravelR = ReadPoint(reader, "R", mouthTravelR);
+	mouthSpeed = (float)reader.GetReal("ServitronMouth", "speed", mouthSpeed);
+}
+
+void HoldServitronMouth(Actor* actor, float seconds)
+{
+	if (!actor)
+		return;
+	std::lock_guard<std::mutex> guard(mouthLock);
+	mouths[actor->formID].holdUntil = seconds > 0.0f ? MouthNowMs() + (std::uint64_t)(seconds * 1000.0f) : 0;
+	char key[64];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|mouth|hold|%08X", actor->formID);
+	Note(key, "[servitron] %08X: mouth held open for %.1f s (AnatomyAim.ServitronMouth)\n", actor->formID, seconds);
+}
+
+void UpdateServitronMouths()
+{
+	const std::uint64_t now = MouthNowMs();
+	const float dt = mouthLast ? (float)(now - mouthLast) / 1000.0f : 0.0f;
+	mouthLast = now;
+	if (mouthActors.empty())
+		return;
+	std::vector<UInt32> ids(mouthActors.begin(), mouthActors.end());
+	for (UInt32 id : ids) {
+		Actor* actor = G::LookupActor(id);
+		if (!actor || G::Deleted(actor) || !G::Root(actor)) {
+			mouthActors.erase(id);
+			std::lock_guard<std::mutex> guard(mouthLock);
+			mouths.erase(id);
+			continue;
+		}
+		float open;
+		{
+			std::lock_guard<std::mutex> guard(mouthLock);
+			MouthState& m = mouths[id];
+			const float target = (m.holdUntil > now || TalkingGuarded(actor)) ? 1.0f : 0.0f;
+			const float step = mouthSpeed * (dt > 0.1f ? 0.1f : dt);
+			m.open += target > m.open ? (std::min)(step, target - m.open) : -(std::min)(step, m.open - target);
+			open = m.open;
+		}
+		MoveMouthGuarded(actor, open, actorUtils::IsActorMale(actor));
+	}
 }

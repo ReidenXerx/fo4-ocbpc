@@ -59,3 +59,8 @@ std::string SkinBoneWhere(Actor* actor, const char* name);
 
 // fo4-anatomy (10-08): human outfits on Servitrons: ServitronRace borrows HumanRace's armour at game data ready
 void ServitronClothes();
+// fo4-anatomy (2026-11-22): a Servitron head's mouth panel (AnatSrvMouth_L/_R under HEAD): [ServitronMouth] L, R (full travel,
+// HEAD's local axes), speed; held open by AnatomyAim.ServitronMouth(actor, seconds); eased every frame
+void LoadServitronMouthConfig(INIReader& reader);
+void HoldServitronMouth(Actor* actor, float seconds);
+void UpdateServitronMouths();

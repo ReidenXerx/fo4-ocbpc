@@ -350,6 +350,7 @@ void UpdateActors() {
         for (auto& a : actorEntries)
             simulated.push_back(a.id);
         EnsureLoadedActors(12, simulated);
+        UpdateServitronMouths();   // fo4-anatomy (2026-11-22): a Servitron head's mouth panel
     }
     FrameCost::Lap(FrameCost::kLoaded);
 

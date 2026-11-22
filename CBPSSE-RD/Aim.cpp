@@ -1178,12 +1178,20 @@ bool AimSeesScene(unsigned int formID)
 	return InScene(formID, NowMs());
 }
 
+// fo4-anatomy (2026-11-22): ServitronMouth(Actor akActor, Float afSeconds): hold a Servitron head's mouth panel open
+// (Ilham's laser, General-mods' script); 0 closes it now
+static void ServitronMouth(std::monostate, Actor* actor, float seconds)
+{
+	HoldServitronMouth(actor, seconds);
+}
+
 bool RegisterAimFuncs(RE::BSScript::IVirtualMachine* vm)
 {
 	vm->BindNativeMethod("AnatomyAim"sv, "SetBusy"sv, SetBusy, true);   // true: NoWait, as the classic flag
 	vm->BindNativeMethod("AnatomyAim"sv, "Climax"sv, Climax, true);
 	vm->BindNativeMethod("AnatomyAim"sv, "MouthFluid"sv, MouthFluid, true);
 	vm->BindNativeMethod("AnatomyAim"sv, "Inside"sv, Inside, true);
+	vm->BindNativeMethod("AnatomyAim"sv, "ServitronMouth"sv, ServitronMouth, true);
 	return true;
 }
 

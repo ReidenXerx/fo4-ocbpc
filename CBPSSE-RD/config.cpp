@@ -391,6 +391,7 @@ bool LoadConfig() {
     LoadMouthConfig(extrasSections.count("Mouth") ? anatomyExtras : configReader);
     LoadFaceConfig(extrasSections.count("Face") ? anatomyExtras : configReader);
     LoadBonesConfig(extrasSections.count("Bones") ? anatomyExtras : configReader);
+    LoadServitronMouthConfig(extrasSections.count("ServitronMouth") ? anatomyExtras : configReader);
     LoadAimConfig(extrasSections.count("Aim") ? anatomyExtras : configReader);
     LoadEyeConfig(extrasSections.count("Eyes") ? anatomyExtras : configReader);
     LoadSkirtConfig(extrasSections.count("Skirt") ? anatomyExtras : configReader);   // roadmap 5
