@@ -847,6 +847,42 @@ void UpdateAims()
 			}
 		}
 
+		// fo4-anatomy (2026-11-22, Ilham test2): a male Servitron's skeleton has no penis track in its animations ("nothing
+		// keys Penis_00"), so his shaft never points where the scene means it: the aim judged a shaft lying at its bind
+		// pose, took her anus only because his root sat near it, and let go ("the turn it needs is too wide"). In a scene,
+		// his root is first turned toward his partner's nearest opening (her vagina preferred), as an animation would
+		// have put it; the aim then locks and follows as on a man whose animation keys the chain
+		if (aimOn && c.inScene && h.wrote && !keyed && n >= 2 && actorUtils::IsServitron(a)) {
+			std::vector<V3> joints;
+			std::vector<AimSolve::Quat> world;
+			AimSolve::Pose(c, c.locals, 1.0f, joints, world);
+			const float length = AimSolve::ChainLength(c);
+			const AimSolve::Target* best = nullptr;
+			float bestScore = 1e9f;
+			for (const AimSolve::Target& t : targets) {
+				if (t.owner == a->formID || !t.inScene || (t.kind != AimSolve::kVagina && t.kind != AimSolve::kAnus))
+					continue;
+				const float dist = AimSolve::Length(AimSolve::Sub(t.point, joints.front()));
+				const float score = dist * (t.kind == AimSolve::kVagina ? 1.0f : 1.5f);
+				if (dist <= length * params.reach && score < bestScore) {
+					best = &t;
+					bestScore = score;
+				}
+			}
+			if (best) {
+				const V3 u = AimSolve::Normalized(AimSolve::Sub(joints.back(), joints.front()));
+				const V3 goal = AimSolve::Add(best->point, AimSolve::Scale(best->in, params.depth));
+				const V3 d = AimSolve::Normalized(AimSolve::Sub(goal, joints.front()));
+				const AimSolve::Quat turn = AimSolve::FromTo(u, d);
+				c.locals[0] = AimSolve::Mul(AimSolve::Conj(c.parent), AimSolve::Mul(turn, AimSolve::Mul(c.parent, c.locals[0])));
+				char key[96];
+				_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|srvseek|%08X|%08X|%d", a->formID, best->owner, best->kind);
+				Note(key, "[aim] %08X: a robot's unkeyed shaft turned toward %08X's %s (%.0f degrees) before the aim\n",
+					a->formID, best->owner, AimSolve::KindName(best->kind),
+					std::acos((std::max)(-1.0f, (std::min)(1.0f, AimSolve::Dot(u, d)))) * 57.29578f);
+			}
+		}
+
 		if (probe && aimOn) {
 			std::vector<V3> joints;
 			std::vector<AimSolve::Quat> world;

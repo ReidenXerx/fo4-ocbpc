@@ -898,11 +898,63 @@ namespace
 		});
 	}
 
+	// Ilham test2 (2026-11-22): no head shape was ever met under his 3D (neither the [bones] listing nor the re-point
+	// saw IlhamHead_*). Once per robot: every geometry reached, and every node whose name says head/ilham/mouth/face with
+	// its depth and parent, so the log shows where (or whether) the worn head hangs.
+	std::unordered_set<UInt32> mouthProbed;
+
+	void ProbeTree(NiAVObject* obj, int depth, std::string& geos, std::string& heads, int& total)
+	{
+		if (!obj || depth > 96)
+			return;
+		const char* name = G::Name(obj);
+		std::string low = Lower(name ? name : "");
+		if (G::AsGeometry(obj)) {
+			total++;
+			if (geos.size() < 1500)
+				geos += (geos.empty() ? "" : ", ") + std::string(name ? name : "?");
+			return;
+		}
+		if (low.find("head") != std::string::npos || low.find("ilham") != std::string::npos ||
+				low.find("mouth") != std::string::npos || low.find("face") != std::string::npos) {
+			NiAVObject* parent = G::Parent(obj);
+			char line[200];
+			_snprintf_s(line, sizeof(line), _TRUNCATE, "%s%s@%d<%s", heads.empty() ? "" : ", ", name ? name : "?", depth,
+				parent && G::Name(parent) ? G::Name(parent) : "-");
+			if (heads.size() < 1500)
+				heads += line;
+		}
+		NiNode* node = G::AsNode(obj);
+		if (!node)
+			return;
+		for (UInt16 i = 0; i < G::ChildCount(node); i++)
+			ProbeTree(G::Child(node, i), depth + 1, geos, heads, total);
+	}
+
+	void ProbeMouth(Actor* actor)
+	{
+		std::string geos, heads;
+		int total = 0;
+		ProbeTree(G::Root(actor), 0, geos, heads, total);
+		char key[64];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|probe|%08X", actor->formID);
+		Note(key, "[servitron] %08X probe: %d geometries under his 3D: %s\n", actor->formID, total, geos.c_str());
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "srv|probeheads|%08X", actor->formID);
+		Note(key, "[servitron] %08X probe: head/ilham/mouth/face nodes (name@depth<parent): %s\n", actor->formID,
+			heads.empty() ? "none" : heads.c_str());
+	}
+
 	void BindMouthSkinsGuarded(Actor* actor)
 	{
 		__try {
 			BindMouthSkins(actor);
 		} __except (1) {
+		}
+		if (mouthProbed.insert(actor->formID).second) {
+			__try {
+				ProbeMouth(actor);
+			} __except (1) {
+			}
 		}
 	}
 }
