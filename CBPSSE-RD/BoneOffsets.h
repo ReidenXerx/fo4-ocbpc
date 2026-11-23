@@ -14,6 +14,12 @@
 //   SPINE1=*0.78               ; the animated local translation scaled
 //   LArm_Collarbone=0,-1.2,0   ; added, in the parent's local axes (game units)
 //   COM=0,0,-3.1
+//   [Log]                      ; optional: the bones' positions after the offsets, one log line per sample
+//   bones=COM,SPINE2,Chest,LArm_UpperArm
+//   every=1.0                  ; seconds between samples
+//   samples=30
+// Each sample gives every bone in the skeleton's own space (the frame of a nif's bind pose) and in the world, plus
+// the root's position and heading. A file with [Log] and no [Offsets] samples the plain pose (the A/B baseline).
 // Several [Actor] blocks are not supported: one actor per file.
 
 void LoadBoneOffsets();      // reads the folder (config load and reload)

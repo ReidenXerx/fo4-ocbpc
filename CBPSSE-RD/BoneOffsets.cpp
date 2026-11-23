@@ -9,6 +9,8 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +48,9 @@ namespace
 		std::uint32_t npc = 0;       // its runtime form id, once the plugin's forms are there
 		int nextTry = 0;
 		std::vector<Offset> offsets;
+		std::vector<std::string> logBones;   // [Log] bones=...: their positions after the offsets, sampled
+		float logEvery = 1.0f;               // seconds between samples
+		int logSamples = 30;
 	};
 
 	struct BoneState
@@ -60,6 +65,9 @@ namespace
 	{
 		NiAVObject* root = nullptr;
 		std::vector<BoneState> bones;
+		std::vector<NiAVObject*> logNodes;
+		int logged = 0;
+		ULONGLONG nextLog = 0;
 	};
 
 	std::mutex lock;
@@ -119,6 +127,23 @@ namespace
 					s.plugin = value;
 				else if (_stricmp(key.c_str(), "base") == 0)
 					s.local = (std::uint32_t)std::strtoul(value.c_str(), nullptr, 0) & 0x00FFFFFF;
+			} else if (_stricmp(section.c_str(), "Log") == 0) {
+				if (_stricmp(key.c_str(), "bones") == 0) {
+					size_t at = 0;
+					while (at <= value.size()) {
+						const size_t comma = value.find(',', at);
+						const std::string name = Trim(value.substr(at, comma == std::string::npos ? std::string::npos : comma - at));
+						if (!name.empty() && s.logBones.size() < 32)
+							s.logBones.push_back(name);
+						if (comma == std::string::npos)
+							break;
+						at = comma + 1;
+					}
+				} else if (_stricmp(key.c_str(), "every") == 0) {
+					s.logEvery = (std::max)(0.05f, std::strtof(value.c_str(), nullptr));
+				} else if (_stricmp(key.c_str(), "samples") == 0) {
+					s.logSamples = (std::min)(600, (std::max)(1, (int)std::strtol(value.c_str(), nullptr, 10)));
+				}
 			} else if (_stricmp(section.c_str(), "Offsets") == 0) {
 				Offset o;
 				if (ParseOffset(key, value, o))
@@ -127,9 +152,11 @@ namespace
 					bad++;
 			}
 		}
-		Note("offsets|file|" + s.file, "[offsets] %s: %s base %06X, %zu bones%s\n", s.file.c_str(), s.plugin.c_str(),
-			s.local, s.offsets.size(), bad ? " (some lines unreadable: use Bone=*k or Bone=x,y,z)" : "");
-		return !s.plugin.empty() && s.local && !s.offsets.empty();
+		Note("offsets|file|" + s.file, "[offsets] %s: %s base %06X, %zu bones%s; %zu logged every %.2f s x %d\n", s.file.c_str(),
+			s.plugin.c_str(), s.local, s.offsets.size(), bad ? " (some lines unreadable: use Bone=*k or Bone=x,y,z)" : "",
+			s.logBones.size(), s.logEvery, s.logBones.empty() ? 0 : s.logSamples);
+		// a file with only [Log] is fine: it samples the pose with nothing offset (the A/B baseline)
+		return !s.plugin.empty() && s.local && (!s.offsets.empty() || !s.logBones.empty());
 	}
 
 	void Resolve(Spec& s)
@@ -195,10 +222,51 @@ namespace
 				if (bone.top && o.node && o.node != bone.node && Above(o.node, bone.node))
 					bone.top = false;
 		}
+		st.logNodes.assign(s.logBones.size(), nullptr);
+		for (size_t i = 0; i < s.logBones.size(); i++) {
+			BSFixedString name(s.logBones[i].c_str());
+			st.logNodes[i] = G::SkeletonNode(root, name);
+		}
 		char key[96];
 		_snprintf_s(key, sizeof(key), _TRUNCATE, "offsets|bind|%08X|%d", actor->formID, found);
 		Note(key, "[offsets] %08X (%s): %d of %zu bones offset after the animation%s%s\n", actor->formID, s.file.c_str(),
 			found, s.offsets.size(), missing.empty() ? "" : "; not in the skeleton:", missing.c_str());
+	}
+
+	// [Log]: where the named bones are once the offsets are in, both in the skeleton's own space (the frame a
+	// nif's bind pose is in: model = root.rot * (world - root.pos) / root.scale) and in the world
+	void LogSample(Actor* actor, const Spec& s, ActorState& st, NiAVObject* root)
+	{
+		if (s.logBones.empty() || st.logged >= s.logSamples)
+			return;
+		const ULONGLONG now = GetTickCount64();
+		if (st.nextLog && now < st.nextLog)
+			return;
+		st.nextLog = now + (ULONGLONG)(s.logEvery * 1000.0f);
+		const NiTransform& r = G::World(root);
+		const float inv = r.scale != 0.0f ? 1.0f / r.scale : 1.0f;
+		const float heading = std::atan2(r.rot.data[1][0], r.rot.data[1][1]) * 57.29578f;
+		char line[2048];
+		int n = _snprintf_s(line, sizeof(line), _TRUNCATE, "[offsets] %08X sample %d/%d: root (%.2f, %.2f, %.2f) heading %.1f scale %.3f |",
+			actor->formID, st.logged + 1, s.logSamples, r.pos.x, r.pos.y, r.pos.z, heading, r.scale);
+		for (size_t i = 0; i < st.logNodes.size() && n > 0 && n < (int)sizeof(line) - 1; i++) {
+			int add;
+			if (NiAVObject* node = st.logNodes[i]) {
+				const NiPoint3 w = G::World(node).pos;
+				const NiPoint3 m = (r.rot * (w - r.pos)) * inv;
+				add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, " %s model (%.2f, %.2f, %.2f) world (%.2f, %.2f, %.2f);",
+					s.logBones[i].c_str(), m.x, m.y, m.z, w.x, w.y, w.z);
+			} else {
+				add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, " %s not in the skeleton;", s.logBones[i].c_str());
+			}
+			if (add < 0)
+				break;
+			n += add;
+		}
+		st.logged++;
+		char key[64];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "offsets|sample|%08X|%d", actor->formID, st.logged);
+		AnatomyLogLine(key, (std::string(line) + "\n").c_str());
 	}
 
 	void Apply(Actor* actor, const Spec& s, ActorState& st)
@@ -227,6 +295,7 @@ namespace
 			if (bone.top)
 				if (NiNode* parent = G::Parent(bone.node))
 					WorldFrom(bone.node, G::World(parent));
+		LogSample(actor, s, st, root);
 	}
 
 	// A-51's rule: a fault while the 3D changes under us skips the actor this frame instead of taking the game down
