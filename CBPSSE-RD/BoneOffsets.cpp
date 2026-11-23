@@ -65,6 +65,8 @@ namespace
 		bool valid = false;
 		NiPoint3 base, written;      // the pose's value last frame, and what we wrote over it
 		NiMatrix43 baseRot, writtenRot;
+		bool modelValid = false;
+		NiPoint3 modelWritten;       // where our world write put it, in the skeleton's space
 	};
 
 	struct ActorState
@@ -76,6 +78,7 @@ namespace
 		ULONGLONG nextLog = 0;
 		std::uint64_t lastFrame = 0;         // the frame of the last sample
 		int keyed = 0, moved = 0;            // this frame: bones the animation set anew, of the bones we move
+		int worldMoved = 0;                  // ... and bones whose world moved since our write while the local did not
 		double costSum = 0.0, costMax = 0.0; // microseconds of our work on her since the last sample
 		int costFrames = 0;
 	};
@@ -293,6 +296,9 @@ namespace
 	// nif's bind pose is in: model = root.rot * (world - root.pos) / root.scale) and in the world
 	std::uint64_t frame = 0;     // our frame count: UpdateBoneOffsets once per game frame
 
+	void SkinCheck(NiAVObject* obj, const Spec& s, const ActorState& st, int& ours, int& other, char* detail,
+		size_t detailSize, int depth = 0);
+
 	// Taken at the END of the engine's frame (SampleBoneOffsets), after the aim and the physics: a breast or belly
 	// bone shows where OCBPC left it, every other bone where the offsets and the animation put it
 	void LogSample(Actor* actor, const Spec& s, ActorState& st, NiAVObject* root)
@@ -308,15 +314,20 @@ namespace
 		const float inv = r.scale != 0.0f ? 1.0f / r.scale : 1.0f;
 		const float heading = std::atan2(r.rot.data[1][0], r.rot.data[1][1]) * 57.29578f;
 		const NiMatrix43 toModel = r.rot.Transpose();   // world.rot = model.rot * root.rot (rows = axes)
+		int skinOurs = 0, skinOther = 0;
+		char skinDetail[600] = "";
+		SkinCheck(root, s, st, skinOurs, skinOther, skinDetail, sizeof(skinDetail));
 		static char line[8192];
 		int n = _snprintf_s(line, sizeof(line), _TRUNCATE,
 			"[offsets] %08X sample %d/%d: frame %llu (+%llu frames, +%llu ms); the animation set %d of the %d bones we move "
-			"this frame%s; our cost %.1f us a frame (max %.1f) over %d frames | root (%.2f, %.2f, %.2f) heading %.1f scale %.3f |",
+			"this frame%s, and %d moved in the world since our write; skin entries naming them: %d draw from our nodes, %d "
+			"from other nodes%s%s; our cost %.1f us a frame (max %.1f) over %d frames | root (%.2f, %.2f, %.2f) heading %.1f "
+			"scale %.3f |",
 			actor->formID, st.logged + 1, s.logSamples, (unsigned long long)frame,
 			(unsigned long long)(st.lastFrame ? frame - st.lastFrame : 0), (unsigned long long)since, st.keyed, st.moved,
-			st.moved && !st.keyed ? " (her pose was NOT re-animated: a frozen or skipped animation update)" : "",
-			st.costFrames ? st.costSum / st.costFrames : 0.0, st.costMax, st.costFrames, r.pos.x, r.pos.y, r.pos.z, heading,
-			r.scale);
+			st.moved && !st.keyed ? " (no local re-animated)" : "", st.worldMoved, skinOurs, skinOther,
+			skinOther ? ":" : "", skinDetail, st.costFrames ? st.costSum / st.costFrames : 0.0, st.costMax, st.costFrames,
+			r.pos.x, r.pos.y, r.pos.z, heading, r.scale);
 		st.lastFrame = frame;
 		st.costSum = st.costMax = 0.0;
 		st.costFrames = 0;
@@ -361,11 +372,21 @@ namespace
 			return;
 		if (st.root != root || st.bones.size() != s.offsets.size())
 			Bind(actor, s, st, root);   // a new 3D: the nodes are found again
-		st.keyed = st.moved = 0;
+		st.keyed = st.moved = st.worldMoved = 0;
+		const NiTransform& r = G::World(root);
+		const float inv = r.scale != 0.0f ? 1.0f / r.scale : 1.0f;
 		for (size_t i = 0; i < st.bones.size(); i++) {
 			BoneState& bone = st.bones[i];
 			if (!bone.node)
 				continue;
+			// test12a: 37 of 40 samples saw no animation write to any local we move while she walked. Something that
+			// writes the world without the local (a pose laid straight onto the world) would show here
+			if (bone.modelValid) {
+				const NiPoint3 now = (r.rot * (G::World(bone.node).pos - r.pos)) * inv;
+				const NiPoint3 d = now - bone.modelWritten;
+				if (d.x * d.x + d.y * d.y + d.z * d.z > 0.0001f)
+					st.worldMoved++;
+			}
 			const Offset& o = s.offsets[i];
 			if (o.rotate) {
 				NiMatrix43& m = G::Local(bone.node).rot;
@@ -400,6 +421,53 @@ namespace
 			if (bone.top)
 				if (NiNode* parent = G::Parent(bone.node))
 					WorldFrom(bone.node, G::World(parent));
+		for (auto& bone : st.bones) {
+			if (!bone.node)
+				continue;
+			bone.modelWritten = (r.rot * (G::World(bone.node).pos - r.pos)) * inv;
+			bone.modelValid = true;
+		}
+	}
+
+	// Does what she wears draw from the nodes we move? Every skinned shape under her 3D, every skin entry naming one
+	// of our bones: drawn from our node's world, or from another node of that name (a worn file's own copy)
+	void SkinCheck(NiAVObject* obj, const Spec& s, const ActorState& st, int& ours, int& other, char* detail,
+		size_t detailSize, int depth)
+	{
+		if (!obj || depth > 64)
+			return;
+		if (RE::BSGeometry* geo = G::AsGeometry(obj)) {
+			G::SkinInstance* skin = G::Skin(geo);
+			if (skin && G::SkinBones(skin).entries && G::SkinWorldTransforms(skin).entries) {
+				UInt32 count = (std::min)(G::SkinBones(skin).count, G::SkinWorldTransforms(skin).count);
+				for (UInt32 i = 0; i < count; i++) {
+					NiNode* entry = G::SkinBones(skin).entries[i];
+					const char* name = entry ? G::Name(entry) : nullptr;
+					if (!name)
+						continue;
+					for (size_t k = 0; k < st.bones.size(); k++) {
+						if (!st.bones[k].node || _stricmp(name, s.offsets[k].bone.c_str()) != 0)
+							continue;
+						if (G::SkinWorldTransforms(skin).entries[i] == &G::World(st.bones[k].node)) {
+							ours++;
+						} else {
+							other++;
+							const size_t used = strlen(detail);
+							if (used + 80 < detailSize) {
+								NiNode* parent = G::Parent(entry);
+								_snprintf_s(detail + used, detailSize - used, _TRUNCATE, " %s:%s under '%s'", G::Name(geo),
+									name, parent && G::Name(parent) ? G::Name(parent) : "-");
+							}
+						}
+						break;
+					}
+				}
+			}
+			return;
+		}
+		if (NiNode* n = G::AsNode(obj))
+			for (UInt16 i = 0; i < G::ChildCount(n); i++)
+				SkinCheck(G::Child(n, i), s, st, ours, other, detail, detailSize, depth + 1);
 	}
 
 	bool SampleGuarded(Actor* actor, const Spec* s, ActorState* st, NiAVObject* root)
