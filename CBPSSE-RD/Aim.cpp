@@ -460,7 +460,12 @@ namespace
 		nodes.clear();
 		if (!a || !G::Root(a) || !G::Root(a) || chainNames.size() < 2)
 			return false;
-		NiAVObject* root = Find(G::Root(a), chainNames.front());
+		// 11-23: the chain under her Pelvis first ([BonesChain] makes a woman's under Pelvis_skin; a worn penis nif carries
+		// its own NESTED copy, which a search from the root can meet first - stranded, it bends nothing she shows)
+		NiAVObject* pelvisFirst = FindBody(a, "Pelvis");
+		NiAVObject* root = pelvisFirst ? Find(pelvisFirst, chainNames.front()) : nullptr;
+		if (!root || !Find(root, chainNames[1]))
+			root = Find(G::Root(a), chainNames.front());
 		// the skeleton's own chain, not a worn file's copy of its first bone: fo4-anatomy's male Servitron abdomen
 		// (2026-10-08) carries Penis_00..05 as flat nodes, the first found, with nothing below them - the chain was "not
 		// there" and never aimed (the owner's photo: the penis went straight through her ring). The skeleton hangs it

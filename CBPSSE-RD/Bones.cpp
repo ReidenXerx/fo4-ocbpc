@@ -106,6 +106,48 @@ namespace
 	}
 }
 
+// fo4-anatomy (11-23, Ilham's penis add-on): a penis worn by a WOMAN whose skeleton has no penis chain (women load
+// Skeletal Adjustments' female skeleton, which has none) rides the worn file's own stranded copies: the "fin". [BonesChain]
+// chain=Penis_00|..|Penis_05 makes that chain under her Pelvis_skin, nested, where the worn skin binds it - but ONLY on a
+// woman, ONLY when her skeleton (under COM) has no node of the root's name, and ONLY with binds unturned against
+// Pelvis_skin. Plain [Bones] rows would have made a second chain on every man and pointed men's penis skins at it.
+namespace
+{
+	std::vector<std::string> bonesChain;              // root first
+	std::unordered_set<std::string> bonesChainLower;
+	std::unordered_set<NiAVObject*> chainMade;        // nodes this made (held for the session, as ours are)
+
+	bool IsChain(const char* name)
+	{
+		return name && !bonesChainLower.empty() && bonesChainLower.count(Lower(name)) > 0;
+	}
+}
+
+static void LoadChainConfig(INIReader& reader)
+{
+	bonesChain.clear();
+	bonesChainLower.clear();
+	// default: the aim's chain ([Aim] chain), so an Anatomy ini without the section has it; chain= (empty) turns it off
+	std::stringstream in(reader.Get("BonesChain", "chain", reader.Get("Aim", "chain", "")));
+	std::string part;
+	while (std::getline(in, part, '|')) {
+		part.erase(0, part.find_first_not_of(" \t"));
+		part.erase(part.find_last_not_of(" \t") + 1);
+		if (!part.empty()) {
+			bonesChain.push_back(part);
+			bonesChainLower.insert(Lower(part));
+		}
+	}
+	if (bonesChain.size() < 2) {
+		bonesChain.clear();
+		bonesChainLower.clear();
+	}
+	char key[48];
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|chaincfg|%d", (int)bonesChain.size());
+	Note(key, "[bones] [BonesChain]: %d node(s) made for a woman's worn penis when her skeleton has none\n",
+		(int)bonesChain.size());
+}
+
 static bool srvPelvisFallback = true;   // [Servitron] pelvisFallback (10-08 test switch)
 static bool srvHumanClothes = false;    // [Servitron] humanClothes: human outfits on Servitrons (OFF: a slot-33 outfit replaces the whole robot skin, 10-08)
 
@@ -173,6 +215,7 @@ void LoadBonesConfig(INIReader& reader)
 		maleLocal[Lower(entry.first)] = NiPoint3(strtof(parts[1].c_str(), nullptr), strtof(parts[2].c_str(), nullptr),
 			strtof(parts[3].c_str(), nullptr));
 	}
+	LoadChainConfig(reader);
 	std::string names;
 	for (auto& def : table)
 		names += (names.empty() ? "" : ", ") + def.name;
@@ -398,6 +441,116 @@ static bool Reaches(NiAVObject* node, NiAVObject* root)
 	return false;
 }
 
+// a node of ours under `parent`, made as A-53 / A-52 make them (zeroed, constructed, held for the session)
+static NiNode* MakeNode(const std::string& name, NiNode* parent, const NiPoint3& rest)
+{
+	void* mem = RE::aligned_alloc(alignof(NiNode), sizeof(NiNode));
+	if (!mem)
+		return nullptr;
+	std::memset(mem, 0, sizeof(NiNode));
+	NiNode* made = ::new (mem) NiNode(0);
+	made->name = name.c_str();
+	G::Local(made).pos = rest;
+	InitWorld(made, parent, rest);
+	parent->AttachChild(made, true);
+	made->IncRefCount();
+	return made;
+}
+
+// [BonesChain] on one skin that names the chain (see LoadChainConfig): true when the skin now points at our chain.
+// `pelvis` is this skin's own Pelvis_skin entry (the skeleton's), `pelvisAt` its slot.
+static bool EnsureChain(Actor* actor, G::SkinInstance* skin, UInt32 count, NiNode* pelvis, UInt32 pelvisAt)
+{
+	const size_t n = bonesChain.size();
+	std::vector<UInt32> slot(n, kNone);
+	for (UInt32 i = 0; i < count; i++) {
+		NiNode* b = G::SkinBones(skin).entries[i];
+		const char* name = b ? G::Name(b) : nullptr;
+		if (!name)
+			continue;
+		for (size_t k = 0; k < n; k++)
+			if (slot[k] == kNone && _stricmp(name, bonesChain[k].c_str()) == 0)
+				slot[k] = i;
+	}
+	char key[96];
+	for (size_t k = 0; k < n; k++)
+		if (slot[k] == kNone) {
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|chain|partial|%08X", actor->formID);
+			Note(key, "[bones] %08X: a worn skin names part of the penis chain, not %s: no chain made\n", actor->formID,
+				bonesChain[k].c_str());
+			return false;
+		}
+	// ours already, from an earlier visit (her other paint's penis): reuse, re-rested below
+	BSFixedString rootName(bonesChain[0].c_str());
+	NiAVObject* mine = pelvis->GetObjectByName(rootName);
+	if (mine && (G::Parent(mine) != pelvis || !chainMade.count(mine)))
+		mine = nullptr;
+	if (!mine) {
+		// the skeleton's own chain (under COM): a unified skeleton, a man's. Left alone, exactly as before
+		static const BSFixedString com("COM");
+		NiAVObject* c = G::Root(actor)->GetObjectByName(com);
+		if (!c || c->GetObjectByName(rootName)) {
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|chain|skel|%08X|%d", actor->formID, c ? 1 : 0);
+			Note(key, c ? "[bones] %08X: her skeleton has its own %s: the worn penis uses it\n"
+			            : "[bones] %08X: no COM under her 3D: no chain made\n", actor->formID, bonesChain[0].c_str());
+			return false;
+		}
+	}
+	G::Array<BoneTransforms>* binds = BindArray(skin);
+	if (!binds || !binds->entries || binds->count != G::SkinBones(skin).count)
+		return false;
+	const NiTransform& pelvisBind = binds->entries[pelvisAt].transform;
+	if (!Sane(pelvisBind))
+		return false;
+	std::vector<NiPoint3> at(n);
+	float turned = 0.0f;
+	for (size_t k = 0; k < n; k++) {
+		const NiTransform& bind = binds->entries[slot[k]].transform;
+		if (!Sane(bind))
+			return false;
+		at[k] = IntoBone(pelvisBind, BindOrigin(bind));
+		turned = (std::max)(turned, BindTurn(pelvisBind, bind));
+	}
+	if (turned > 0.02f) {
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|chain|turned|%08X", actor->formID);
+		Note(key, "[bones] %08X: her worn penis binds its chain turned against Pelvis_skin (%.3f): our nodes are made "
+			"unturned, so no chain is made (it would twist her mesh)\n", actor->formID, turned);
+		return false;
+	}
+	std::vector<NiNode*> nodes(n, nullptr);
+	int made = 0;
+	NiNode* parent = pelvis;
+	for (size_t k = 0; k < n; k++) {
+		const NiPoint3 rest = k ? at[k] - at[k - 1] : at[0];
+		BSFixedString want(bonesChain[k].c_str());
+		NiAVObject* found = k == 0 ? mine : parent->GetObjectByName(want);
+		if (found && (G::Parent(found) != parent || !chainMade.count(found)))
+			found = nullptr;
+		NiNode* node = found ? G::AsNode(found) : nullptr;
+		if (node) {
+			G::Local(node).pos = rest;                 // her other paint binds it a little elsewhere
+			InitWorld(node, parent, rest);
+		} else {
+			node = MakeNode(bonesChain[k], parent, rest);
+			if (!node)
+				return false;
+			chainMade.insert(node);
+			made++;
+		}
+		nodes[k] = node;
+		parent = node;
+	}
+	for (size_t k = 0; k < n; k++) {
+		G::SkinBones(skin).entries[slot[k]] = nodes[k];
+		G::SkinWorldTransforms(skin).entries[slot[k]] = &G::World(nodes[k]);
+	}
+	_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|chain|%08X|%d|%d", actor->formID, made, (int)(at[0].y * 10));
+	Note(key, "[bones] %08X: her worn penis: %d of %zu chain nodes made under Pelvis_skin where it binds them (%s at "
+		"%.2f, %.2f, %.2f), its skin pointed at them\n", actor->formID, made, n, bonesChain[0].c_str(), at[0].x, at[0].y,
+		at[0].z);
+	return true;
+}
+
 static bool EnsureAnatomyBonesImpl(Actor* actor)
 {
 	if (table.empty() || !actor || !G::Root(actor) || !G::Root(actor))
@@ -434,7 +587,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
 		UInt32 pelvisAt = kNone;
-		bool namesOurs = false;
+		bool namesOurs = false, namesChain = false;
 		int nulls = 0, oursCount = 0;
 		for (UInt32 i = 0; i < count; i++) {
 			NiNode* b = G::SkinBones(skin).entries[i];
@@ -451,7 +604,11 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				namesOurs = true;
 				oursCount++;
 			}
+			else if (IsChain(name))
+				namesChain = true;
 		}
+		// [BonesChain]: a woman's worn penis on a skeleton without the chain (never a man's, never a Servitron's)
+		const bool chainWanted = namesChain && !male && !actorUtils::IsServitron(actor);
 		if (actorUtils::IsServitron(actor)) {           // fo4-anatomy (10-08): a Servitron's rubber abdomen got none of ours
 			char key[160];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|srv|%08X|%s|%u|%d|%d", actor->formID, G::Name(geo), count,
@@ -475,7 +632,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		// coming off: zenar45 via Watcher, 2026-10-13, OG 1.10.163, a BodyTalk man undressing as AAF walked an NPC couple
 		// in; the log's last line, then the desktop, every time). Pointing its entries at our nodes then raced the game's
 		// own binding. Left alone, NOT remembered as done: the next visit finds it bound and goes the normal way
-		if (!pelvis && namesOurs && !actorUtils::IsServitron(actor)) {
+		if (!pelvis && (namesOurs || chainWanted) && !actorUtils::IsServitron(actor)) {
 			char key[64];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|binding|%08X", actor->formID);
 			Note(key, "[bones] %08X: a skin names ours before the game has bound its Pelvis_skin: waiting for it\n",
@@ -503,8 +660,16 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			if (!pelvis)
 				return;
 		}
+		const bool chained = chainWanted && pelvis && pelvisAt != kNone &&
+			EnsureChain(actor, skin, count, pelvis, pelvisAt);
+		if (chained)
+			created++;                                   // say it below (and let the caller know her 3D changed)
 		if (!pelvis || !namesOurs) {
-			done[skin] = Done{ G::SkinBones(skin).entries, count, kNone, nullptr };
+			UInt32 at = kNone;
+			for (UInt32 i = 0; chained && i < count && at == kNone; i++)
+				if (G::SkinBones(skin).entries[i] && IsChain(G::Name(G::SkinBones(skin).entries[i])))
+					at = i;                              // remembered by its chain entry, re-checked like ours
+			done[skin] = Done{ G::SkinBones(skin).entries, count, at, at == kNone ? nullptr : G::SkinBones(skin).entries[at] };
 			return;
 		}
 		// 11-23: where this body binds ours, when not at [Bones] (an artist's own genitals); the skin's own Pelvis_skin
