@@ -857,7 +857,14 @@ void UpdateAims()
 		// opening the turn chose, and no hands
 		std::vector<AimSolve::Target> seekOnly;
 		bool seeking = false;
-		if (aimOn && c.inScene && h.wrote && !keyed && n >= 2 && actorUtils::IsServitron(a)) {
+		// the turn in the root's parent frame. The rerun on 3b0ff562 (11-23) let go on "the turn it needs is too wide"
+		// and "passes too far" (the man's limits): two faults. (1) This turn went only into the solver's view of the
+		// chain: the bend was laid from the turned root but written onto the unturned one, so the drawn shaft missed by
+		// the whole turn (117-146 degrees). It is now written with the bend, faded in and out with the lock. (2) Some
+		// stages DO key a robot's chain ("turns 300" a second), and `!keyed` then dropped him back onto a man's aim with
+		// a man's limits: a robot's keyed shaft lies on a man's bind, not his, so he seeks whether keyed or not
+		AimSolve::Quat preTurn{};
+		if (aimOn && c.inScene && h.wrote && n >= 2 && actorUtils::IsServitron(a)) {
 			std::vector<V3> joints;
 			std::vector<AimSolve::Quat> world;
 			AimSolve::Pose(c, c.locals, 1.0f, joints, world);
@@ -882,7 +889,8 @@ void UpdateAims()
 				const V3 goal = AimSolve::Add(best->point, AimSolve::Scale(best->in, params.depth));
 				const V3 d = AimSolve::Normalized(AimSolve::Sub(goal, joints.front()));
 				const AimSolve::Quat turn = AimSolve::FromTo(u, d);
-				c.locals[0] = AimSolve::Mul(AimSolve::Conj(c.parent), AimSolve::Mul(turn, AimSolve::Mul(c.parent, c.locals[0])));
+				preTurn = AimSolve::Mul(AimSolve::Conj(c.parent), AimSolve::Mul(turn, c.parent));
+				c.locals[0] = AimSolve::Mul(preTurn, c.locals[0]);
 				seekOnly.push_back(*best);
 				seeking = true;
 				char key[96];
@@ -1095,7 +1103,9 @@ void UpdateAims()
 				// runs in a scene and r.local is EMPTY - reading it crashed every scene (a player, 2026-10-06,
 				// cbp.dll+89B06 AimSolve::ToMatrix on a null read)
 				if (r.active && i < r.local.size()) {
-					AimSolve::M3 d = AimSolve::ToMatrix(r.local[i]);
+					// a robot's root: the bend was laid from the turned root, so the turn goes under it (see preTurn)
+					AimSolve::M3 d = AimSolve::ToMatrix(i == 0 && seeking ?
+						AimSolve::Mul(r.local[0], AimSolve::Slerp(AimSolve::Quat{}, preTurn, h.state.weight)) : r.local[i]);
 					if (i > 0)
 						d = Mul(Transposed(gaps[i].r), Mul(d, gaps[i].r));
 					G::Local(nodes[i]).rot = Stored(Mul(d, Actual(h.baseRot[i])));
