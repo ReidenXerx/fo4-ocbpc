@@ -864,17 +864,27 @@ void UpdateAims()
 		// stages DO key a robot's chain ("turns 300" a second), and `!keyed` then dropped him back onto a man's aim with
 		// a man's limits: a robot's keyed shaft lies on a man's bind, not his, so he seeks whether keyed or not
 		AimSolve::Quat preTurn{};
+		// rerun 2 on b5eb2eae (11-23): in a kneel-behind stage her vagina went out of his reach, he fell back onto a
+		// man's aim, the stage's hand on his shaft suspended it, and nothing aimed him for the rest of the scene. A robot
+		// in a scene now stays on the robot's aim: no opening in reach = no lock (and a line saying how far it was)
+		bool robot = false;
 		if (aimOn && c.inScene && h.wrote && n >= 2 && actorUtils::IsServitron(a)) {
+			robot = true;
 			std::vector<V3> joints;
 			std::vector<AimSolve::Quat> world;
 			AimSolve::Pose(c, c.locals, 1.0f, joints, world);
 			const float length = AimSolve::ChainLength(c);
 			const AimSolve::Target* best = nullptr;
-			float bestScore = 1e9f;
+			const AimSolve::Target* nearest = nullptr;
+			float bestScore = 1e9f, nearestDist = 1e9f;
 			for (const AimSolve::Target& t : targets) {
 				if (t.owner == a->formID || !t.inScene || (t.kind != AimSolve::kVagina && t.kind != AimSolve::kAnus))
 					continue;
 				const float dist = AimSolve::Length(AimSolve::Sub(t.point, joints.front()));
+				if (dist < nearestDist) {
+					nearest = &t;
+					nearestDist = dist;
+				}
 				// the aim run on b6af307a (11-23): as the scene laid them together the turn chose her anus, the next
 				// frame her vagina, and the lock went with it. The opening held stays chosen while it is in reach
 				const bool isHeld = h.state.locked && h.state.lockedOwner == t.owner && h.state.lockedKind == t.kind;
@@ -898,6 +908,23 @@ void UpdateAims()
 				Note(key, "[aim] %08X: a robot's unkeyed shaft turned toward %08X's %s (%.0f degrees) before the aim\n",
 					a->formID, best->owner, AimSolve::KindName(best->kind),
 					std::acos((std::max)(-1.0f, (std::min)(1.0f, AimSolve::Dot(u, d)))) * 57.29578f);
+			}
+			else if (nearest) {   // the first 40 per robot, at most one a second
+				static std::unordered_map<std::uint32_t, std::pair<std::uint64_t, int>> srvFar;
+				auto& farLog = srvFar[a->formID];
+				if (farLog.second < 40 && (!farLog.first || ms - farLog.first >= 1000)) {
+					const V3 rel = AimSolve::Sub(joints.front(), nearest->point);
+					const float along = AimSolve::Dot(rel, nearest->in);
+					const float off = AimSolve::Length(AimSolve::Sub(rel, AimSolve::Scale(nearest->in, along)));
+					char key[96];
+					_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|srvfar|%08X|%d", a->formID, farLog.second);
+					Note(key, "[aim] %08X: robot far %d: no opening in reach; nearest %08X's %s, entrance %.1f = %.2f x the "
+						"shaft %.1f (reach %.2f x); root %+.1f along its axis, %.1f off it\n", a->formID, farLog.second + 1,
+						nearest->owner, AimSolve::KindName(nearest->kind), nearestDist,
+						length > 0.0f ? nearestDist / length : 0.0f, length, params.reach, along, off);
+					farLog.first = ms;
+					farLog.second++;
+				}
 			}
 		}
 
@@ -950,7 +977,7 @@ void UpdateAims()
 		// too far from it"). Both judge where the animation meant the shaft to point, and on a robot no animation
 		// does: the turn above is the only meaning there is. So his lock is judged on reach and entry side alone
 		AimSolve::Params seekParams = params;
-		if (seeking) {
+		if (robot) {
 			seekParams.captureAngle = seekParams.keepAngle = 3.1416f;
 			seekParams.captureMiss = seekParams.keepMiss = 1e6f;
 			// the aim run on b6af307a (11-23): he held her vagina 16 s, then from her climax on took and let go 4 times
@@ -961,7 +988,7 @@ void UpdateAims()
 			seekParams.entryAngle = 1.57f;
 		}
 		if (aimOn)
-			r = seeking ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, seekParams, dt)
+			r = robot ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, seekParams, dt)
 				: AimSolve::Update(h.state, c, targets, hands, params, dt);
 		if (r.released) {
 			char key[128];
@@ -971,7 +998,7 @@ void UpdateAims()
 			// reason, so the climax's flapping never showed how far off it was)
 			static std::unordered_map<std::uint32_t, int> srvReleases;
 			int& count = srvReleases[a->formID];
-			if (seeking && count < 40) {
+			if (robot && count < 40) {
 				std::vector<V3> joints;
 				std::vector<AimSolve::Quat> world;
 				AimSolve::Pose(c, c.locals, 1.0f, joints, world);
