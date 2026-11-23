@@ -354,6 +354,7 @@ void UpdateActors() {
             simulated.push_back(a.id);
         EnsureLoadedActors(12, simulated);
         UpdateServitronMouths();   // fo4-anatomy (2026-11-22): a Servitron head's mouth panel
+        SampleBoneOffsets();       // fo4-anatomy (2026-11-23): [Log] samples, after the aim and the physics
     }
     FrameCost::Lap(FrameCost::kLoaded);
 

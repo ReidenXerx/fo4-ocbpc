@@ -27,3 +27,4 @@
 
 void LoadBoneOffsets();      // reads the folder (config load and reload)
 void UpdateBoneOffsets();    // every frame, after the animation, before the aim, colliders and physics
+void SampleBoneOffsets();    // every frame, at its end: the [Log] samples (after the aim and the physics)

@@ -54,6 +54,7 @@ namespace
 		std::vector<Offset> offsets;
 		std::vector<std::string> logBones;   // [Log] bones=...: their positions after the offsets, sampled
 		float logEvery = 1.0f;               // seconds between samples
+		bool logRot = false;                 // rotations=1: each bone's rotation in the skeleton's space too
 		int logSamples = 30;
 	};
 
@@ -73,6 +74,10 @@ namespace
 		std::vector<NiAVObject*> logNodes;
 		int logged = 0;
 		ULONGLONG nextLog = 0;
+		std::uint64_t lastFrame = 0;         // the frame of the last sample
+		int keyed = 0, moved = 0;            // this frame: bones the animation set anew, of the bones we move
+		double costSum = 0.0, costMax = 0.0; // microseconds of our work on her since the last sample
+		int costFrames = 0;
 	};
 
 	std::mutex lock;
@@ -146,6 +151,8 @@ namespace
 					}
 				} else if (_stricmp(key.c_str(), "every") == 0) {
 					s.logEvery = (std::max)(0.05f, std::strtof(value.c_str(), nullptr));
+				} else if (_stricmp(key.c_str(), "rotations") == 0) {
+					s.logRot = std::strtol(value.c_str(), nullptr, 10) != 0;
 				} else if (_stricmp(key.c_str(), "samples") == 0) {
 					s.logSamples = (std::min)(600, (std::max)(1, (int)std::strtol(value.c_str(), nullptr, 10)));
 				}
@@ -284,6 +291,10 @@ namespace
 
 	// [Log]: where the named bones are once the offsets are in, both in the skeleton's own space (the frame a
 	// nif's bind pose is in: model = root.rot * (world - root.pos) / root.scale) and in the world
+	std::uint64_t frame = 0;     // our frame count: UpdateBoneOffsets once per game frame
+
+	// Taken at the END of the engine's frame (SampleBoneOffsets), after the aim and the physics: a breast or belly
+	// bone shows where OCBPC left it, every other bone where the offsets and the animation put it
 	void LogSample(Actor* actor, const Spec& s, ActorState& st, NiAVObject* root)
 	{
 		if (s.logBones.empty() || st.logged >= s.logSamples)
@@ -291,20 +302,45 @@ namespace
 		const ULONGLONG now = GetTickCount64();
 		if (st.nextLog && now < st.nextLog)
 			return;
+		const ULONGLONG since = st.nextLog ? now - (st.nextLog - (ULONGLONG)(s.logEvery * 1000.0f)) : 0;
 		st.nextLog = now + (ULONGLONG)(s.logEvery * 1000.0f);
 		const NiTransform& r = G::World(root);
 		const float inv = r.scale != 0.0f ? 1.0f / r.scale : 1.0f;
 		const float heading = std::atan2(r.rot.data[1][0], r.rot.data[1][1]) * 57.29578f;
-		char line[2048];
-		int n = _snprintf_s(line, sizeof(line), _TRUNCATE, "[offsets] %08X sample %d/%d: root (%.2f, %.2f, %.2f) heading %.1f scale %.3f |",
-			actor->formID, st.logged + 1, s.logSamples, r.pos.x, r.pos.y, r.pos.z, heading, r.scale);
+		const NiMatrix43 toModel = r.rot.Transpose();   // world.rot = model.rot * root.rot (rows = axes)
+		static char line[8192];
+		int n = _snprintf_s(line, sizeof(line), _TRUNCATE,
+			"[offsets] %08X sample %d/%d: frame %llu (+%llu frames, +%llu ms); the animation set %d of the %d bones we move "
+			"this frame%s; our cost %.1f us a frame (max %.1f) over %d frames | root (%.2f, %.2f, %.2f) heading %.1f scale %.3f |",
+			actor->formID, st.logged + 1, s.logSamples, (unsigned long long)frame,
+			(unsigned long long)(st.lastFrame ? frame - st.lastFrame : 0), (unsigned long long)since, st.keyed, st.moved,
+			st.moved && !st.keyed ? " (her pose was NOT re-animated: a frozen or skipped animation update)" : "",
+			st.costFrames ? st.costSum / st.costFrames : 0.0, st.costMax, st.costFrames, r.pos.x, r.pos.y, r.pos.z, heading,
+			r.scale);
+		st.lastFrame = frame;
+		st.costSum = st.costMax = 0.0;
+		st.costFrames = 0;
 		for (size_t i = 0; i < st.logNodes.size() && n > 0 && n < (int)sizeof(line) - 1; i++) {
 			int add;
 			if (NiAVObject* node = st.logNodes[i]) {
-				const NiPoint3 w = G::World(node).pos;
+				const NiTransform& wt = G::World(node);
+				const NiPoint3 w = wt.pos;
 				const NiPoint3 m = (r.rot * (w - r.pos)) * inv;
-				add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, " %s model (%.2f, %.2f, %.2f) world (%.2f, %.2f, %.2f);",
-					s.logBones[i].c_str(), m.x, m.y, m.z, w.x, w.y, w.z);
+				const NiPoint3 l = G::Local(node).pos;
+				add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE,
+					" %s model (%.2f, %.2f, %.2f) world (%.2f, %.2f, %.2f) local (%.3f, %.3f, %.3f)",
+					s.logBones[i].c_str(), m.x, m.y, m.z, w.x, w.y, w.z, l.x, l.y, l.z);
+				if (add >= 0 && s.logRot) {
+					n += add;
+					const NiMatrix43 mr = wt.rot * toModel;
+					add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE,
+						" rot [%.4f %.4f %.4f / %.4f %.4f %.4f / %.4f %.4f %.4f]", mr.data[0][0], mr.data[0][1], mr.data[0][2],
+						mr.data[1][0], mr.data[1][1], mr.data[1][2], mr.data[2][0], mr.data[2][1], mr.data[2][2]);
+				}
+				if (add >= 0) {
+					n += add;
+					add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, ";");
+				}
 			} else {
 				add = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, " %s not in the skeleton;", s.logBones[i].c_str());
 			}
@@ -325,6 +361,7 @@ namespace
 			return;
 		if (st.root != root || st.bones.size() != s.offsets.size())
 			Bind(actor, s, st, root);   // a new 3D: the nodes are found again
+		st.keyed = st.moved = 0;
 		for (size_t i = 0; i < st.bones.size(); i++) {
 			BoneState& bone = st.bones[i];
 			if (!bone.node)
@@ -332,7 +369,10 @@ namespace
 			const Offset& o = s.offsets[i];
 			if (o.rotate) {
 				NiMatrix43& m = G::Local(bone.node).rot;
-				const NiMatrix43 base = bone.valid && SameRot(m, bone.writtenRot) ? bone.baseRot : m;
+				const bool kept = bone.valid && SameRot(m, bone.writtenRot);
+				st.moved++;
+				st.keyed += kept ? 0 : 1;
+				const NiMatrix43 base = kept ? bone.baseRot : m;
 				// rows are the bone's axes in its parent's space: turning about its own axes multiplies from the left
 				const NiMatrix43 out = o.r * base;
 				for (int row = 0; row < 3; row++)
@@ -346,7 +386,10 @@ namespace
 			NiPoint3& p = G::Local(bone.node).pos;
 			// a bone the animation keys is rewritten every frame; one it leaves alone still holds what we wrote,
 			// and gets it again from the kept pose value instead of piling the offset up frame after frame
-			const NiPoint3 base = bone.valid && Same(p, bone.written) ? bone.base : p;
+			const bool kept = bone.valid && Same(p, bone.written);
+			st.moved++;
+			st.keyed += kept ? 0 : 1;
+			const NiPoint3 base = kept ? bone.base : p;
 			const NiPoint3 out = o.scale ? base * o.k : base + o.d;
 			p = out;
 			bone.base = base;
@@ -357,7 +400,16 @@ namespace
 			if (bone.top)
 				if (NiNode* parent = G::Parent(bone.node))
 					WorldFrom(bone.node, G::World(parent));
-		LogSample(actor, s, st, root);
+	}
+
+	bool SampleGuarded(Actor* actor, const Spec* s, ActorState* st, NiAVObject* root)
+	{
+		__try {
+			LogSample(actor, *s, *st, root);
+			return true;
+		} __except (1) {
+			return false;
+		}
 	}
 
 	// A-51's rule: a fault while the 3D changes under us skips the actor this frame instead of taking the game down
@@ -392,9 +444,27 @@ void LoadBoneOffsets()
 	states.clear();
 }
 
+void SampleBoneOffsets()
+{
+	std::lock_guard<std::mutex> guard(lock);
+	for (const auto& [id, which] : matched) {
+		if (which < 0 || specs[which].logBones.empty())
+			continue;
+		auto st = states.find(id);
+		if (st == states.end() || st->second.logged >= specs[which].logSamples)
+			continue;
+		Actor* actor = G::LookupActor(id);
+		NiAVObject* root = actor && !G::Deleted(actor) ? G::Root(actor) : nullptr;
+		if (!root || root != st->second.root)
+			continue;                // not bound to this 3D yet (UpdateBoneOffsets binds it)
+		SampleGuarded(actor, &specs[which], &st->second, root);
+	}
+}
+
 void UpdateBoneOffsets()
 {
 	std::lock_guard<std::mutex> guard(lock);
+	frame++;
 	if (specs.empty())
 		return;
 	bool any = false;
@@ -426,7 +496,19 @@ void UpdateBoneOffsets()
 		}
 		if (m->second < 0)
 			continue;
-		if (!ApplyGuarded(actor, &specs[m->second], &states[id])) {
+		ActorState& st = states[id];
+		LARGE_INTEGER t0, t1, hz;
+		QueryPerformanceCounter(&t0);
+		const bool ok = ApplyGuarded(actor, &specs[m->second], &st);
+		QueryPerformanceCounter(&t1);
+		QueryPerformanceFrequency(&hz);
+		if (ok) {
+			const double us = (double)(t1.QuadPart - t0.QuadPart) * 1e6 / (double)hz.QuadPart;
+			st.costSum += us;
+			st.costMax = (std::max)(st.costMax, us);
+			st.costFrames++;
+		}
+		if (!ok) {
 			states.erase(id);
 			char key[64];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "offsets|fault|%08X", id);
