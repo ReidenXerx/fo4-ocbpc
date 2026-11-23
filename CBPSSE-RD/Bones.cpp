@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include <mutex>
 #include <new>
 #include <sstream>
@@ -193,13 +194,195 @@ static NiPoint3 RestOf(const BoneDef& def, bool male)
 	return def.local;
 }
 
-bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest)
+// fo4-anatomy (11-23, Ilham): a body that binds our bones somewhere else than [Bones] (an artist's own vulva, canal and
+// anus, weighted to our names where HER geometry is) rests them there. Our own bodies bind exactly at [Bones] (measured
+// on the 1.2.6 CBBE and 3BBB prebuilt bodies: all 51 within 0.000), so they keep no entry and nothing changes for them.
+namespace
 {
-	auto it = tableIndex.find(Lower(name));
+	std::mutex boundLock;
+	std::unordered_map<UInt32, std::unordered_map<std::string, NiPoint3>> boundRests;   // actor -> lowercase name -> rest
+	std::atomic<int> boundActors{ 0 };                // fast path: nobody has one (every other player)
+	constexpr float kBoundGap = 0.05f;                // closer than this to [Bones] is [Bones]
+
+	// BSSkin::BoneData (the classic F4SE SDK's BSSkin.h): Instance +0x40 -> BoneData, whose +0x10 array holds per bone a
+	// bounding sphere and the skin-to-bone transform the nif was exported with
+	struct BoneTransforms
+	{
+		float sphere[4];
+		NiTransform transform;
+	};
+	static_assert(sizeof(BoneTransforms) == 0x50);
+	constexpr std::size_t kSkinBoneData = 0x40, kBoneDataTransforms = 0x10;
+
+	G::Array<BoneTransforms>* BindArray(G::SkinInstance* skin)
+	{
+		auto data = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(skin) + kSkinBoneData);
+		return data ? reinterpret_cast<G::Array<BoneTransforms>*>(data + kBoneDataTransforms) : nullptr;
+	}
+
+	// a skin-to-bone transform a real export wrote: unit-ish scale, orthonormal rows (a misread offset cannot pass that)
+	bool Sane(const NiTransform& x)
+	{
+		if (!(x.scale > 0.5f && x.scale < 2.0f))
+			return false;
+		for (int a = 0; a < 3; a++)
+			for (int b = 0; b < 3; b++) {
+				float d = 0.0f;
+				for (int c = 0; c < 3; c++)
+					d += x.rot.data[a][c] * x.rot.data[b][c];
+				if (!std::isfinite(d) || std::fabs(d - (a == b ? 1.0f : 0.0f)) > 1e-3f)
+					return false;
+			}
+		return std::isfinite(x.pos.x) && std::isfinite(x.pos.y) && std::isfinite(x.pos.z);
+	}
+
+	// where the bone of a skin-to-bone transform sits in skin space (fo4-anatomy tools/nif.py bone_origin)
+	NiPoint3 BindOrigin(const NiTransform& x)
+	{
+		float p[3];
+		for (int i = 0; i < 3; i++)
+			p[i] = -(x.rot.data[0][i] * x.pos.x + x.rot.data[1][i] * x.pos.y + x.rot.data[2][i] * x.pos.z) / x.scale;
+		return NiPoint3(p[0], p[1], p[2]);
+	}
+
+	// a skin-space point in a bone's frame
+	NiPoint3 IntoBone(const NiTransform& x, const NiPoint3& p)
+	{
+		float o[3];
+		const float v[3] = { p.x, p.y, p.z }, t[3] = { x.pos.x, x.pos.y, x.pos.z };
+		for (int r = 0; r < 3; r++)
+			o[r] = x.scale * (x.rot.data[r][0] * v[0] + x.rot.data[r][1] * v[1] + x.rot.data[r][2] * v[2]) + t[r];
+		return NiPoint3(o[0], o[1], o[2]);
+	}
+
+	// the bone's bind turned against Pelvis_skin's: how far from identity (0 = none)
+	float BindTurn(const NiTransform& pelvis, const NiTransform& bone)
+	{
+		float worst = 0.0f;
+		for (int a = 0; a < 3; a++)
+			for (int b = 0; b < 3; b++) {
+				float d = 0.0f;
+				for (int c = 0; c < 3; c++)
+					d += bone.rot.data[a][c] * pelvis.rot.data[b][c];
+				worst = (std::max)(worst, std::fabs(d - (a == b ? 1.0f : 0.0f)));
+			}
+		return worst;
+	}
+
+	bool BoundRest(UInt32 actor, const std::string& lname, NiPoint3& out)
+	{
+		if (!actor || boundActors.load(std::memory_order_relaxed) == 0)
+			return false;
+		std::lock_guard<std::mutex> guard(boundLock);
+		auto a = boundRests.find(actor);
+		if (a == boundRests.end())
+			return false;
+		auto b = a->second.find(lname);
+		if (b == a->second.end())
+			return false;
+		out = b->second;
+		return true;
+	}
+}
+
+bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest, UInt32 actor)
+{
+	const std::string lname = Lower(name);
+	auto it = tableIndex.find(lname);
 	if (it == tableIndex.end())
 		return false;
-	rest = RestOf(table[it->second], male);
+	if (!BoundRest(actor, lname, rest))
+		rest = RestOf(table[it->second], male);
 	return true;
+}
+
+bool AnatomyBoundRests(UInt32 actor)
+{
+	if (!actor || boundActors.load(std::memory_order_relaxed) == 0)
+		return false;
+	std::lock_guard<std::mutex> guard(boundLock);
+	auto a = boundRests.find(actor);
+	return a != boundRests.end();   // has, or had (a body swapped back to one of ours)
+}
+
+// Read where this skin binds each of ours under Pelvis_skin (entry `pelvisAt`) and keep the ones off [Bones] for this
+// actor; true when any rest changed (the nodes already made must move there)
+static bool ReadBoundRests(Actor* actor, G::SkinInstance* skin, UInt32 count, UInt32 pelvisAt, bool male)
+{
+	G::Array<BoneTransforms>* binds = BindArray(skin);
+	if (!binds || !binds->entries || binds->count != G::SkinBones(skin).count || pelvisAt >= count)
+		return false;
+	const NiTransform& pelvisBind = binds->entries[pelvisAt].transform;
+	if (!Sane(pelvisBind)) {
+		G::Once("bones|bind|insane", "[bones] a body skin's bind for Pelvis_skin does not read as one: bound rests off");
+		return false;
+	}
+	std::unordered_map<std::string, NiPoint3> found;
+	std::vector<std::string> atTable;
+	float turned = 0.0f;
+	for (UInt32 i = 0; i < count; i++) {
+		NiNode* b = G::SkinBones(skin).entries[i];
+		const char* name = b ? G::Name(b) : nullptr;
+		if (!name || !IsOurs(name))
+			continue;
+		const std::string lname = Lower(name);
+		auto def = tableIndex.find(lname);
+		if (def == tableIndex.end() || _stricmp(table[def->second].parent.c_str(), kPelvis) != 0)
+			continue;                                 // only the nodes hung on Pelvis_skin itself (a _Stretch child rides its parent)
+		const NiTransform& bind = binds->entries[i].transform;
+		if (!Sane(bind))
+			continue;
+		const NiPoint3 at = IntoBone(pelvisBind, BindOrigin(bind));
+		const NiPoint3 d = at - RestOf(table[def->second], male);
+		if (d.x * d.x + d.y * d.y + d.z * d.z > kBoundGap * kBoundGap) {
+			found[lname] = at;
+			turned = (std::max)(turned, BindTurn(pelvisBind, bind));
+		} else
+			atTable.push_back(lname);
+	}
+	bool changed = false;
+	size_t kept = 0;
+	{
+		std::lock_guard<std::mutex> guard(boundLock);
+		if (found.empty() && boundRests.find(actor->formID) == boundRests.end())
+			return false;                             // one of our bodies, never anything else on her: no entry at all
+		auto& mine = boundRests[actor->formID];
+		for (auto& [n, p] : found) {
+			auto old = mine.find(n);
+			if (old == mine.end()) {
+				changed = true;
+			} else {
+				const NiPoint3 d = old->second - p;
+				changed |= d.x * d.x + d.y * d.y + d.z * d.z > 1e-4f;
+			}
+			mine[n] = p;
+		}
+		for (auto& n : atTable)
+			changed |= mine.erase(n) > 0;
+		kept = mine.size();   // an emptied entry stays: her physics rests must come back to [Bones] too
+		if (boundRests.size() > 4096)
+			boundRests.clear();
+		boundActors.store((int)boundRests.size(), std::memory_order_relaxed);
+	}
+	if (!found.empty()) {
+		NiPoint3 vulva;
+		const bool v = BoundRest(actor->formID, "anatvulva", vulva);
+		char key[96];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|bound|%08X|%zu|%d", actor->formID, found.size(),
+			v ? (int)(vulva.x * 10) : 0);
+		Note(key, "[bones] %08X: her body binds %zu of our bones away from [Bones] (%zu kept); they rest where it binds "
+			"them%s\n", actor->formID, found.size(), kept, turned > 0.02f ?
+			"; WARNING: some are bound turned against Pelvis_skin (ours are made unturned: those verts twist)" : "");
+		if (v) {
+			NiPoint3 table0;
+			AnatomyBoneRest("AnatVulva", male, table0);
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|boundvulva|%08X|%d|%d", actor->formID, (int)(vulva.x * 10),
+				(int)(vulva.y * 10));
+			Note(key, "[bones] %08X: AnatVulva bound at (%.2f, %.2f, %.2f), [Bones] (%.2f, %.2f, %.2f)\n", actor->formID,
+				vulva.x, vulva.y, vulva.z, table0.x, table0.y, table0.z);
+		}
+	}
+	return changed;
 }
 
 // fo4-anatomy (A-51): true when this node hangs, parent by parent, from the actor's live 3D root. A body being
@@ -250,6 +433,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			return;
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
+		UInt32 pelvisAt = kNone;
 		bool namesOurs = false;
 		int nulls = 0, oursCount = 0;
 		for (UInt32 i = 0; i < count; i++) {
@@ -259,8 +443,10 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				continue;
 			}
 			const char* name = G::Name(b);
-			if (name && _stricmp(name, kPelvis) == 0)
+			if (name && _stricmp(name, kPelvis) == 0) {
 				pelvis = b;
+				pelvisAt = i;
+			}
 			else if (IsOurs(name)) {
 				namesOurs = true;
 				oursCount++;
@@ -321,6 +507,9 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			done[skin] = Done{ G::SkinBones(skin).entries, count, kNone, nullptr };
 			return;
 		}
+		// 11-23: where this body binds ours, when not at [Bones] (an artist's own genitals); the skin's own Pelvis_skin
+		// entry only (the Servitron fallback above has no bind to read against)
+		const bool movedRests = pelvisAt != kNone && ReadBoundRests(actor, skin, count, pelvisAt, male);
 		// find or make each of ours under that Pelvis_skin (a search there never meets the body's
 		// own stranded copies, which hang off the actor's root, not off the skeleton)
 		std::unordered_map<std::string, NiAVObject*> nodes;
@@ -355,7 +544,9 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				std::memset(mem, 0, sizeof(NiNode));
 				NiNode* made = ::new (mem) NiNode(0);   // its children vtable by REL::ID
 				made->name = def.name.c_str();
-				const NiPoint3 rest = RestOf(def, male);
+				NiPoint3 rest;
+				if (!BoundRest(actor->formID, def.lname, rest))
+					rest = RestOf(def, male);
 				G::Local(made).pos = rest;
 				InitWorld(made, parentNode, rest);
 				parentNode->AttachChild(made, true);
@@ -367,6 +558,13 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				made->IncRefCount();
 				found = made;
 				created++;
+			} else if (movedRests && G::Parent(found) == p->second && _stricmp(def.parent.c_str(), kPelvis) == 0) {
+				// made earlier for another body (her Vex body swapped for her Nuke one): to where this one binds it
+				NiPoint3 rest;
+				if (!BoundRest(actor->formID, def.lname, rest))
+					rest = RestOf(def, male);
+				G::Local(found).pos = rest;
+				InitWorld(found, p->second, rest);
 			}
 			nodes[Lower(def.name)] = found;
 			if (_stricmp(def.parent.c_str(), kHead) == 0)
@@ -500,7 +698,9 @@ static float RestOurBones(Actor* actor)
 		NiAVObject* node = pelvis->GetObjectByName(wanted);
 		if (!node)
 			continue;
-		const NiPoint3 rest = RestOf(def, male);
+		NiPoint3 rest;
+		if (!BoundRest(actor->formID, def.lname, rest))
+			rest = RestOf(def, male);
 		NiPoint3 off = G::Local(node).pos - rest;
 		float d = sqrtf(off.x * off.x + off.y * off.y + off.z * off.z);
 		if (d > worst)

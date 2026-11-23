@@ -152,7 +152,7 @@ namespace
 		for (int i = 0; i < n; i++) {
 			const std::string nm = Name(i / nl, i % nl);
 			auto it = clearTable.find(LowerOf(nm));   // the INI reader may lowercase keys
-			if (!AnatomyBoneRest(nm, male, rest[i]) || it == clearTable.end() || it->second.size() != 8) {
+			if (!AnatomyBoneRest(nm, male, rest[i], actor->formID) || it == clearTable.end() || it->second.size() != 8) {
 				Note("skirt|table|" + nm, "[skirt] %s has no rest or clearance row: the skirt is off\n", nm.c_str());
 				return;
 			}

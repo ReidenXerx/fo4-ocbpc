@@ -109,7 +109,7 @@ namespace
 			NiAVObject* node = pelvis->GetObjectByName(want);
 			if (!node || G::Parent(node) != pelvis)
 				return;                                  // a body without our rings (or an older one): nothing to move
-			if (!AnatomyBoneRest(nm, false, rest[i])) {
+			if (!AnatomyBoneRest(nm, false, rest[i], actor->formID)) {
 				Note("canal|rest|" + nm, "[canal] %s has no [Bones] rest: the wrap is off\n", nm.c_str());
 				return;
 			}

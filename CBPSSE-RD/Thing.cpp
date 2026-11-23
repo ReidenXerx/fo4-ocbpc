@@ -360,14 +360,18 @@ void Thing::Update(Actor *actor) {
     // rest far from that is not one
     if (actor) {
         NiPoint3 rest;
-        if (AnatomyBoneRest(boneName.c_str(), actorUtils::IsActorMale(actor), rest)) {
+        // 11-23: her worn body's bind when it binds ours elsewhere (Ilham); a body swapped for one binding elsewhere
+        // moves the rest too (the first read above is kept for the session otherwise)
+        if (AnatomyBoneRest(boneName.c_str(), actorUtils::IsActorMale(actor), rest, actor->formID)) {
             NiPoint3& kept = origLocalPos[boneName.c_str()][actor->formID];
             const NiPoint3 d = kept - rest;
             constexpr float kFar = 10.0f;               // our rests sit 2-5 units off Pelvis_skin
-            if (!FiniteNear(kept) || d.x * d.x + d.y * d.y + d.z * d.z > kFar * kFar ||
-                !Finite(origLocalRot[boneName.c_str()][actor->formID])) {
-                spdlog::info("[physics] {:08X}: {} read its rest at ({:.1f}, {:.1f}, {:.1f}) as it loaded: [Bones]' "
-                    "rest used", actor->formID, boneName.c_str(), kept.x, kept.y, kept.z);
+            constexpr float kMoved = 0.05f;             // Bones.cpp kBoundGap
+            const float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (!FiniteNear(kept) || d2 > kFar * kFar || !Finite(origLocalRot[boneName.c_str()][actor->formID]) ||
+                (d2 > kMoved * kMoved && AnatomyBoundRests(actor->formID))) {
+                spdlog::info("[physics] {:08X}: {} read its rest at ({:.1f}, {:.1f}, {:.1f}): ({:.1f}, {:.1f}, {:.1f}) "
+                    "used", actor->formID, boneName.c_str(), kept.x, kept.y, kept.z, rest.x, rest.y, rest.z);
                 kept = rest;
                 NiMatrix43& rot = origLocalRot[boneName.c_str()][actor->formID];
                 for (int r = 0; r < 3; r++)

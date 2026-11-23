@@ -18,8 +18,12 @@
 
 #include "Game.h"
 void LoadBonesConfig(INIReader& reader);
-// where a node of ours rests under its parent on this sex ([BonesMale] on a man, else [Bones]); false: not ours
-bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest);
+// where a node of ours rests under its parent on this sex ([BonesMale] on a man, else [Bones]); false: not ours.
+// With an actor: where HER worn body binds it, when that body binds it elsewhere (fo4-anatomy 11-23, Ilham: an artist's
+// own genitals, weighted to our names ~2 units lower than ours); 0 = the table's rest
+bool AnatomyBoneRest(const std::string& name, bool male, NiPoint3& rest, UInt32 actor = 0);
+// true when this actor's worn body binds any of our bones away from [Bones] (the aim openings shift with them)
+bool AnatomyBoundRests(UInt32 actor);
 // true when nodes were created for this actor this frame
 bool EnsureAnatomyBones(Actor* actor);
 

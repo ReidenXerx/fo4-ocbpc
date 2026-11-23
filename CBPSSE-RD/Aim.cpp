@@ -319,18 +319,45 @@ namespace
 			return;                                   // not one of ours: no opening to aim at
 		const NiTransform& t = G::World(pelvis);
 		NiMatrix43 toWorld = t.rot.Transpose();
-		auto add = [&](int kind, const NiPoint3& at, const NiPoint3& in, const std::vector<NiPoint3>& path) {
+		auto add = [&](int kind, const NiPoint3& at, const NiPoint3& in, const std::vector<NiPoint3>& path,
+				const NiPoint3& shift = NiPoint3(0.0f, 0.0f, 0.0f)) {
 			AimSolve::Target g;
 			g.owner = a->formID;
 			g.kind = kind;
-			g.point = WorldPoint(t, at);
+			g.point = WorldPoint(t, at + shift);
 			g.in = AimSolve::Normalized(ToV3(toWorld * in));
-			g.path = WorldPath(t, path);
+			std::vector<NiPoint3> moved(path);
+			for (auto& q : moved)
+				q = q + shift;
+			g.path = WorldPath(t, moved);
 			g.inScene = inScene;
 			out.push_back(g);
 		};
+		// 11-23: a body binding our bones elsewhere (Ilham's own genitals, ~2 units lower) carries its openings there: the
+		// vagina by her vulva bone's shift, the anus by its ring's mean shift (the axes stay)
+		NiPoint3 vulvaShift(0.0f, 0.0f, 0.0f), anusShift(0.0f, 0.0f, 0.0f);
+		if (!servitron && AnatomyBoundRests(a->formID)) {
+			auto shiftOf = [&](std::initializer_list<const char*> names) {
+				NiPoint3 sum(0.0f, 0.0f, 0.0f);
+				int k = 0;
+				for (const char* n : names) {
+					NiPoint3 bound, table;
+					if (AnatomyBoneRest(n, male, bound, a->formID) && AnatomyBoneRest(n, male, table)) {
+						sum = sum + (bound - table);
+						k++;
+					}
+				}
+				return k ? sum * (1.0f / k) : sum;
+			};
+			vulvaShift = shiftOf({ "AnatVulva" });
+			anusShift = shiftOf({ "AnatAnus_F", "AnatAnus_B", "AnatAnus_L", "AnatAnus_R" });
+			Note("aim|bound|" + std::to_string(a->formID) + "|" + std::to_string((int)(vulvaShift.x * 10)) + "|" +
+				std::to_string((int)(anusShift.x * 10)),
+				"[aim] %08X: her body binds our bones elsewhere: vagina moved (%+.2f, %+.2f, %+.2f), anus (%+.2f, %+.2f, %+.2f) "
+				"in Pelvis_skin\n", a->formID, vulvaShift.x, vulvaShift.y, vulvaShift.z, anusShift.x, anusShift.y, anusShift.z);
+		}
 		if (male) {
-			add(AimSolve::kAnus, anusAtM, anusInM, anusPathM);   // a man: his anus only
+			add(AimSolve::kAnus, anusAtM, anusInM, anusPathM, anusShift);   // a man: his anus only
 			return;
 		}
 		if (servitron) {
@@ -341,9 +368,9 @@ namespace
 			return;
 		}
 		if (vagina)
-			add(AimSolve::kVagina, vaginaAt, vaginaIn, vaginaPath);
+			add(AimSolve::kVagina, vaginaAt, vaginaIn, vaginaPath, vulvaShift);
 		if (anus)
-			add(AimSolve::kAnus, anusAt, anusIn, anusPath);
+			add(AimSolve::kAnus, anusAt, anusIn, anusPath, anusShift);
 	}
 
 	void AddMouthTarget(Actor* a, bool inScene, std::vector<AimSolve::Target>& out)
