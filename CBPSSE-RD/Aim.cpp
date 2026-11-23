@@ -934,8 +934,17 @@ void UpdateAims()
 		std::uint32_t wasOwner = h.state.lockedOwner;
 		int wasKind = h.state.lockedKind;
 		AimSolve::Result r;
+		// Ilham Servitron rerun (11-23): the robot locked onto her vagina from inside her canal (a deep lock), and when a
+		// stroke drew his root back out it let go twice ("the turn it needs is too wide", "the animation's shaft passes
+		// too far from it"). Both judge where the animation meant the shaft to point, and on a robot no animation
+		// does: the turn above is the only meaning there is. So his lock is judged on reach and entry side alone
+		AimSolve::Params seekParams = params;
+		if (seeking) {
+			seekParams.captureAngle = seekParams.keepAngle = 3.1416f;
+			seekParams.captureMiss = seekParams.keepMiss = 1e6f;
+		}
 		if (aimOn)
-			r = seeking ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, params, dt)
+			r = seeking ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, seekParams, dt)
 				: AimSolve::Update(h.state, c, targets, hands, params, dt);
 		if (r.released) {
 			char key[128];
