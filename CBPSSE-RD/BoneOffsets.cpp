@@ -81,6 +81,8 @@ namespace
 		int worldMoved = 0;                  // ... and bones whose world moved since our write while the local did not
 		double costSum = 0.0, costMax = 0.0; // microseconds of our work on her since the last sample
 		int costFrames = 0;
+		std::uint64_t hookFrame = 0;         // the frame the animation-update hook last laid her offsets on
+		int byHook = 0, byFrame = 0;         // since the last sample: applied by that hook, by the frame pass
 	};
 
 	std::mutex lock;
@@ -321,16 +323,17 @@ namespace
 		int n = _snprintf_s(line, sizeof(line), _TRUNCATE,
 			"[offsets] %08X sample %d/%d: frame %llu (+%llu frames, +%llu ms); the animation set %d of the %d bones we move "
 			"this frame%s, and %d moved in the world since our write; skin entries naming them: %d draw from our nodes, %d "
-			"from other nodes%s%s; our cost %.1f us a frame (max %.1f) over %d frames | root (%.2f, %.2f, %.2f) heading %.1f "
-			"scale %.3f |",
+			"from other nodes%s%s; laid on by the animation hook %d times, by the frame pass %d; our cost %.1f us a pass "
+			"(max %.1f) over %d passes | root (%.2f, %.2f, %.2f) heading %.1f scale %.3f |",
 			actor->formID, st.logged + 1, s.logSamples, (unsigned long long)frame,
 			(unsigned long long)(st.lastFrame ? frame - st.lastFrame : 0), (unsigned long long)since, st.keyed, st.moved,
 			st.moved && !st.keyed ? " (no local re-animated)" : "", st.worldMoved, skinOurs, skinOther,
-			skinOther ? ":" : "", skinDetail, st.costFrames ? st.costSum / st.costFrames : 0.0, st.costMax, st.costFrames,
-			r.pos.x, r.pos.y, r.pos.z, heading, r.scale);
+			skinOther ? ":" : "", skinDetail, st.byHook, st.byFrame, st.costFrames ? st.costSum / st.costFrames : 0.0,
+			st.costMax, st.costFrames, r.pos.x, r.pos.y, r.pos.z, heading, r.scale);
 		st.lastFrame = frame;
 		st.costSum = st.costMax = 0.0;
 		st.costFrames = 0;
+		st.byHook = st.byFrame = 0;
 		for (size_t i = 0; i < st.logNodes.size() && n > 0 && n < (int)sizeof(line) - 1; i++) {
 			int add;
 			if (NiAVObject* node = st.logNodes[i]) {
@@ -512,6 +515,87 @@ void LoadBoneOffsets()
 	states.clear();
 }
 
+namespace
+{
+	// Ilham test12a/12b (2026-11-23): at the per-frame spot her 58 locals were rewritten by the animation only in runs
+	// (40-61, 75-86 ... of 272 samples) while she walked the whole time, and nothing moved their world in between: the
+	// NPC's animation runs on its own schedule, sometimes after that spot (weapon-mods measured the same, 11-14: a
+	// bend written there flickered). So the offsets are laid on right after the game animates her: Actor's
+	// UpdateAnimation, vtable slot 0x9F, hooked only where AE 1.11.240 was measured to hold it (Actor table rva 25683B0,
+	// slot -> C67750) or where another plugin already chained it to live code. Anywhere else, or for an actor that
+	// update never reaches, the frame pass stays the fallback.
+	using AnimFn = void(RE::Actor*, float);
+	std::atomic<AnimFn*> animate{ nullptr };
+	std::atomic_bool anyMatched{ false };   // a loaded actor has an ini: the hook takes the lock only then
+	bool hookTried = false;
+
+	bool ApplyTimed(Actor* actor, std::uint32_t id, const Spec& s, ActorState& st)
+	{
+		LARGE_INTEGER t0, t1, hz;
+		QueryPerformanceCounter(&t0);
+		const bool ok = ApplyGuarded(actor, &s, &st);
+		QueryPerformanceCounter(&t1);
+		QueryPerformanceFrequency(&hz);
+		if (ok) {
+			const double us = (double)(t1.QuadPart - t0.QuadPart) * 1e6 / (double)hz.QuadPart;
+			st.costSum += us;
+			st.costMax = (std::max)(st.costMax, us);
+			st.costFrames++;
+			return true;
+		}
+		states.erase(id);
+		char key[64];
+		_snprintf_s(key, sizeof(key), _TRUNCATE, "offsets|fault|%08X", id);
+		Note(key, "[offsets] %08X: a fault was caught; skipped this pass (her 3D was changing)\n", id);
+		return false;
+	}
+
+	void Animated(RE::Actor* a_this, float a_delta)
+	{
+		if (AnimFn* original = animate.load(std::memory_order_acquire))
+			original(a_this, a_delta);
+		if (!a_this || !anyMatched.load(std::memory_order_relaxed))
+			return;
+		std::lock_guard<std::mutex> guard(lock);
+		const std::uint32_t id = a_this->formID;
+		auto m = matched.find(id);
+		if (m == matched.end() || m->second < 0 || m->second >= (int)specs.size() || !G::Root(a_this))
+			return;
+		ActorState& st = states[id];
+		if (ApplyTimed(a_this, id, specs[m->second], st)) {
+			st.hookFrame = frame;
+			st.byHook++;
+		}
+	}
+
+	void InstallHook(Actor* npc)
+	{
+		hookTried = true;
+		const std::uintptr_t base = REL::Module::get().base();
+		const std::uintptr_t table = *reinterpret_cast<std::uintptr_t*>(npc);
+		AnimFn** slot = reinterpret_cast<AnimFn**>(table + 0x9F * sizeof(void*));
+		const std::uintptr_t now = reinterpret_cast<std::uintptr_t>(*slot);
+		bool chained = false;
+		if (table - base == 0x25683B0 && now - base != 0xC67750) {   // another plugin hooked it first (weapon-mods does)
+			MEMORY_BASIC_INFORMATION info{};
+			constexpr DWORD kExec = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+			chained = VirtualQuery(reinterpret_cast<const void*>(now), &info, sizeof(info)) && info.State == MEM_COMMIT &&
+				(info.Protect & kExec) && !(info.Protect & PAGE_GUARD);
+		}
+		if (table - base != 0x25683B0 || (now - base != 0xC67750 && !chained)) {
+			Note("offsets|hook|no", "[offsets] the NPC class table (+%llX) or its animation slot (+%llX) is not as measured on AE "
+				"1.11.240: offsets are laid on once a frame only (they may lag the animation)\n",
+				(unsigned long long)(table - base), (unsigned long long)(now - base));
+			return;
+		}
+		animate.store(*slot, std::memory_order_release);
+		REL::Relocation<std::uintptr_t> vtbl{ table };
+		vtbl.write_vfunc(0x9F, &Animated);
+		Note("offsets|hook|yes", "[offsets] offsets follow each NPC's animation update (Actor table +%llX, slot 0x9F%s)\n",
+			(unsigned long long)(table - base), chained ? ", chained after another plugin's hook" : "");
+	}
+}
+
 void SampleBoneOffsets()
 {
 	std::lock_guard<std::mutex> guard(lock);
@@ -564,24 +648,16 @@ void UpdateBoneOffsets()
 		}
 		if (m->second < 0)
 			continue;
+		anyMatched.store(true, std::memory_order_relaxed);
+		if (!hookTried)
+			InstallHook(actor);
 		ActorState& st = states[id];
-		LARGE_INTEGER t0, t1, hz;
-		QueryPerformanceCounter(&t0);
-		const bool ok = ApplyGuarded(actor, &specs[m->second], &st);
-		QueryPerformanceCounter(&t1);
-		QueryPerformanceFrequency(&hz);
-		if (ok) {
-			const double us = (double)(t1.QuadPart - t0.QuadPart) * 1e6 / (double)hz.QuadPart;
-			st.costSum += us;
-			st.costMax = (std::max)(st.costMax, us);
-			st.costFrames++;
-		}
-		if (!ok) {
-			states.erase(id);
-			char key[64];
-			_snprintf_s(key, sizeof(key), _TRUNCATE, "offsets|fault|%08X", id);
-			Note(key, "[offsets] %08X: a fault was caught; skipped this frame (her 3D was changing)\n", id);
-		}
+		// the hook laid them on after this or last frame's animation: nothing to add here. Otherwise (no hook on this
+		// runtime, or an update that skipped her) the frame pass does it, as before
+		if (animate.load(std::memory_order_relaxed) && st.hookFrame + 2 >= frame && st.hookFrame)
+			continue;
+		if (ApplyTimed(actor, id, specs[m->second], st))
+			st.byFrame++;
 	}
 	if (states.size() > 256)
 		states.clear();
