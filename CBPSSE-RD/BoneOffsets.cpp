@@ -33,12 +33,16 @@ namespace
 		AnatomyLogLine(key, line);
 	}
 
+	NiMatrix43 Turn(int axis, float degrees);
+
 	struct Offset
 	{
 		std::string bone;
 		bool scale = false;      // *k: the animated local translation times k; else + d
 		float k = 1.0f;
 		NiPoint3 d;
+		bool rotate = false;     // [Rotations]: the animated local rotation turned by r about the bone's own axes
+		NiMatrix43 r;
 	};
 
 	struct Spec
@@ -59,6 +63,7 @@ namespace
 		bool top = false;            // no other offset bone above it: its subtree's world is redone from here
 		bool valid = false;
 		NiPoint3 base, written;      // the pose's value last frame, and what we wrote over it
+		NiMatrix43 baseRot, writtenRot;
 	};
 
 	struct ActorState
@@ -144,6 +149,20 @@ namespace
 				} else if (_stricmp(key.c_str(), "samples") == 0) {
 					s.logSamples = (std::min)(600, (std::max)(1, (int)std::strtol(value.c_str(), nullptr, 10)));
 				}
+			} else if (_stricmp(section.c_str(), "Rotations") == 0) {
+				// Bone=x,y,z degrees, turned about the bone's own axes in that order: X first, then the turned Y,
+				// then the twice-turned Z (o.r = Z * Y * X in the row layout)
+				float v[3];
+				if (sscanf_s(value.c_str(), " %f , %f , %f", &v[0], &v[1], &v[2]) == 3) {
+					Offset o;
+					o.bone = key;
+					o.rotate = true;
+					o.d = NiPoint3(v[0], v[1], v[2]);
+					o.r = Turn(2, v[2]) * Turn(1, v[1]) * Turn(0, v[0]);
+					s.offsets.push_back(o);
+				} else {
+					bad++;
+				}
 			} else if (_stricmp(section.c_str(), "Offsets") == 0) {
 				Offset o;
 				if (ParseOffset(key, value, o))
@@ -153,7 +172,7 @@ namespace
 			}
 		}
 		Note("offsets|file|" + s.file, "[offsets] %s: %s base %06X, %zu bones%s; %zu logged every %.2f s x %d\n", s.file.c_str(),
-			s.plugin.c_str(), s.local, s.offsets.size(), bad ? " (some lines unreadable: use Bone=*k or Bone=x,y,z)" : "",
+			s.plugin.c_str(), s.local, s.offsets.size(), bad ? " (some lines unreadable: [Offsets] Bone=*k or Bone=x,y,z, [Rotations] Bone=x,y,z degrees)" : "",
 			s.logBones.size(), s.logEvery, s.logBones.empty() ? 0 : s.logSamples);
 		// a file with only [Log] is fine: it samples the pose with nothing offset (the A/B baseline)
 		return !s.plugin.empty() && s.local && (!s.offsets.empty() || !s.logBones.empty());
@@ -202,6 +221,30 @@ namespace
 
 	bool Same(const NiPoint3& p, const NiPoint3& q) { return p.x == q.x && p.y == q.y && p.z == q.z; }
 
+	bool SameRot(const NiMatrix43& p, const NiMatrix43& q)
+	{
+		for (int row = 0; row < 3; row++)
+			for (int col = 0; col < 3; col++)
+				if (p.data[row][col] != q.data[row][col])
+					return false;
+		return true;
+	}
+
+	// one turn of a degrees about the bone's own axis (0 X, 1 Y, 2 Z), right-handed, in the engine's row layout
+	// (row k = where axis k points after the turn)
+	NiMatrix43 Turn(int axis, float degrees)
+	{
+		const float rad = degrees * 0.01745329f, cs = std::cos(rad), sn = std::sin(rad);
+		const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+		NiMatrix43 m;
+		m.data[axis][axis] = 1.0f;
+		m.data[u][u] = cs;
+		m.data[u][v] = sn;           // + turns the next axis (Y for X) toward the one after (Z)
+		m.data[v][u] = -sn;
+		m.data[v][v] = cs;
+		return m;
+	}
+
 	void Bind(Actor* actor, const Spec& s, ActorState& st, NiAVObject* root)
 	{
 		st.root = root;
@@ -218,6 +261,12 @@ namespace
 		}
 		for (auto& bone : st.bones) {
 			bone.top = bone.node != nullptr;
+			for (auto& o : st.bones) {
+				if (&o == &bone)
+					break;           // a bone in both [Offsets] and [Rotations]: its subtree is redone once
+				if (o.node == bone.node)
+					bone.top = false;
+			}
 			for (auto& o : st.bones)
 				if (bone.top && o.node && o.node != bone.node && Above(o.node, bone.node))
 					bone.top = false;
@@ -281,6 +330,19 @@ namespace
 			if (!bone.node)
 				continue;
 			const Offset& o = s.offsets[i];
+			if (o.rotate) {
+				NiMatrix43& m = G::Local(bone.node).rot;
+				const NiMatrix43 base = bone.valid && SameRot(m, bone.writtenRot) ? bone.baseRot : m;
+				// rows are the bone's axes in its parent's space: turning about its own axes multiplies from the left
+				const NiMatrix43 out = o.r * base;
+				for (int row = 0; row < 3; row++)
+					for (int col = 0; col < 3; col++)
+						m.data[row][col] = out.data[row][col];
+				bone.baseRot = base;
+				bone.writtenRot = m;
+				bone.valid = true;
+				continue;
+			}
 			NiPoint3& p = G::Local(bone.node).pos;
 			// a bone the animation keys is rewritten every frame; one it leaves alone still holds what we wrote,
 			// and gets it again from the kept pose value instead of piling the offset up frame after frame

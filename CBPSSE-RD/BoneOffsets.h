@@ -14,6 +14,9 @@
 //   SPINE1=*0.78               ; the animated local translation scaled
 //   LArm_Collarbone=0,-1.2,0   ; added, in the parent's local axes (game units)
 //   COM=0,0,-3.1
+//   [Rotations]                ; the animated local rotation turned, in degrees, about the bone's OWN axes:
+//   LArm_UpperArm=0,0,-8       ; X first, then the turned Y, then the twice-turned Z; right-handed (+X turns Y toward Z)
+// A bone may be in both sections. Its joint stays where it is; everything below it swings.
 //   [Log]                      ; optional: the bones' positions after the offsets, one log line per sample
 //   bones=COM,SPINE2,Chest,LArm_UpperArm
 //   every=1.0                  ; seconds between samples
