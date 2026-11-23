@@ -868,7 +868,10 @@ void UpdateAims()
 				if (t.owner == a->formID || !t.inScene || (t.kind != AimSolve::kVagina && t.kind != AimSolve::kAnus))
 					continue;
 				const float dist = AimSolve::Length(AimSolve::Sub(t.point, joints.front()));
-				const float score = dist * (t.kind == AimSolve::kVagina ? 1.0f : 1.5f);
+				// the aim run on b6af307a (11-23): as the scene laid them together the turn chose her anus, the next
+				// frame her vagina, and the lock went with it. The opening held stays chosen while it is in reach
+				const bool isHeld = h.state.locked && h.state.lockedOwner == t.owner && h.state.lockedKind == t.kind;
+				const float score = dist * (t.kind == AimSolve::kVagina ? 1.0f : 1.5f) * (isHeld ? 0.4f : 1.0f);
 				if (dist <= length * params.reach && score < bestScore) {
 					best = &t;
 					bestScore = score;
@@ -942,6 +945,12 @@ void UpdateAims()
 		if (seeking) {
 			seekParams.captureAngle = seekParams.keepAngle = 3.1416f;
 			seekParams.captureMiss = seekParams.keepMiss = 1e6f;
+			// the aim run on b6af307a (11-23): he held her vagina 16 s, then from her climax on took and let go 4 times
+			// a second ("from the side or from inside"): the climax drives his root deeper or wider than a man's hilt
+			// (6 units in, 4.5 off). A robot's root past her entrance is laid along her canal however deep it goes
+			seekParams.deepMax = 20.0f;
+			seekParams.deepRadius = 8.0f;
+			seekParams.entryAngle = 1.57f;
 		}
 		if (aimOn)
 			r = seeking ? AimSolve::Update(h.state, c, seekOnly, std::vector<AimSolve::Hand>{}, seekParams, dt)
@@ -950,6 +959,32 @@ void UpdateAims()
 			char key[128];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|release|%08X|%08X|%d|%s", a->formID, wasOwner, wasKind, r.why);
 			Note(key, "[aim] %08X: let go of %08X's %s: %s\n", a->formID, wasOwner, AimSolve::KindName(wasKind), r.why);
+			// a robot's releases with where his root was (the first 40 per robot; the line above prints once per
+			// reason, so the climax's flapping never showed how far off it was)
+			static std::unordered_map<std::uint32_t, int> srvReleases;
+			int& count = srvReleases[a->formID];
+			if (seeking && count < 40) {
+				std::vector<V3> joints;
+				std::vector<AimSolve::Quat> world;
+				AimSolve::Pose(c, c.locals, 1.0f, joints, world);
+				for (const AimSolve::Target& t : targets) {
+					if (t.owner != wasOwner || t.kind != wasKind || joints.size() < 2)
+						continue;
+					const V3 rel = AimSolve::Sub(joints.front(), t.point);
+					const float in = AimSolve::Dot(rel, t.in);
+					const float off = AimSolve::Length(AimSolve::Sub(rel, AimSolve::Scale(t.in, in)));
+					const V3 d = AimSolve::Normalized(AimSolve::Sub(AimSolve::Add(t.point, AimSolve::Scale(t.in,
+						seekParams.depth)), joints.front()));
+					const float entry = std::acos((std::max)(-1.0f, (std::min)(1.0f, AimSolve::Dot(d, t.in)))) * 57.29578f;
+					const float length = AimSolve::ChainLength(c);
+					_snprintf_s(key, sizeof(key), _TRUNCATE, "aim|srvrelease|%08X|%d", a->formID, count);
+					Note(key, "[aim] %08X: robot release %d (%s): root %+.1f along her %s's axis, %.1f off it; entry %.0f deg; "
+						"entrance %.1f = %.2f x the shaft %.1f\n", a->formID, count + 1, r.why, in, AimSolve::KindName(wasKind),
+						off, entry, AimSolve::Length(rel), length > 0.0f ? AimSolve::Length(rel) / length : 0.0f, length);
+					count++;
+					break;
+				}
+			}
 		}
 		if (r.held) {
 			Note("aim|held|" + std::to_string(a->formID), "[aim] %08X: a hand holds the shaft - it is not aimed while "
