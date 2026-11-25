@@ -78,6 +78,26 @@ namespace
 		AnatomyLogLine(key, line);
 	}
 
+	// one log line: the shape, what is happening, and its skin's entries in order (NULL where the game left one empty)
+	std::string SkinEntries(Actor* actor, BSGeometry* geo, G::SkinInstance* skin, UInt32 count, const char* what)
+	{
+		char head[256];
+		int nulls = 0;
+		for (UInt32 i = 0; i < count; i++)
+			nulls += G::SkinBones(skin).entries[i] ? 0 : 1;
+		_snprintf_s(head, sizeof(head), _TRUNCATE, "[bones] %08X: '%s' (%u bones, %d empty) %s; entries:", actor->formID,
+			G::Name(geo) ? G::Name(geo) : "?", count, nulls, what);
+		std::string s(head);
+		for (UInt32 i = 0; i < count; i++) {
+			NiNode* b = G::SkinBones(skin).entries[i];
+			const char* n = b ? G::Name(b) : nullptr;
+			s += ' ';
+			s += b ? (n ? n : "(unnamed)") : "NULL";
+		}
+		s += '\n';
+		return s;
+	}
+
 	template <class F>
 	void VisitGeometry(NiAVObject* obj, F&& f, int depth = 0)
 	{
@@ -620,6 +640,18 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			Note(key, "[bones] %08X Servitron: '%s' skin of %u bones, Pelvis_skin %s, %d ours, %d empty, first '%s'\n",
 				actor->formID, G::Name(geo), count, pelvis ? "found" : "MISSING", oursCount, nulls, first ? first : "-");
 		}
+		// 11-25 (Ilham gen5: her body and flesh never wired, no "skin of" line ever, while gen1's identical flesh was):
+		// a human's skin with EMPTY entries is one the game is still binding (plates swapped: the new skins show up
+		// before their bones are filled in). Seen then, it read as "not ours" (or ours half-filled), was remembered as
+		// done, and was never looked at again once the game had filled Pelvis_skin and ours in. So it is left alone and
+		// NOT remembered until every entry is bound. Only a Servitron's robot parts keep empty entries for good.
+		if (nulls && !actorUtils::IsServitron(actor)) {
+			char key[160];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|empty|%08X|%s", actor->formID, G::Name(geo));
+			AnatomyLogLine(key, SkinEntries(actor, geo, skin, count, "has entries still empty (the game is binding "
+				"it): looked at again next time").c_str());
+			return;
+		}
 		if (pelvis && (namesOurs || nulls)) {           // a body: say once what its skin looks like
 			char key[96];
 			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|skin|%08X|%u|%d|%d", actor->formID, count, oursCount, nulls);
@@ -633,10 +665,10 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		// in; the log's last line, then the desktop, every time). Pointing its entries at our nodes then raced the game's
 		// own binding. Left alone, NOT remembered as done: the next visit finds it bound and goes the normal way
 		if (!pelvis && (namesOurs || chainWanted) && !actorUtils::IsServitron(actor)) {
-			char key[64];
-			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|binding|%08X", actor->formID);
-			Note(key, "[bones] %08X: a skin names ours before the game has bound its Pelvis_skin: waiting for it\n",
-				actor->formID);
+			char key[160];
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|binding|%08X|%s", actor->formID, G::Name(geo));
+			AnatomyLogLine(key, SkinEntries(actor, geo, skin, count, "names ours before the game has bound its "
+				"Pelvis_skin: waiting for it").c_str());
 			return;
 		}
 		if (!pelvis && namesOurs && srvPelvisFallback) {
