@@ -380,28 +380,56 @@ static bool ReadBoundRests(Actor* actor, G::SkinInstance* skin, UInt32 count, UI
 		G::Once("bones|bind|insane", "[bones] a body skin's bind for Pelvis_skin does not read as one: bound rests off");
 		return false;
 	}
-	std::unordered_map<std::string, NiPoint3> found;
-	std::vector<std::string> atTable;
-	float turned = 0.0f;
+	// every one of ours this skin binds, in Pelvis_skin's frame
+	std::unordered_map<std::string, std::pair<NiPoint3, float>> bound;   // lowercase name -> (where, turn)
 	for (UInt32 i = 0; i < count; i++) {
 		NiNode* b = G::SkinBones(skin).entries[i];
 		const char* name = b ? G::Name(b) : nullptr;
 		if (!name || !IsOurs(name))
 			continue;
-		const std::string lname = Lower(name);
-		auto def = tableIndex.find(lname);
-		if (def == tableIndex.end() || _stricmp(table[def->second].parent.c_str(), kPelvis) != 0)
-			continue;                                 // only the nodes hung on Pelvis_skin itself (a _Stretch child rides its parent)
 		const NiTransform& bind = binds->entries[i].transform;
 		if (!Sane(bind))
 			continue;
-		const NiPoint3 at = IntoBone(pelvisBind, BindOrigin(bind));
-		const NiPoint3 d = at - RestOf(table[def->second], male);
+		bound[Lower(name)] = { IntoBone(pelvisBind, BindOrigin(bind)), BindTurn(pelvisBind, bind) };
+	}
+	std::unordered_map<std::string, NiPoint3> found;
+	std::vector<std::string> atTable;
+	float turned = 0.0f;
+	for (const BoneDef& def : table) {
+		if (_stricmp(def.parent.c_str(), kPelvis) != 0)
+			continue;                                 // only the nodes hung on Pelvis_skin itself (a child rides its parent)
+		NiPoint3 at(0.0f, 0.0f, 0.0f);
+		float turn = 0.0f;
+		auto own = bound.find(def.lname);
+		if (own != bound.end()) {
+			at = own->second.first;
+			turn = own->second.second;
+		} else {
+			// 11-25 (Ilham gen5, General-mods): a body that binds only the children (AnatAnus_F_Stretch, AnatLip_L_Stretch:
+			// so does our own CBBE body) left the physics parent at [Bones] while its child's verts sat 2 units off: the
+			// anus aim read no shift. The parent rests where its bound children say: each child's bind less its own
+			// [Bones] offset under the parent, averaged
+			int k = 0;
+			for (const BoneDef& c : table) {
+				if (_stricmp(c.parent.c_str(), def.name.c_str()) != 0)
+					continue;
+				auto cb = bound.find(c.lname);
+				if (cb == bound.end())
+					continue;
+				at = at + (cb->second.first - RestOf(c, male));
+				turn = (std::max)(turn, cb->second.second);
+				k++;
+			}
+			if (!k)
+				continue;
+			at = at * (1.0f / k);
+		}
+		const NiPoint3 d = at - RestOf(def, male);
 		if (d.x * d.x + d.y * d.y + d.z * d.z > kBoundGap * kBoundGap) {
-			found[lname] = at;
-			turned = (std::max)(turned, BindTurn(pelvisBind, bind));
+			found[def.lname] = at;
+			turned = (std::max)(turned, turn);
 		} else
-			atTable.push_back(lname);
+			atTable.push_back(def.lname);
 	}
 	bool changed = false;
 	size_t kept = 0;
