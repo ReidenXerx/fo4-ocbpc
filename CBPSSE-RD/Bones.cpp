@@ -52,7 +52,17 @@ namespace
 	// re-equipped body is a NEW skin (possibly at a reused address), which fails this check.
 	// Skins that need nothing (they do not name ours) are remembered too, with index = none. The
 	// bones array pointer and count must match as well, so a new skin at a reused address is seen.
-	struct Done { NiNode** entries; UInt32 count; UInt32 index; NiNode* node; };
+	// nulls: the skin's empty entries when remembered. Bodies keep some for good (the owner's 1.2.35 log: the player's
+	// 122-bone skin 4, NPC skins 3-12); a count that changes is the game still binding it, so it is looked at again
+	struct Done { NiNode** entries; UInt32 count; UInt32 index; NiNode* node; int nulls; };
+
+	int EmptyEntries(G::SkinInstance* skin, UInt32 count)
+	{
+		int n = 0;
+		for (UInt32 i = 0; i < count; i++)
+			n += G::SkinBones(skin).entries[i] ? 0 : 1;
+		return n;
+	}
 	const UInt32 kNone = 0xFFFFFFFF;
 	std::unordered_map<void*, Done> done;
 
@@ -630,7 +640,8 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		if (seen != done.end() && seen->second.entries == G::SkinBones(skin).entries && seen->second.count == count &&
 				(seen->second.index == kNone ||
 				 (seen->second.index < count && G::SkinBones(skin).entries[seen->second.index] == seen->second.node &&
-				  Reaches(seen->second.node, G::Root(actor)))))   // A-52: our node still on the live skeleton
+				  Reaches(seen->second.node, G::Root(actor)))) &&  // A-52: our node still on the live skeleton
+				(seen->second.nulls == 0 || EmptyEntries(skin, count) == seen->second.nulls))
 			return;
 		// the skeleton's own Pelvis_skin, as this skin was bound to it, and whether it names ours
 		NiNode* pelvis = nullptr;
@@ -669,16 +680,16 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 				actor->formID, G::Name(geo), count, pelvis ? "found" : "MISSING", oursCount, nulls, first ? first : "-");
 		}
 		// 11-25 (Ilham gen5: her body and flesh never wired, no "skin of" line ever, while gen1's identical flesh was):
-		// a human's skin with EMPTY entries is one the game is still binding (plates swapped: the new skins show up
-		// before their bones are filled in). Seen then, it read as "not ours" (or ours half-filled), was remembered as
-		// done, and was never looked at again once the game had filled Pelvis_skin and ours in. So it is left alone and
-		// NOT remembered until every entry is bound. Only a Servitron's robot parts keep empty entries for good.
+		// a skin seen while the game was still filling its bones (entries NULL) read as "not ours" (or ours half-filled),
+		// was remembered as done, and was never looked at again. 1.2.36 then left EVERY human skin with an empty entry
+		// alone until none were left - but bodies keep some for good, so no body with one was ever wired (josefkokosnuss
+		// 11-26: genitals stretched to the actor's feet, back to normal on 1.2.35). Now it is wired as before and
+		// remembered with its count of empty entries: a count that changes (the game filling it) is looked at again.
 		if (nulls && !actorUtils::IsServitron(actor)) {
 			char key[160];
-			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|empty|%08X|%s", actor->formID, G::Name(geo));
-			AnatomyLogLine(key, SkinEntries(actor, geo, skin, count, "has entries still empty (the game is binding "
-				"it): looked at again next time").c_str());
-			return;
+			_snprintf_s(key, sizeof(key), _TRUNCATE, "bones|empty|%08X|%s|%d", actor->formID, G::Name(geo), nulls);
+			AnatomyLogLine(key, SkinEntries(actor, geo, skin, count, "has empty entries: wired now, looked at again if "
+				"their count changes").c_str());
 		}
 		if (pelvis && (namesOurs || nulls)) {           // a body: say once what its skin looks like
 			char key[96];
@@ -729,7 +740,8 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 			for (UInt32 i = 0; chained && i < count && at == kNone; i++)
 				if (G::SkinBones(skin).entries[i] && IsChain(G::Name(G::SkinBones(skin).entries[i])))
 					at = i;                              // remembered by its chain entry, re-checked like ours
-			done[skin] = Done{ G::SkinBones(skin).entries, count, at, at == kNone ? nullptr : G::SkinBones(skin).entries[at] };
+			done[skin] = Done{ G::SkinBones(skin).entries, count, at, at == kNone ? nullptr : G::SkinBones(skin).entries[at],
+			                   nulls };
 			return;
 		}
 		// 11-23: where this body binds ours, when not at [Bones] (an artist's own genitals); the skin's own Pelvis_skin
@@ -813,7 +825,7 @@ static bool EnsureAnatomyBonesImpl(Actor* actor)
 		for (UInt32 i = 0; i < count; i++) {               // remember it by one of our entries
 			NiNode* b = G::SkinBones(skin).entries[i];
 			if (b && IsOurs(G::Name(b))) {
-				done[skin] = Done{ G::SkinBones(skin).entries, count, i, b };
+				done[skin] = Done{ G::SkinBones(skin).entries, count, i, b, EmptyEntries(skin, count) };
 				break;
 			}
 		}
